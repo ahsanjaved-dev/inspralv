@@ -11,21 +11,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Bell, Settings, User } from "lucide-react"
+import { useAuth } from "@/lib/hooks/use-auth"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
 
 export function Header() {
+  const { logout } = useAuth()
   const router = useRouter()
 
-  const handleLogout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push("/login")
-    router.refresh()
-  }
-
   return (
-    <header className="h-16 border-b bg-white flex items-center justify-between px-6">
+    <header className="h-16 border-b bg-white dark:bg-gray-950 flex items-center justify-between px-6">
       <div className="flex items-center gap-4">
         <h2 className="text-xl font-semibold">Dashboard</h2>
       </div>
@@ -53,7 +47,7 @@ export function Header() {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>Logout</DropdownMenuItem>
+            <DropdownMenuItem onClick={logout}>Logout</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

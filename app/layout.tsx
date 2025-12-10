@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Inspralv",
-  description: "Inspralv is the lightweight version of inspra",
+  description: "AI Voice Integration Platform",
 }
 
 export default function RootLayout({

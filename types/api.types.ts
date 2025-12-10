@@ -1,10 +1,4 @@
 import { z } from "zod"
-import type {
-  AgentProvider,
-  VoiceProvider,
-  ModelProvider,
-  TranscriberProvider,
-} from "./database.types"
 
 export const createAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),

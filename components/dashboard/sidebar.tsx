@@ -15,8 +15,7 @@ import {
   Settings,
   LogOut,
 } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
-import { useRouter } from "next/navigation"
+import { useAuth } from "@/lib/hooks/use-auth"
 
 const iconMap: Record<string, any> = {
   Dashboard: LayoutDashboard,
@@ -30,24 +29,15 @@ const iconMap: Record<string, any> = {
 
 export function Sidebar() {
   const pathname = usePathname()
-  const router = useRouter()
-
-  const handleLogout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push("/login")
-    router.refresh()
-  }
+  const { logout } = useAuth()
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white w-64">
-      {/* Logo */}
       <div className="p-6 border-b border-gray-800">
         <h1 className="text-2xl font-bold">{siteConfig.name}</h1>
         <p className="text-xs text-gray-400 mt-1">AI Voice Platform</p>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => {
           const Icon = iconMap[item.title]
@@ -71,12 +61,11 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Logout */}
       <div className="p-4 border-t border-gray-800">
         <Button
           variant="ghost"
           className="w-full justify-start text-gray-300 hover:text-white hover:bg-gray-800"
-          onClick={handleLogout}
+          onClick={logout}
         >
           <LogOut className="w-5 h-5 mr-3" />
           Logout
