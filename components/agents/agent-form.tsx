@@ -3,6 +3,7 @@
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,9 +15,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2 } from "lucide-react"
+import { Loader2, Building2 } from "lucide-react"
 import type { CreateAgentInput } from "@/types/api.types"
-import type { AIAgent } from "@/types/database.types"
+import type { AIAgent, Department } from "@/types/database.types"
 import Link from "next/link"
 
 interface AgentFormProps {
@@ -28,6 +29,7 @@ interface AgentFormProps {
 const formSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   description: z.string().optional(),
+  department_id: z.string().uuid("Please select a department"),
   provider: z.enum(["vapi", "retell", "synthflow"] as const),
   voice_provider: z
     .enum(["elevenlabs", "deepgram", "azure", "openai", "cartesia"] as const)
@@ -46,6 +48,17 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>
 
 export function AgentForm({ initialData, onSubmit, isSubmitting }: AgentFormProps) {
+  // Fetch departments for selector
+  const { data: departmentsData } = useQuery({
+    queryKey: ["departments-for-select"],
+    queryFn: async () => {
+      const res = await fetch("/api/departments")
+      if (!res.ok) throw new Error("Failed to fetch departments")
+      const json = await res.json()
+      return json.data.data as Department[]
+    },
+  })
+
   const {
     register,
     handleSubmit,
@@ -57,6 +70,7 @@ export function AgentForm({ initialData, onSubmit, isSubmitting }: AgentFormProp
     defaultValues: {
       name: initialData?.name || "",
       description: initialData?.description || "",
+      department_id: initialData?.department_id || "",
       provider: (initialData?.provider as FormData["provider"]) || "vapi",
       voice_provider: (initialData?.voice_provider as FormData["voice_provider"]) || undefined,
       model_provider: (initialData?.model_provider as FormData["model_provider"]) || undefined,
@@ -71,6 +85,7 @@ export function AgentForm({ initialData, onSubmit, isSubmitting }: AgentFormProp
   })
 
   const selectedProvider = watch("provider")
+  const selectedDepartment = watch("department_id")
 
   const handleFormSubmit = async (data: FormData) => {
     await onSubmit(data as CreateAgentInput)
@@ -105,6 +120,38 @@ export function AgentForm({ initialData, onSubmit, isSubmitting }: AgentFormProp
               {...register("description")}
               disabled={isSubmitting}
             />
+          </div>
+
+          {/* Department Selector */}
+          <div className="space-y-2">
+            <Label>
+              <Building2 className="w-4 h-4 inline mr-1" />
+              Department <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={selectedDepartment}
+              onValueChange={(value) => setValue("department_id", value)}
+              disabled={isSubmitting || !!initialData} // Disable if editing
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select department" />
+              </SelectTrigger>
+              <SelectContent>
+                {departmentsData?.map((dept) => (
+                  <SelectItem key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.department_id && (
+              <p className="text-sm text-red-500">{errors.department_id.message}</p>
+            )}
+            {initialData && (
+              <p className="text-xs text-muted-foreground">
+                Department cannot be changed after creation
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -143,6 +190,9 @@ export function AgentForm({ initialData, onSubmit, isSubmitting }: AgentFormProp
         </CardContent>
       </Card>
 
+      {/* ... rest of the form (Voice & Model Settings, Prompt Configuration) stays the same ... */}
+
+      {/* Voice & Model Settings Card */}
       <Card>
         <CardHeader>
           <CardTitle>Voice & Model Settings</CardTitle>
@@ -216,6 +266,7 @@ export function AgentForm({ initialData, onSubmit, isSubmitting }: AgentFormProp
         </CardContent>
       </Card>
 
+      {/* Prompt Configuration Card */}
       <Card>
         <CardHeader>
           <CardTitle>Prompt Configuration</CardTitle>
@@ -227,7 +278,7 @@ export function AgentForm({ initialData, onSubmit, isSubmitting }: AgentFormProp
             <textarea
               id="system_prompt"
               className="w-full min-h-[120px] px-3 py-2 text-sm rounded-md border border-input bg-background resize-y"
-              placeholder="You are a helpful sales assistant for our company. Your goal is to help customers find the right product..."
+              placeholder="You are a helpful sales assistant for our company..."
               {...register("config.system_prompt")}
               disabled={isSubmitting}
             />

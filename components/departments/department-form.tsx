@@ -17,9 +17,10 @@ import type { Department } from "@/types/database.types"
 
 interface DepartmentFormProps {
   departmentId?: string
+  embedded?: boolean
 }
 
-export function DepartmentForm({ departmentId }: DepartmentFormProps) {
+export function DepartmentForm({ departmentId, embedded = false }: DepartmentFormProps) {
   const router = useRouter()
   const isEditing = !!departmentId
 
@@ -109,24 +110,29 @@ export function DepartmentForm({ departmentId }: DepartmentFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/departments">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">
-            {isEditing ? "Edit Department" : "Create Department"}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {isEditing
-              ? "Update department settings"
-              : "Set up a new department for your organization"}
-          </p>
+    <form
+      onSubmit={handleSubmit}
+      className={embedded ? "space-y-6" : "space-y-6 max-w-2xl mx-auto"}
+    >
+      {!embedded && (
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/departments">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold">
+              {isEditing ? "Edit Department" : "Create Department"}
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              {isEditing
+                ? "Update department settings"
+                : "Set up a new department for your organization"}
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {error && (
         <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400">
@@ -241,9 +247,11 @@ export function DepartmentForm({ departmentId }: DepartmentFormProps) {
       </Card>
 
       <div className="flex justify-end gap-3">
-        <Button type="button" variant="outline" asChild>
-          <Link href="/departments">Cancel</Link>
-        </Button>
+        {!embedded && (
+          <Button type="button" variant="outline" asChild>
+            <Link href="/departments">Cancel</Link>
+          </Button>
+        )}
         <Button type="submit" disabled={isPending}>
           {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {isEditing ? "Save Changes" : "Create Department"}

@@ -10,7 +10,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Bot, MoreVertical, Pencil, Trash2, Power, PowerOff } from "lucide-react"
+import {
+  Bot,
+  MoreVertical,
+  Pencil,
+  Trash2,
+  Power,
+  PowerOff,
+  MessageSquare,
+  Clock,
+  DollarSign,
+} from "lucide-react"
 import type { AIAgent } from "@/types/database.types"
 import Link from "next/link"
 
@@ -93,6 +103,24 @@ export function AgentCard({ agent, onDelete, onToggleActive }: AgentCardProps) {
         <p className="text-sm text-muted-foreground line-clamp-2 min-h-[40px]">
           {agent.description || "No description provided"}
         </p>
+
+        <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+          <div className="p-2 bg-muted/50 rounded">
+            <MessageSquare className="w-4 h-4 mx-auto text-blue-500" />
+            <p className="text-sm font-semibold mt-1">{agent.total_conversations || 0}</p>
+            <p className="text-xs text-muted-foreground">Calls</p>
+          </div>
+          <div className="p-2 bg-muted/50 rounded">
+            <Clock className="w-4 h-4 mx-auto text-orange-500" />
+            <p className="text-sm font-semibold mt-1">{agent.total_minutes?.toFixed(0) || 0}</p>
+            <p className="text-xs text-muted-foreground">Minutes</p>
+          </div>
+          <div className="p-2 bg-muted/50 rounded">
+            <DollarSign className="w-4 h-4 mx-auto text-green-500" />
+            <p className="text-sm font-semibold mt-1">${agent.total_cost?.toFixed(2) || "0.00"}</p>
+            <p className="text-xs text-muted-foreground">Cost</p>
+          </div>
+        </div>
 
         <div className="flex flex-wrap gap-2 mt-4 text-xs text-muted-foreground">
           {agent.voice_provider && (

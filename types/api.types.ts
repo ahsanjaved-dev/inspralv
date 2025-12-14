@@ -3,7 +3,7 @@ import { z } from "zod"
 export const createAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   description: z.string().optional(),
-  department_id: z.string().uuid().optional(),
+  department_id: z.string().uuid(),
   provider: z.enum(["vapi", "retell", "synthflow"] as const),
   voice_provider: z
     .enum(["elevenlabs", "deepgram", "azure", "openai", "cartesia"] as const)

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -14,16 +15,29 @@ import {
 import { AgentCard } from "@/components/agents/agent-card"
 import { DeleteAgentDialog } from "@/components/agents/delete-agent-dialog"
 import { useAgents, useDeleteAgent, useUpdateAgent } from "@/lib/hooks/use-agents"
-import { Plus, Search, Bot, Loader2 } from "lucide-react"
-import type { AIAgent } from "@/types/database.types"
+import { Plus, Search, Bot, Loader2, Building2 } from "lucide-react"
+import type { AIAgent, Department } from "@/types/database.types"
 
 export default function AgentsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [providerFilter, setProviderFilter] = useState<string>("all")
+  const [departmentFilter, setDepartmentFilter] = useState<string>("all")
   const [deleteAgent, setDeleteAgent] = useState<AIAgent | null>(null)
+
+  // Fetch departments for filter
+  const { data: departmentsData } = useQuery({
+    queryKey: ["departments-for-filter"],
+    queryFn: async () => {
+      const res = await fetch("/api/departments")
+      if (!res.ok) throw new Error("Failed to fetch departments")
+      const json = await res.json()
+      return json.data.data as Department[]
+    },
+  })
 
   const { data, isLoading, error } = useAgents({
     provider: providerFilter !== "all" ? providerFilter : undefined,
+    department_id: departmentFilter !== "all" ? departmentFilter : undefined,
   })
 
   const deleteMutation = useDeleteAgent()
@@ -80,6 +94,24 @@ export default function AgentsPage() {
             className="pl-10"
           />
         </div>
+
+        {/* Department Filter */}
+        <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+          <SelectTrigger className="w-full sm:w-[200px]">
+            <Building2 className="w-4 h-4 mr-2" />
+            <SelectValue placeholder="All Departments" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Departments</SelectItem>
+            {departmentsData?.map((dept) => (
+              <SelectItem key={dept.id} value={dept.id}>
+                {dept.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Provider Filter */}
         <Select value={providerFilter} onValueChange={setProviderFilter}>
           <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="All Providers" />
@@ -92,6 +124,8 @@ export default function AgentsPage() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* ... rest of the component stays the same ... */}
 
       {isLoading && (
         <div className="flex items-center justify-center py-12">

@@ -12,6 +12,7 @@ interface UseAgentsParams {
   pageSize?: number
   provider?: string
   isActive?: boolean
+  department_id?: string
 }
 
 function buildQueryString(params?: UseAgentsParams): string {
@@ -23,6 +24,7 @@ function buildQueryString(params?: UseAgentsParams): string {
   if (params.pageSize) searchParams.set("pageSize", params.pageSize.toString())
   if (params.provider) searchParams.set("provider", params.provider)
   if (params.isActive !== undefined) searchParams.set("isActive", params.isActive.toString())
+  if (params.department_id) searchParams.set("department_id", params.department_id)
 
   const query = searchParams.toString()
   return query ? `?${query}` : ""
