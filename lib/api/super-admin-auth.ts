@@ -1,4 +1,3 @@
-// lib/api/super-admin-auth.ts
 import { createClient } from "@/lib/supabase/server"
 import type { SuperAdmin } from "@/types/database.types"
 
@@ -8,34 +7,45 @@ export interface SuperAdminContext {
 }
 
 export async function getSuperAdminContext(): Promise<SuperAdminContext | null> {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const {
-    data: { user: authUser },
-    error: authError,
-  } = await supabase.auth.getUser()
+    const {
+      data: { user: authUser },
+      error: authError,
+    } = await supabase.auth.getUser()
 
-  if (authError || !authUser) {
+    if (authError || !authUser) {
+      return null
+    }
+
+    // Check if user is super admin
+    const { data: superAdmin, error: superAdminError } = await supabase
+      .from("super_admin")
+      .select("*")
+      .eq("id", authUser.id)
+      .single()
+
+    if (superAdminError || !superAdmin) {
+      return null
+    }
+
+    // Update last login
+    await supabase
+      .from("super_admin")
+      .update({ last_login_at: new Date().toISOString() })
+      .eq("id", authUser.id)
+
+    return {
+      superAdmin: superAdmin as SuperAdmin,
+      supabase,
+    }
+  } catch (error) {
+    console.error("[getSuperAdminContext] Error:", error)
     return null
-  }
-
-  const { data: superAdmin, error: superAdminError } = await supabase
-    .from("super_admins")
-    .select("*")
-    .eq("id", authUser.id)
-    .eq("is_active", true)
-    .single()
-
-  if (superAdminError || !superAdmin) {
-    return null
-  }
-
-  return {
-    superAdmin: superAdmin as SuperAdmin,
-    supabase,
   }
 }
 
-export function isSuperAdmin(permissions: string[]): boolean {
-  return permissions.includes("all")
+export function isSuperAdmin(context: SuperAdminContext | null): boolean {
+  return context !== null
 }

@@ -7,7 +7,6 @@ import { useCallback, useMemo } from "react"
 export function useAuth() {
   const router = useRouter()
 
-  // ✅ Memoize the client to prevent re-creation on every render
   const supabase = useMemo(() => createClient(), [])
 
   const logout = useCallback(async () => {

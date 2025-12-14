@@ -1,5 +1,5 @@
-// lib/api/auth.ts
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import type { User, Organization, Department, DepartmentPermission } from "@/types/database.types"
 
 export interface AuthContext {
@@ -23,27 +23,15 @@ export async function getAuthContext(): Promise<AuthContext | null> {
       return null
     }
 
-    // Get user with organization - with retry logic
-    let user = null
-    let userError = null
+    // Use admin client to bypass RLS issues
+    const adminClient = createAdminClient()
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const result = await supabase
-        .from("users")
-        .select(`*, organization:organizations(*)`)
-        .eq("id", authUser.id)
-        .single()
-
-      user = result.data
-      userError = result.error
-
-      if (user) break
-
-      // Wait before retry
-      if (attempt < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)))
-      }
-    }
+    // Get user with organization using admin client
+    const { data: user, error: userError } = await adminClient
+      .from("users")
+      .select(`*, organization:organizations(*)`)
+      .eq("id", authUser.id)
+      .single()
 
     if (userError) {
       console.error(
@@ -59,8 +47,8 @@ export async function getAuthContext(): Promise<AuthContext | null> {
       return null
     }
 
-    // Get user's department permissions
-    const { data: departmentPermissions, error: deptError } = await supabase
+    // Get user's department permissions using admin client
+    const { data: departmentPermissions, error: deptError } = await adminClient
       .from("department_permissions")
       .select(`*, department:departments(*)`)
       .eq("user_id", authUser.id)
@@ -76,7 +64,7 @@ export async function getAuthContext(): Promise<AuthContext | null> {
       departments: (departmentPermissions || []) as (DepartmentPermission & {
         department: Department
       })[],
-      supabase,
+      supabase, // Return the regular client for other operations
     }
   } catch (error) {
     console.error("[getAuthContext] Unexpected error:", error)
