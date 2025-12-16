@@ -11,7 +11,7 @@ export default function Home() {
         <div className="flex gap-4 justify-center mt-8">
           <Link href="/login">
             <Button size="lg" variant="outline">
-              Sign In
+              Sign In Now
             </Button>
           </Link>
         </div>
