@@ -11,8 +11,16 @@ export default function Home() {
         <div className="flex gap-4 justify-center mt-8">
           <Link href="/login">
             <Button size="lg" variant="outline">
-              Sign In
+              Sign In Now
             </Button>
+            <div className="text-sm text-gray-600">
+              <p>
+                Don't have an account?{" "}
+                <Link href="/register" className="text-blue-600 hover:underline">
+                  Register
+                </Link>
+              </p>
+            </div>
           </Link>
         </div>
       </div>
