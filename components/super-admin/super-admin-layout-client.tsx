@@ -21,12 +21,15 @@ import {
   Shield,
   Users,
   BarChart3,
+  Briefcase, // ← Add this import
+  Globe,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import type { SuperAdmin } from "@/types/database.types"
 
 const navigation = [
   { title: "Dashboard", href: "/super-admin", icon: LayoutDashboard },
+  { title: "Partners", href: "/super-admin/partners", icon: Briefcase }, // ← Add this
   { title: "Organizations", href: "/super-admin/organizations", icon: Building2 },
   { title: "Analytics", href: "/super-admin/analytics", icon: BarChart3 },
   { title: "Settings", href: "/super-admin/settings", icon: Settings },

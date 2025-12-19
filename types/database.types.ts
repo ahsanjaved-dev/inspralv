@@ -28,7 +28,6 @@ export type AgentProvider = "vapi" | "retell" | "synthflow"
 export const createAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   description: z.string().optional(),
-  department_id: z.string().uuid(),
   provider: z.enum(["vapi", "retell", "synthflow"] as const),
   voice_provider: z
     .enum(["elevenlabs", "deepgram", "azure", "openai", "cartesia"] as const)
@@ -99,32 +98,6 @@ export const createIntegrationSchema = z.object({
 
 export type CreateIntegrationInput = z.infer<typeof createIntegrationSchema>
 
-export const createDepartmentSchema = z.object({
-  name: z.string().min(1, "Name is required").max(255),
-  description: z.string().max(1000).optional(),
-  slug: z
-    .string()
-    .min(1, "Slug is required")
-    .max(100)
-    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
-  resource_limits: z
-    .object({
-      max_agents: z.number().min(1).max(100).optional(),
-      max_users: z.number().min(1).max(100).optional(),
-      max_minutes_per_month: z.number().min(0).optional(),
-    })
-    .optional(),
-})
-
-export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>
-
-export const updateDepartmentSchema = createDepartmentSchema.partial()
-export type UpdateDepartmentInput = z.infer<typeof updateDepartmentSchema>
-
-// ============================================================================
-// CORE ENTITY TYPES
-// ============================================================================
-
 export type PlanTier = "free" | "starter" | "pro" | "enterprise"
 
 export interface User {
@@ -179,42 +152,6 @@ export interface OrganizationWithStats extends Organization {
   total_minutes?: number
 }
 
-export interface Department {
-  id: string
-  organization_id: string
-  name: string
-  description: string | null
-  slug: string
-  resource_limits: {
-    max_agents?: number
-    max_users?: number
-    max_minutes_per_month?: number
-  } | null
-  is_active: boolean
-  created_at: string
-  updated_at: string
-  // Computed fields
-  total_agents?: number
-  total_users?: number
-  current_month_minutes?: number
-  current_month_cost?: number
-}
-
-export interface DepartmentPermission {
-  department_id: string
-  user_id: string
-  role: "owner" | "admin" | "member" | "viewer"
-  created_at: string
-}
-
-export interface DepartmentMember {
-  id: string
-  user_id: string
-  user: User
-  role: "owner" | "admin" | "member" | "viewer"
-  created_at: string
-}
-
 // ============================================================================
 // AGENT TYPES
 // ============================================================================
@@ -253,7 +190,6 @@ export interface AIAgent {
   config: AgentConfig
   is_active: boolean
   organization_id: string
-  department_id: string
   created_by: string
   external_agent_id: string | null
   agent_secret_api_key: AgentSecretApiKey[]
@@ -312,7 +248,6 @@ export interface SynthflowAgentConfig {
 export interface Conversation {
   id: string
   organization_id: string
-  department_id: string
   agent_id: string
   external_call_id: string | null
   direction: "inbound" | "outbound"
@@ -343,7 +278,6 @@ export interface ConversationWithAgent extends Conversation {
 
 export interface ConversationWithDetails extends Conversation {
   agent?: AIAgent
-  department?: Department
 }
 
 // ============================================================================
@@ -357,7 +291,7 @@ export interface DashboardStats {
   total_cost: number
   conversations_this_month: number
   minutes_this_month: number
-  cost_this_month: number  // <-- ADD THIS LINE
+  cost_this_month: number // <-- ADD THIS LINE
   active_agents?: number
   conversations_today?: number
   average_duration?: number
@@ -393,3 +327,190 @@ export interface PaginatedResponse<T> {
   pageSize: number
   totalPages: number
 }
+
+// ============================================================================
+// PARTNER & WORKSPACE TYPES (Milestone 1)
+// ============================================================================
+
+export interface PartnerBranding {
+  company_name?: string
+  logo_url?: string
+  favicon_url?: string
+  primary_color?: string
+  secondary_color?: string
+}
+
+export interface PartnerFeatures {
+  white_label?: boolean
+  custom_domain?: boolean
+  api_access?: boolean
+  sso?: boolean
+  advanced_analytics?: boolean
+}
+
+export interface PartnerResourceLimits {
+  max_workspaces?: number
+  max_users_per_workspace?: number
+  max_agents_per_workspace?: number
+}
+
+export interface Partner {
+  id: string
+  name: string
+  slug: string
+  branding: PartnerBranding
+  plan_tier: string
+  features: PartnerFeatures
+  resource_limits: PartnerResourceLimits
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  subscription_status: string
+  settings: Record<string, unknown>
+  is_platform_partner: boolean
+  deleted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PartnerDomain {
+  id: string
+  partner_id: string
+  hostname: string
+  is_primary: boolean
+  verified_at: string | null
+  verification_token: string | null
+  created_at: string
+}
+
+export interface WorkspaceResourceLimits {
+  max_agents?: number
+  max_users?: number
+  max_minutes_per_month?: number
+}
+
+export interface Workspace {
+  id: string
+  partner_id: string
+  name: string
+  slug: string
+  description: string | null
+  resource_limits: WorkspaceResourceLimits
+  settings: Record<string, unknown>
+  current_month_minutes: number
+  current_month_cost: number
+  last_usage_reset_at: string
+  status: string
+  deleted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type WorkspaceMemberRole = "owner" | "admin" | "member" | "viewer"
+
+export interface WorkspaceMember {
+  id: string
+  workspace_id: string
+  user_id: string
+  role: WorkspaceMemberRole
+  invited_by: string | null
+  invited_at: string | null
+  joined_at: string | null
+  removed_at: string | null
+  removed_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkspaceMemberWithUser extends WorkspaceMember {
+  user?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+    avatar_url: string | null
+  }
+}
+
+export interface WorkspaceWithMembership extends Workspace {
+  role: WorkspaceMemberRole
+}
+
+// Zod schemas for validation
+export const createWorkspaceSchema = z.object({
+  name: z.string().min(1, "Name is required").max(255),
+  slug: z
+    .string()
+    .min(1, "Slug is required")
+    .max(100)
+    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
+  description: z.string().max(1000).optional(),
+  resource_limits: z
+    .object({
+      max_agents: z.number().min(1).max(100).optional(),
+      max_users: z.number().min(1).max(100).optional(),
+      max_minutes_per_month: z.number().min(0).optional(),
+    })
+    .optional(),
+})
+
+// ============================================================================
+// PARTNER AUTH CONTEXT TYPES (Milestone 3)
+// ============================================================================
+
+export interface PartnerAuthUser {
+  id: string
+  email: string
+  first_name: string | null
+  last_name: string | null
+  avatar_url: string | null
+}
+
+export interface AccessibleWorkspace {
+  id: string
+  name: string
+  slug: string
+  partner_id: string
+  description: string | null
+  role: WorkspaceMemberRole
+  resource_limits: WorkspaceResourceLimits
+  status: string
+}
+
+export type CreateWorkspaceInput = z.infer<typeof createWorkspaceSchema>
+
+// ============================================================================
+// WORKSPACE INVITATION TYPES (Milestone 2)
+// ============================================================================
+
+export type WorkspaceInvitationStatus = "pending" | "accepted" | "expired" | "cancelled"
+
+export interface WorkspaceInvitation {
+  id: string
+  workspace_id: string
+  email: string
+  role: "admin" | "member" | "viewer"
+  token: string
+  message: string | null
+  invited_by: string
+  status: WorkspaceInvitationStatus
+  expires_at: string
+  accepted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkspaceInvitationWithInviter extends WorkspaceInvitation {
+  inviter?: {
+    email: string
+    first_name: string | null
+    last_name: string | null
+  }
+}
+
+export const createWorkspaceInvitationSchema = z.object({
+  email: z.string().email("Valid email is required"),
+  role: z.enum(["admin", "member", "viewer"]),
+  message: z.string().max(500).optional(),
+})
+
+export type CreateWorkspaceInvitationInput = z.infer<typeof createWorkspaceInvitationSchema>

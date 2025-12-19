@@ -1,4 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { NextRequest } from "next/server"
+
+// ============================================================================
+// AUDIT ACTION TYPES
+// ============================================================================
 
 export type AuditAction =
   | "user.login"
@@ -14,39 +19,55 @@ export type AuditAction =
   | "department.updated"
   | "department.deleted"
   | "organization.updated"
+  | "workspace.created"
+  | "workspace.updated"
+  | "workspace.deleted"
+  | "member.invited"
+  | "member.joined"
+  | "member.removed"
   | "settings.updated"
   | "invitation.created"
   | "invitation.accepted"
   | "invitation.revoked"
 
-interface CreateAuditLogParams {
-  userId?: string
+// ============================================================================
+// AUDIT LOG INTERFACE
+// ============================================================================
+
+export interface AuditLogEntry {
+  userId: string
   organizationId?: string
-  action: AuditAction
+  workspaceId?: string
+  action: AuditAction | string
   entityType: string
   entityId?: string
-  oldValues?: Record<string, any>
-  newValues?: Record<string, any>
-  metadata?: Record<string, any>
+  oldValues?: Record<string, unknown>
+  newValues?: Record<string, unknown>
+  metadata?: Record<string, unknown>
   ipAddress?: string
   userAgent?: string
 }
 
-export async function createAuditLog(params: CreateAuditLogParams) {
+// ============================================================================
+// CREATE AUDIT LOG
+// ============================================================================
+
+export async function createAuditLog(entry: AuditLogEntry) {
   try {
     const adminClient = createAdminClient()
 
     const { error } = await adminClient.from("audit_log").insert({
-      user_id: params.userId,
-      organization_id: params.organizationId,
-      action: params.action,
-      entity_type: params.entityType,
-      entity_id: params.entityId,
-      old_values: params.oldValues || null,
-      new_values: params.newValues || null,
-      metadata: params.metadata || null,
-      ip_address: params.ipAddress || null,
-      user_agent: params.userAgent || null,
+      user_id: entry.userId,
+      organization_id: entry.organizationId || null,
+      workspace_id: entry.workspaceId || null,
+      action: entry.action,
+      entity_type: entry.entityType,
+      entity_id: entry.entityId,
+      old_values: entry.oldValues || null,
+      new_values: entry.newValues || null,
+      metadata: entry.metadata || null,
+      ip_address: entry.ipAddress || null,
+      user_agent: entry.userAgent || null,
     })
 
     if (error) {
@@ -58,13 +79,16 @@ export async function createAuditLog(params: CreateAuditLogParams) {
   }
 }
 
-// Helper to extract request metadata
-export function getRequestMetadata(request: Request) {
+// ============================================================================
+// REQUEST METADATA HELPER
+// ============================================================================
+
+export function getRequestMetadata(request: Request | NextRequest) {
   return {
     ipAddress:
       request.headers.get("x-forwarded-for")?.split(",")[0] ||
       request.headers.get("x-real-ip") ||
-      undefined,
-    userAgent: request.headers.get("user-agent") || undefined,
+      "unknown",
+    userAgent: request.headers.get("user-agent") || "unknown",
   }
 }

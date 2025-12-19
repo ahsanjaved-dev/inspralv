@@ -15,7 +15,6 @@ export const agentPublicApiKeySchema = z.object({
   is_active: z.boolean().default(true),
 })
 
-
 export const createAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   description: z.string().optional(),
@@ -48,8 +47,8 @@ export const createAgentSchema = z.object({
       max_duration_seconds: z.number().min(60).max(3600).optional(),
     })
     .optional(),
-    agent_secret_api_key: z.array(agentSecretApiKeySchema).optional().default([]),
-    agent_public_api_key: z.array(agentPublicApiKeySchema).optional().default([]),
+  agent_secret_api_key: z.array(agentSecretApiKeySchema).optional().default([]),
+  agent_public_api_key: z.array(agentPublicApiKeySchema).optional().default([]),
   is_active: z.boolean().optional().default(true),
 })
 
@@ -150,3 +149,49 @@ export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>
 
 export const updateDepartmentSchema = createDepartmentSchema.partial()
 export type UpdateDepartmentInput = z.infer<typeof updateDepartmentSchema>
+
+// ============================================================================
+// WORKSPACE-SCOPED SCHEMAS (Milestone 5)
+// ============================================================================
+
+// Agent schema for workspace context (no department_id, workspace comes from URL)
+export const createWorkspaceAgentSchema = z.object({
+  name: z.string().min(1, "Name is required").max(255),
+  description: z.string().optional(),
+  provider: z.enum(["vapi", "retell", "synthflow"] as const),
+  voice_provider: z
+    .enum(["elevenlabs", "deepgram", "azure", "openai", "cartesia"] as const)
+    .optional(),
+  model_provider: z.enum(["openai", "anthropic", "google", "groq"] as const).optional(),
+  transcriber_provider: z.enum(["deepgram", "assemblyai", "openai"] as const).optional(),
+  config: z
+    .object({
+      system_prompt: z.string().optional(),
+      first_message: z.string().optional(),
+      voice_id: z.string().optional(),
+      voice_settings: z
+        .object({
+          stability: z.number().min(0).max(1).optional(),
+          similarity_boost: z.number().min(0).max(1).optional(),
+          speed: z.number().min(0.5).max(2).optional(),
+        })
+        .optional(),
+      model_settings: z
+        .object({
+          model: z.string().optional(),
+          temperature: z.number().min(0).max(2).optional(),
+          max_tokens: z.number().min(1).max(4096).optional(),
+        })
+        .optional(),
+      max_duration_seconds: z.number().min(60).max(3600).optional(),
+    })
+    .optional(),
+  agent_secret_api_key: z.array(agentSecretApiKeySchema).optional().default([]),
+  agent_public_api_key: z.array(agentPublicApiKeySchema).optional().default([]),
+  is_active: z.boolean().optional().default(true),
+})
+
+export type CreateWorkspaceAgentInput = z.infer<typeof createWorkspaceAgentSchema>
+
+export const updateWorkspaceAgentSchema = createWorkspaceAgentSchema.partial()
+export type UpdateWorkspaceAgentInput = z.infer<typeof updateWorkspaceAgentSchema>

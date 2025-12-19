@@ -3,10 +3,20 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Building2, Users, Settings, BarChart3, CreditCard, Shield, Bell } from "lucide-react"
+import {
+  Building2,
+  Users,
+  Settings,
+  BarChart3,
+  CreditCard,
+  Shield,
+  Bell,
+  Briefcase,
+} from "lucide-react"
 
 const navigation = [
-  { name: "Organizations", href: "/super-admin", icon: Building2 },
+  { name: "Partners", href: "/super-admin/partners", icon: Briefcase },
+  { name: "Organizations", href: "/super-admin", icon: Building2 }, // Keep for legacy viewing
   { name: "Users", href: "/super-admin/users", icon: Users },
   { name: "Analytics", href: "/super-admin/analytics", icon: BarChart3 },
   { name: "Billing", href: "/super-admin/billing", icon: CreditCard },

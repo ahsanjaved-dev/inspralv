@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "sonner"
 import { QueryProvider } from "@/lib/providers/query-provider"
+import { generatePartnerMetadata } from "@/lib/metadata"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,9 +15,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 })
 
-export const metadata: Metadata = {
-  title: "Inspralv",
-  description: "AI Voice Integration Platform",
+export async function generateMetadata(): Promise<Metadata> {
+  return generatePartnerMetadata()
 }
 
 export default function RootLayout({

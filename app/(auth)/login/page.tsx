@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Loader2 } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -37,7 +38,8 @@ export default function LoginPage() {
 
       if (error) throw error
 
-      router.push("/dashboard")
+      // Redirect to workspace selector (which auto-redirects if only 1 workspace)
+      router.push("/select-workspace")
       router.refresh()
     } catch (error: any) {
       setError(error.message || "Failed to login")
@@ -47,15 +49,15 @@ export default function LoginPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Welcome back</CardTitle>
+    <Card className="shadow-xl">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Welcome back</CardTitle>
         <CardDescription>Sign in to your account to continue</CardDescription>
       </CardHeader>
       <form onSubmit={handleLogin}>
         <CardContent className="space-y-4">
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-md text-sm">
+            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm">
               {error}
             </div>
           )}
@@ -68,6 +70,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={loading}
             />
           </div>
           <div className="space-y-2">
@@ -79,17 +82,25 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={loading}
             />
           </div>
           <div className="text-right">
-            <Link href="/forgot-password" className="text-sm text-blue-600 hover:underline">
+            <Link href="/forgot-password" className="text-sm text-primary hover:underline">
               Forgot password?
             </Link>
           </div>
         </CardContent>
         <CardFooter className="flex flex-col space-y-4">
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Signing in..." : "Sign in"}
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Signing in...
+              </>
+            ) : (
+              "Sign in"
+            )}
           </Button>
         </CardFooter>
       </form>
