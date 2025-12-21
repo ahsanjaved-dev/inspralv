@@ -159,9 +159,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         role,
         message: message || undefined,
         expiresAt: invitation.expires_at,
-        partnerName: ctx.partner.branding.company_name || ctx.partner.name,
-        primaryColor: ctx.partner.branding.primary_color,
-        logoUrl: ctx.partner.branding.logo_url,
+        partnerBranding: {
+          companyName: ctx.partner.branding.company_name || ctx.partner.name,
+          primaryColor: ctx.partner.branding.primary_color,
+          logoUrl: ctx.partner.branding.logo_url,
+        },
       })
     } catch (emailError) {
       console.error("Failed to send invitation email:", emailError)
