@@ -7,6 +7,7 @@ import type { Partner, PartnerDomain, Workspace, PaginatedResponse } from "@/typ
 interface PartnerWithDomains extends Partner {
   partner_domains: PartnerDomain[]
   workspace_count?: number
+  agent_count?: number
 }
 
 interface CreatePartnerInput {
