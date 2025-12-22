@@ -6,13 +6,13 @@ import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Shield, Loader2 } from "lucide-react"
+import { Shield, Loader2, Eye, EyeOff } from "lucide-react"
 
 export default function SuperAdminLoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -52,26 +52,31 @@ export default function SuperAdminLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
-      <Card className="w-full max-w-md border-slate-700 bg-slate-800/50 backdrop-blur">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-16 h-16 bg-linear-to-br from-violet-500 to-purple-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-purple-500/25">
-            <Shield className="h-8 w-8 text-white" />
+    <div className="superadmin-theme min-h-screen flex bg-white">
+      {/* Left Side - Form */}
+      <div className="flex-1 flex items-center justify-center p-8 lg:p-16">
+        <div className="w-full max-w-md">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center mb-6 shadow-lg shadow-primary/25">
+              <Shield className="w-7 h-7 text-primary-foreground" />
+            </div>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Super Admin</h1>
+            <p className="text-muted-foreground">Platform administration access</p>
           </div>
-          <CardTitle className="text-2xl text-white">Super Admin</CardTitle>
-          <CardDescription className="text-slate-400">
-            Platform administration access
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleLogin}>
-          <CardContent className="space-y-4">
+
+          {/* Form */}
+          <form onSubmit={handleLogin} className="space-y-5">
+            {/* Error Message */}
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg text-sm">
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
                 {error}
               </div>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-slate-300">
+
+            {/* Email */}
+            <div>
+              <Label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
                 Email
               </Label>
               <Input
@@ -82,46 +87,75 @@ export default function SuperAdminLoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 disabled={loading}
-                className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500"
+                className="w-full px-4 py-3 h-auto border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all bg-background text-foreground placeholder:text-muted-foreground"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-slate-300">
+
+            {/* Password */}
+            <div>
+              <Label htmlFor="password" className="block text-sm font-medium text-foreground mb-2">
                 Password
               </Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={loading}
-                className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="w-full px-4 py-3 h-auto pr-12 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all bg-background text-foreground placeholder:text-muted-foreground"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPassword ? (
+                    <Eye className="w-5 h-5" />
+                  ) : (
+                    <EyeOff className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
             </div>
+
+            {/* Submit Button */}
             <Button
               type="submit"
-              className="w-full bg-linear-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
               disabled={loading}
+              className="w-full py-3 h-auto bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg transition-colors"
             >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Authenticating...
                 </>
               ) : (
-                "Sign In"
+                "Sign in"
               )}
             </Button>
-          </CardContent>
-        </form>
-        <div className="px-6 pb-6">
-          <p className="text-xs text-center text-slate-500">
+          </form>
+
+          {/* Footer Note */}
+          <p className="text-center mt-8 text-muted-foreground text-sm">
             This area is restricted to platform administrators only.
           </p>
         </div>
-      </Card>
+      </div>
+
+      {/* Right Side - Gradient Panel (desktop only) */}
+      <div className="hidden lg:flex lg:flex-1 items-center justify-center p-16 rounded-l-[3rem] bg-gradient-to-br from-violet-200 via-blue-200 to-purple-200">
+        <div className="max-w-lg text-center">
+          <h2 className="text-4xl font-bold text-gray-800 mb-6 leading-tight">
+            Welcome to <span className="text-primary">Inspralv</span> Platform Admin
+          </h2>
+          <p className="text-xl text-gray-700">
+            Manage partners, workspaces, and platform settings from one place.
+          </p>
+        </div>
+      </div>
     </div>
   )
 }
