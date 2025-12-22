@@ -195,3 +195,56 @@ export type CreateWorkspaceAgentInput = z.infer<typeof createWorkspaceAgentSchem
 
 export const updateWorkspaceAgentSchema = createWorkspaceAgentSchema.partial()
 export type UpdateWorkspaceAgentInput = z.infer<typeof updateWorkspaceAgentSchema>
+
+// ============================================================================
+// PARTNER REQUEST API TYPES (Phase 1 - Milestone 1)
+// ============================================================================
+
+export interface SubdomainCheckResponse {
+  available: boolean
+  message?: string
+}
+
+export interface PartnerRequestSubmissionResponse {
+  success: boolean
+  requestId: string
+  message: string
+}
+
+export interface ApprovePartnerRequestInput {
+  requestId: string
+  notes?: string
+}
+
+export interface RejectPartnerRequestInput {
+  requestId: string
+  reason: string
+  sendEmail?: boolean
+}
+
+export interface ProvisionPartnerInput {
+  requestId: string
+  overrides?: {
+    plan_tier?: string
+    resource_limits?: Record<string, number>
+    features?: Record<string, boolean>
+  }
+}
+
+export interface ProvisionPartnerResponse {
+  success: boolean
+  partnerId: string
+  ownerEmail: string
+  temporaryPassword: string
+  loginUrl: string
+  message: string
+}
+
+export interface PartnerRequestFilters {
+  status?: "pending" | "approved" | "rejected" | "provisioning" | "all"
+  search?: string
+  page?: number
+  pageSize?: number
+  sortBy?: "requested_at" | "company_name" | "status"
+  sortOrder?: "asc" | "desc"
+}

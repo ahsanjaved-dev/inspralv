@@ -501,3 +501,136 @@ export interface PartnerMembership {
   role: PartnerMemberRole
   is_platform_partner: boolean
 }
+
+// ============================================================================
+// PARTNER REQUEST TYPES (Phase 1 - Milestone 1)
+// ============================================================================
+
+export type PartnerRequestStatus = "pending" | "approved" | "rejected" | "provisioning"
+
+export type PartnerOnboardingStatus = "active" | "provisioning" | "suspended"
+
+export interface PartnerRequestBrandingData {
+  logo_url?: string
+  primary_color?: string
+  secondary_color?: string
+  favicon_url?: string
+  company_name?: string
+}
+
+export interface PartnerRequest {
+  id: string
+  status: PartnerRequestStatus
+
+  // Company & Contact
+  company_name: string
+  contact_email: string
+  contact_name: string
+  phone: string | null
+
+  // Domain & Technical
+  desired_subdomain: string
+  custom_domain: string | null
+
+  // Business Information
+  business_description: string
+  expected_users: number | null
+  use_case: string
+
+  // Branding
+  branding_data: PartnerRequestBrandingData
+
+  // Plan & Billing
+  selected_plan: string
+  billing_info: Record<string, unknown> | null
+
+  // Request Tracking
+  requested_at: string
+  reviewed_at: string | null
+  reviewed_by: string | null
+  rejection_reason: string | null
+
+  // Provisioning
+  provisioned_partner_id: string | null
+
+  // Metadata
+  metadata: Record<string, unknown>
+
+  // Timestamps
+  created_at: string
+  updated_at: string
+}
+
+export interface PartnerRequestWithReviewer extends PartnerRequest {
+  reviewer?: {
+    id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+  }
+}
+
+export interface PartnerRequestWithPartner extends PartnerRequest {
+  partner?: Partner
+}
+
+export const partnerRequestBrandingSchema = z.object({
+  logo_url: z.string().url().optional(),
+  primary_color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .optional(),
+  secondary_color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .optional(),
+  favicon_url: z.string().url().optional(),
+  company_name: z.string().max(255).optional(),
+})
+
+export const createPartnerRequestSchema = z.object({
+  // Company & Contact (Step 1)
+  company_name: z.string().min(2, "Company name must be at least 2 characters").max(255),
+  contact_name: z.string().min(2, "Contact name must be at least 2 characters").max(255),
+  contact_email: z.string().email("Valid email is required"),
+  phone: z.string().optional(),
+
+  // Business Details (Step 2)
+  business_description: z.string().min(10, "Please provide at least 10 characters").max(1000),
+  expected_users: z.number().int().min(1).max(10000).optional(),
+  use_case: z.string().min(10, "Please describe your use case").max(1000),
+
+  // Technical & Branding (Step 3)
+  custom_domain: z
+    .string()
+    .min(4, "Domain must be at least 4 characters")
+    .max(255)
+    .regex(
+      /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,}$/,
+      "Please enter a valid domain (e.g., app.yourdomain.com)"
+    ),
+  desired_subdomain: z
+    .string()
+    .min(3)
+    .max(50)
+    .regex(/^[a-z0-9-]+$/)
+    .optional(), // Now optional, used only as slug
+  branding_data: partnerRequestBrandingSchema.optional(),
+
+  // Plan Selection
+  selected_plan: z.enum(["enterprise"]).default("enterprise"),
+
+  // Optional Metadata
+  metadata: z.record(z.string(), z.string()).optional(),
+})
+
+export type CreatePartnerRequestInput = z.infer<typeof createPartnerRequestSchema>
+
+export const updatePartnerRequestSchema = z.object({
+  status: z.enum(["pending", "approved", "rejected", "provisioning"]).optional(),
+  rejection_reason: z.string().optional(),
+  reviewed_by: z.string().uuid().optional(),
+  provisioned_partner_id: z.string().uuid().optional(),
+})
+
+export type UpdatePartnerRequestInput = z.infer<typeof updatePartnerRequestSchema>

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import { createWorkspaceInvitationSchema } from "@/types/database.types"
-import { sendWorkspaceInvitationEmail } from "@/lib/email/send"
+import { sendWorkspaceInvitation } from "@/lib/email/send"
 import { headers } from "next/headers"
 
 interface RouteContext {
@@ -151,20 +151,16 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         ? `${ctx.user.first_name} ${ctx.user.last_name || ""}`.trim()
         : ctx.user.email
 
-      await sendWorkspaceInvitationEmail({
-        to: email,
-        workspaceName: ctx.workspace.name,
+      await sendWorkspaceInvitation(
+        email,
+        ctx.workspace.name,
         inviterName,
         inviteLink,
         role,
-        message: message || undefined,
-        expiresAt: invitation.expires_at,
-        partnerBranding: {
-          companyName: ctx.partner.branding.company_name || ctx.partner.name,
-          primaryColor: ctx.partner.branding.primary_color,
-          logoUrl: ctx.partner.branding.logo_url,
-        },
-      })
+        invitation.expires_at,
+        ctx.partner.name,
+        message || undefined
+      )
     } catch (emailError) {
       console.error("Failed to send invitation email:", emailError)
       // Don't fail the request if email fails - invitation is still created

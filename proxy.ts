@@ -12,6 +12,8 @@ const publicPaths = [
   "/reset-password",
   "/accept-invitation",
   "/accept-workspace-invitation", // ADD THIS
+  "/pricing", // NEW
+  "/request-partner",
 ]
 
 // Super admin paths require super admin auth (handled in layouts)
