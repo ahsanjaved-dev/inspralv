@@ -47,29 +47,28 @@ export async function GET(request: NextRequest) {
     if (!context) return unauthorized()
 
     const searchParams = request.nextUrl.searchParams
-    const status = searchParams.get("status") || "all"
     const search = searchParams.get("search") || ""
+    const planTier = searchParams.get("plan_tier") || "all"
     const page = parseInt(searchParams.get("page") || "1")
     const pageSize = parseInt(searchParams.get("pageSize") || "10")
 
     const adminClient = createAdminClient()
 
-    // Build query
+    // Build query for partners table (not partner_requests!)
     let query = adminClient
-      .from("partner_requests")
-      .select("*", { count: "exact" })
-      .order("requested_at", { ascending: false })
+      .from("partners")
+      .select("*, partner_domains(*)", { count: "exact" })
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
 
-    // Filter by status
-    if (status !== "all") {
-      query = query.eq("status", status)
+    // Filter by plan tier
+    if (planTier !== "all") {
+      query = query.eq("plan_tier", planTier)
     }
 
-    // Search by company name or email
+    // Search by name or slug
     if (search) {
-      query = query.or(
-        `company_name.ilike.%${search}%,contact_email.ilike.%${search}%,contact_name.ilike.%${search}%`
-      )
+      query = query.or(`name.ilike.%${search}%,slug.ilike.%${search}%`)
     }
 
     // Pagination
@@ -77,22 +76,58 @@ export async function GET(request: NextRequest) {
     const to = from + pageSize - 1
     query = query.range(from, to)
 
-    const { data: requests, error, count } = await query
+    const { data: partners, error, count } = await query
 
     if (error) {
-      console.error("List partner requests error:", error)
+      console.error("List partners error:", error)
       return serverError()
     }
 
+    // Fetch workspace and agent counts for each partner
+    const partnersWithCounts = await Promise.all(
+      (partners || []).map(async (partner) => {
+        // Get workspace count
+        const { count: workspaceCount } = await adminClient
+          .from("workspaces")
+          .select("*", { count: "exact", head: true })
+          .eq("partner_id", partner.id)
+          .is("deleted_at", null)
+
+        // Get agent count across all workspaces
+        const { data: workspaces } = await adminClient
+          .from("workspaces")
+          .select("id")
+          .eq("partner_id", partner.id)
+          .is("deleted_at", null)
+
+        let agentCount = 0
+        if (workspaces && workspaces.length > 0) {
+          const workspaceIds = workspaces.map((w) => w.id)
+          const { count: agents } = await adminClient
+            .from("ai_agents")
+            .select("*", { count: "exact", head: true })
+            .in("workspace_id", workspaceIds)
+            .is("deleted_at", null)
+          agentCount = agents || 0
+        }
+
+        return {
+          ...partner,
+          workspace_count: workspaceCount || 0,
+          agent_count: agentCount,
+        }
+      })
+    )
+
     return apiResponse({
-      data: requests,
+      data: partnersWithCounts,
       total: count || 0,
       page,
       pageSize,
       totalPages: Math.ceil((count || 0) / pageSize),
     })
   } catch (error) {
-    console.error("GET /api/super-admin/partner-requests error:", error)
+    console.error("GET /api/super-admin/partners error:", error)
     return serverError()
   }
 }

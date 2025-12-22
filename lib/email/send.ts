@@ -54,7 +54,7 @@ export async function sendWorkspaceInvitation(
   message?: string
 ) {
   // Use test email in development, real email in production
-  const to = env.isDev ? "drewcarter112233@gmail.com" : recipientEmail
+  const to = env.isDev ? TEST_EMAIL : recipientEmail
 
   return sendEmail({
     to,
@@ -71,6 +71,9 @@ export async function sendWorkspaceInvitation(
   })
 }
 
+// Test email for development mode
+const TEST_EMAIL = "drewcarter112233@gmail.com"
+
 // NEW: Partner request notification to super admin
 export async function sendPartnerRequestNotification(requestData: {
   id: string
@@ -78,17 +81,21 @@ export async function sendPartnerRequestNotification(requestData: {
   contact_name: string
   contact_email: string
   desired_subdomain: string
+  custom_domain?: string
 }) {
   const reviewUrl = `${env.appUrl}/super-admin/partner-requests/${requestData.id}`
+  // Use test email in development, real super admin email in production
+  const to = env.isDev ? TEST_EMAIL : env.superAdminEmail
 
   return sendEmail({
-    to: env.superAdminEmail,
+    to,
     subject: `New White-Label Partner Request: ${requestData.company_name}`,
     react: PartnerRequestNotificationEmail({
       companyName: requestData.company_name,
       contactName: requestData.contact_name,
       contactEmail: requestData.contact_email,
       desiredSubdomain: requestData.desired_subdomain,
+      customDomain: requestData.custom_domain,
       reviewUrl,
     }),
   })
@@ -101,17 +108,22 @@ export async function sendPartnerApprovalEmail(
     company_name: string
     subdomain: string
     login_url: string
-    temporary_password: string
+    temporary_password: string | null
+    contact_email?: string
   }
 ) {
+  // Use test email in development, real email in production
+  const to = env.isDev ? TEST_EMAIL : email
+
   return sendEmail({
-    to: email,
+    to,
     subject: `Welcome to Your White-Label Platform - ${partnerData.company_name}`,
     react: PartnerRequestApprovedEmail({
       companyName: partnerData.company_name,
       subdomain: partnerData.subdomain,
       loginUrl: partnerData.login_url,
-      temporaryPassword: partnerData.temporary_password,
+      temporaryPassword: partnerData.temporary_password || "",
+      contactEmail: partnerData.contact_email || email,
     }),
   })
 }
@@ -125,8 +137,11 @@ export async function sendPartnerRejectionEmail(
     reason: string
   }
 ) {
+  // Use test email in development, real email in production
+  const to = env.isDev ? TEST_EMAIL : email
+
   return sendEmail({
-    to: email,
+    to,
     subject: `Update on Your White-Label Partnership Request`,
     react: PartnerRequestRejectedEmail({
       companyName: data.company_name,

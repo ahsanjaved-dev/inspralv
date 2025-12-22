@@ -15,6 +15,7 @@ interface PartnerRequestNotificationEmailProps {
   contactName: string
   contactEmail: string
   desiredSubdomain: string
+  customDomain?: string
   reviewUrl: string
 }
 
@@ -23,6 +24,7 @@ export function PartnerRequestNotificationEmail({
   contactName,
   contactEmail,
   desiredSubdomain,
+  customDomain,
   reviewUrl,
 }: PartnerRequestNotificationEmailProps) {
   return (
@@ -48,7 +50,14 @@ export function PartnerRequestNotificationEmail({
             <Text style={infoValue}>{contactEmail}</Text>
 
             <Text style={infoLabel}>Desired Subdomain:</Text>
-            <Text style={infoValue}>{desiredSubdomain}.inspralv.com</Text>
+            <Text style={infoValue}>{desiredSubdomain}</Text>
+
+            {customDomain && (
+              <>
+                <Text style={infoLabel}>Custom Domain:</Text>
+                <Text style={infoValue}>{customDomain}</Text>
+              </>
+            )}
           </Section>
 
           <Section style={buttonContainer}>

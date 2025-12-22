@@ -28,7 +28,10 @@ export async function GET(request: NextRequest) {
         slug: auth.partner.slug,
         branding: auth.partner.branding,
         is_platform_partner: auth.partner.is_platform_partner,
+        plan_tier: auth.partner.plan_tier,
       },
+      partnerRole: auth.partnerRole,
+      partnerMembership: auth.partnerMembership,
       workspaces: auth.workspaces.map((w) => ({
         id: w.id,
         name: w.name,

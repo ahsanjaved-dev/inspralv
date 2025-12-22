@@ -75,7 +75,8 @@ export async function POST(request: NextRequest) {
         company_name: partnerRequest.company_name,
         contact_name: partnerRequest.contact_name,
         contact_email: partnerRequest.contact_email,
-        desired_subdomain: partnerRequest.custom_domain,
+        desired_subdomain: partnerRequest.desired_subdomain,
+        custom_domain: partnerRequest.custom_domain,
       })
     } catch (emailError) {
       // Log email error but don't fail the request

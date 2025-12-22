@@ -11,6 +11,25 @@ interface PartnerRequestFilters {
   pageSize?: number
 }
 
+export interface EditPartnerRequestData {
+  company_name?: string
+  contact_name?: string
+  contact_email?: string
+  phone?: string | null
+  custom_domain?: string
+  desired_subdomain?: string
+  business_description?: string
+  expected_users?: number | null
+  use_case?: string
+  selected_plan?: "starter" | "professional" | "enterprise"
+  branding_data?: {
+    logo_url?: string
+    primary_color?: string
+    secondary_color?: string
+    company_name?: string
+  }
+}
+
 export function usePartnerRequests(filters: PartnerRequestFilters = {}) {
   return useQuery<PaginatedResponse<PartnerRequest>>({
     queryKey: ["super-admin-partner-requests", filters],
@@ -83,6 +102,57 @@ export function useRejectPartnerRequest() {
       if (!res.ok) {
         const error = await res.json()
         throw new Error(error.error || "Failed to reject request")
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["super-admin-partner-requests"] })
+    },
+  })
+}
+
+export function useEditPartnerRequest() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      requestId,
+      data,
+    }: {
+      requestId: string
+      data: EditPartnerRequestData
+    }) => {
+      const res = await fetch(`/api/super-admin/partner-requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Failed to update partner request")
+      }
+      return res.json()
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["super-admin-partner-requests"] })
+      queryClient.invalidateQueries({
+        queryKey: ["super-admin-partner-request", variables.requestId],
+      })
+    },
+  })
+}
+
+export function useDeletePartnerRequest() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (requestId: string) => {
+      const res = await fetch(`/api/super-admin/partner-requests/${requestId}`, {
+        method: "DELETE",
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Failed to delete partner request")
       }
       return res.json()
     },

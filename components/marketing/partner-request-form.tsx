@@ -132,14 +132,16 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
         body: formDataUpload,
       })
 
-      const data = await res.json()
+      const result = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to upload logo")
+        throw new Error(result.error || "Failed to upload logo")
       }
 
-      setFormData({ ...formData, logo_url: data.url })
-      setUploadedFileName(data.filename)
+      // apiResponse wraps data in { data: ... }
+      const uploadData = result.data || result
+      setFormData({ ...formData, logo_url: uploadData.url })
+      setUploadedFileName(uploadData.filename)
       toast.success("Logo uploaded successfully!")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to upload logo")

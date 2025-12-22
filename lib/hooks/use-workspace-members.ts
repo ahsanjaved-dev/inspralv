@@ -100,3 +100,55 @@ export function useCancelWorkspaceInvitation() {
     },
   })
 }
+
+/**
+ * Hook to update a workspace member's role
+ */
+export function useUpdateWorkspaceMemberRole() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ memberId, role }: { memberId: string; role: string }) => {
+      const res = await fetch(`/api/w/${workspaceSlug}/members/${memberId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Failed to update role")
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceSlug] })
+    },
+  })
+}
+
+/**
+ * Hook to remove a workspace member
+ */
+export function useRemoveWorkspaceMember() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (memberId: string) => {
+      const res = await fetch(`/api/w/${workspaceSlug}/members/${memberId}`, {
+        method: "DELETE",
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Failed to remove member")
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceSlug] })
+    },
+  })
+}

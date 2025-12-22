@@ -53,6 +53,7 @@ export default async function WorkspaceLayout({ children, params }: Props) {
       partner={auth.partner}
       currentWorkspace={workspace}
       workspaces={auth.workspaces}
+      partnerRole={auth.partnerRole}
     >
       {children}
     </WorkspaceDashboardLayout>

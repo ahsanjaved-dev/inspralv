@@ -34,8 +34,10 @@ function SignupForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect")
   const selectedPlan = (searchParams.get("plan") as PlanKey) || null
+  const prefilledEmail = searchParams.get("email") || ""
+  const isInvitation = redirectTo?.includes("invitation")
 
-  const [email, setEmail] = useState("")
+  const [email, setEmail] = useState(prefilledEmail)
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [firstName, setFirstName] = useState("")
@@ -115,14 +117,21 @@ function SignupForm() {
           }),
         })
 
-        if (!setupRes.ok) {
+        let setupData = null
+        if (setupRes.ok) {
+          const res = await setupRes.json()
+          setupData = res.data
+        } else {
           console.error("User setup failed:", await setupRes.text())
           // Continue anyway - user is authenticated
         }
 
-        // Redirect to invitation or workspace selector
+        // Redirect to invitation, workspace (if auto-created), or workspace selector
         if (redirectTo) {
           router.push(redirectTo)
+        } else if (setupData?.redirect) {
+          // Direct redirect to the auto-created workspace
+          router.push(setupData.redirect)
         } else {
           router.push("/select-workspace")
         }
@@ -168,8 +177,23 @@ function SignupForm() {
 
   return (
     <div className="w-full max-w-md space-y-4">
+      {/* Invitation Banner */}
+      {isInvitation && prefilledEmail && (
+        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <CheckCircle2 className="h-4 w-4 text-blue-600" />
+              <span className="font-semibold text-blue-900 dark:text-blue-100">You've been invited!</span>
+            </div>
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              Create an account with <strong>{prefilledEmail}</strong> to accept the invitation.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Selected Plan Banner */}
-      {planInfo && (
+      {planInfo && !isInvitation && (
         <Card className="border-primary/50 bg-primary/5">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">

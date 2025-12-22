@@ -12,9 +12,10 @@ import {
 
 interface PartnerRequestApprovedEmailProps {
   companyName: string
-  subdomain: string
+  subdomain: string // This is now the custom domain (e.g., testcorp.localhost)
   loginUrl: string
   temporaryPassword: string
+  contactEmail?: string
 }
 
 export function PartnerRequestApprovedEmail({
@@ -22,7 +23,11 @@ export function PartnerRequestApprovedEmail({
   subdomain,
   loginUrl,
   temporaryPassword,
+  contactEmail,
 }: PartnerRequestApprovedEmailProps) {
+  // Check if this is an existing user (no temp password)
+  const isExistingUser = !temporaryPassword || temporaryPassword.includes("existing")
+  
   return (
     <Html>
       <Head />
@@ -39,17 +44,31 @@ export function PartnerRequestApprovedEmail({
           <Section style={infoBox}>
             <Text style={infoLabel}>Your Platform URL:</Text>
             <Text style={infoValue}>
-              <a href={`https://${subdomain}.inspralv.com`} style={link}>
-                {subdomain}.inspralv.com
+              <a href={loginUrl} style={link}>
+                {subdomain}
               </a>
             </Text>
 
-            <Text style={infoLabel}>Temporary Password:</Text>
-            <Text style={codeText}>{temporaryPassword}</Text>
+            {contactEmail && (
+              <>
+                <Text style={infoLabel}>Login Email:</Text>
+                <Text style={infoValue}>{contactEmail}</Text>
+              </>
+            )}
 
-            <Text style={warningText}>
-              ⚠️ Please change this password immediately after your first login.
-            </Text>
+            {isExistingUser ? (
+              <Text style={infoText}>
+                ✅ Use your existing account password to log in.
+              </Text>
+            ) : (
+              <>
+                <Text style={infoLabel}>Temporary Password:</Text>
+                <Text style={codeText}>{temporaryPassword}</Text>
+                <Text style={warningText}>
+                  ⚠️ Please change this password immediately after your first login.
+                </Text>
+              </>
+            )}
           </Section>
 
           <Section style={buttonContainer}>
@@ -154,6 +173,13 @@ const warningText = {
   color: "#ea580c",
   fontSize: "14px",
   marginTop: "12px",
+  marginBottom: "0",
+}
+
+const infoText = {
+  color: "#16a34a",
+  fontSize: "14px",
+  marginTop: "16px",
   marginBottom: "0",
 }
 

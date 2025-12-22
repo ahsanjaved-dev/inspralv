@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge"
 import { usePartnerRequest } from "@/lib/hooks/use-partner-requests"
 import { ApprovePartnerDialog } from "@/components/super-admin/approve-partner-dialog"
 import { RejectPartnerDialog } from "@/components/super-admin/reject-partner-dialog"
+import { EditPartnerRequestDialog } from "@/components/super-admin/edit-partner-request-dialog"
+import { DeletePartnerRequestDialog } from "@/components/super-admin/delete-partner-request-dialog"
 import {
   ArrowLeft,
   Loader2,
@@ -23,6 +25,8 @@ import {
   XCircle,
   Clock,
   ExternalLink,
+  Pencil,
+  Trash2,
 } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 
@@ -58,6 +62,8 @@ export default function PartnerRequestDetailPage() {
 
   const [approveDialogOpen, setApproveDialogOpen] = useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -113,25 +119,45 @@ export default function PartnerRequestDetailPage() {
             <StatusIcon className="h-3 w-3 mr-1" />
             {status.label}
           </Badge>
-          {isPending && (
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="text-red-600 border-red-200 hover:bg-red-50"
-                onClick={() => setRejectDialogOpen(true)}
-              >
-                <XCircle className="mr-2 h-4 w-4" />
-                Reject
-              </Button>
-              <Button
-                className="bg-green-600 hover:bg-green-700"
-                onClick={() => setApproveDialogOpen(true)}
-              >
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Approve
-              </Button>
-            </div>
-          )}
+          <div className="flex gap-2">
+            {/* Edit button - always available */}
+            <Button
+              variant="outline"
+              onClick={() => setEditDialogOpen(true)}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </Button>
+            {/* Delete button - always available */}
+            <Button
+              variant="outline"
+              className="text-red-600 border-red-200 hover:bg-red-50"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </Button>
+            {/* Approve/Reject - only for pending */}
+            {isPending && (
+              <>
+                <Button
+                  variant="outline"
+                  className="text-red-600 border-red-200 hover:bg-red-50"
+                  onClick={() => setRejectDialogOpen(true)}
+                >
+                  <XCircle className="mr-2 h-4 w-4" />
+                  Reject
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => setApproveDialogOpen(true)}
+                >
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Approve
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -387,6 +413,17 @@ export default function PartnerRequestDetailPage() {
         onOpenChange={setRejectDialogOpen}
         request={request}
         onSuccess={() => refetch()}
+      />
+      <EditPartnerRequestDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        request={request}
+        onSuccess={() => refetch()}
+      />
+      <DeletePartnerRequestDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        request={request}
       />
     </div>
   )

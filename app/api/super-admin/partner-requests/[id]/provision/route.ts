@@ -205,7 +205,37 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       }
     }
 
-    // Step 6: Update partner request status
+    // Step 6: Create a default workspace for the partner
+    const { data: defaultWorkspace, error: wsError } = await adminClient
+      .from("workspaces")
+      .insert({
+        partner_id: partner.id,
+        name: "Default Workspace",
+        slug: "default",
+        description: `Default workspace for ${partnerRequest.company_name}`,
+        resource_limits: {
+          max_users: 50,
+          max_agents: 20,
+          max_minutes_per_month: 10000,
+        },
+        status: "active",
+      })
+      .select()
+      .single()
+
+    if (wsError) {
+      console.error("Create default workspace error:", wsError)
+    } else {
+      // Add owner as workspace admin
+      await adminClient.from("workspace_members").insert({
+        workspace_id: defaultWorkspace.id,
+        user_id: userId,
+        role: "owner",
+        joined_at: new Date().toISOString(),
+      })
+    }
+
+    // Step 7: Update partner request status
     const { error: updateError } = await adminClient
       .from("partner_requests")
       .update({
@@ -218,18 +248,21 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       console.error("Update partner request error:", updateError)
     }
 
-    // Step 7: Update partner onboarding status
+    // Step 8: Update partner onboarding status
     await adminClient.from("partners").update({ onboarding_status: "active" }).eq("id", partner.id)
 
-    // Step 8: Send welcome email
-    const loginUrl = `https://${partnerRequest.custom_domain}/login`
+    // Step 9: Send welcome email
+    // For local testing, use http; for production use https
+    const protocol = partnerRequest.custom_domain.includes("localhost") ? "http" : "https"
+    const loginUrl = `${protocol}://${partnerRequest.custom_domain}${partnerRequest.custom_domain.includes("localhost") ? ":3000" : ""}/login`
 
     try {
       await sendPartnerApprovalEmail(partnerRequest.contact_email, {
         company_name: partnerRequest.company_name,
         subdomain: partnerRequest.custom_domain,
         login_url: loginUrl,
-        temporary_password: temporaryPassword || "(Use your existing password)",
+        temporary_password: temporaryPassword,
+        contact_email: partnerRequest.contact_email,
       })
     } catch (emailError) {
       console.error("Failed to send approval email:", emailError)

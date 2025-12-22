@@ -5,7 +5,7 @@ import { WorkspaceSidebar } from "./workspace-sidebar"
 import { WorkspaceHeader } from "./workspace-header"
 import { BrandingProvider } from "@/context/branding-context"
 import { cn } from "@/lib/utils"
-import type { PartnerAuthUser, AccessibleWorkspace } from "@/types/database.types"
+import type { PartnerAuthUser, AccessibleWorkspace, PartnerMemberRole } from "@/types/database.types"
 import type { ResolvedPartner } from "@/lib/api/partner"
 
 interface Props {
@@ -13,6 +13,7 @@ interface Props {
   partner: ResolvedPartner
   currentWorkspace: AccessibleWorkspace
   workspaces: AccessibleWorkspace[]
+  partnerRole?: PartnerMemberRole | null
   children: React.ReactNode
 }
 
@@ -21,6 +22,7 @@ export function WorkspaceDashboardLayout({
   partner,
   currentWorkspace,
   workspaces,
+  partnerRole,
   children,
 }: Props) {
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -47,6 +49,8 @@ export function WorkspaceDashboardLayout({
           currentWorkspace={currentWorkspace}
           workspaces={workspaces}
           isCollapsed={isCollapsed}
+          partnerRole={partnerRole}
+          user={user}
         />
         <div className="flex-1 flex flex-col overflow-hidden">
           <WorkspaceHeader

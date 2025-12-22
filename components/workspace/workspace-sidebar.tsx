@@ -24,6 +24,8 @@ import {
   MoreVertical,
   HelpCircle,
   ShieldCheck,
+  Building2,
+  UserPlus,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -34,7 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/lib/hooks/use-auth"
-import type { AccessibleWorkspace } from "@/types/database.types"
+import type { AccessibleWorkspace, PartnerAuthUser } from "@/types/database.types"
 import type { ResolvedPartner } from "@/lib/api/partner"
 
 interface Props {
@@ -42,6 +44,8 @@ interface Props {
   currentWorkspace: AccessibleWorkspace
   workspaces: AccessibleWorkspace[]
   isCollapsed: boolean
+  partnerRole?: "owner" | "admin" | "member" | null
+  user?: PartnerAuthUser
 }
 
 // Generate a consistent color based on string
@@ -74,15 +78,29 @@ function getInitials(name: string): string {
     .slice(0, 2)
 }
 
-export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isCollapsed }: Props) {
+export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isCollapsed, partnerRole, user }: Props) {
   const pathname = usePathname()
   const { logout } = useAuth()
 
   const branding = partner.branding
+  
+  // User display data
+  const userName = user?.first_name 
+    ? `${user.first_name} ${user.last_name || ""}`.trim() 
+    : user?.email || "User"
+  const userEmail = user?.email || ""
+  const userInitials = user?.first_name 
+    ? `${user.first_name[0]}${user.last_name?.[0] || ""}`.toUpperCase()
+    : user?.email?.[0]?.toUpperCase() || "U"
   const companyName = branding.company_name || partner.name
 
   // Navigation items scoped to current workspace
   const baseUrl = `/w/${currentWorkspace.slug}`
+  
+  // Role-based navigation - some items only for admins/owners
+  const isWorkspaceAdmin = currentWorkspace.role === "owner" || currentWorkspace.role === "admin"
+  const isPartnerAdmin = partnerRole === "owner" || partnerRole === "admin"
+  
   const navigation = [
     { title: "Dashboard", href: `${baseUrl}/dashboard`, icon: LayoutDashboard },
     { title: "Agents", href: `${baseUrl}/agents`, icon: Bot },
@@ -90,10 +108,17 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
     { title: "Knowledge Base", href: `${baseUrl}/knowledge-base`, icon: BookOpen },
     { title: "Integrations", href: `${baseUrl}/integrations`, icon: Plug },
     { title: "Telephony", href: `${baseUrl}/telephony`, icon: PhoneCall },
-    { title: "Billing", href: `${baseUrl}/billing`, icon: CreditCard },
+    ...(isWorkspaceAdmin ? [{ title: "Billing", href: `${baseUrl}/billing`, icon: CreditCard }] : []),
     { title: "Analytics", href: `${baseUrl}/analytics`, icon: BarChart3 },
     { title: "Calls", href: `${baseUrl}/calls`, icon: Phone },
+    ...(isWorkspaceAdmin ? [{ title: "Workspace Team", href: `${baseUrl}/members`, icon: Users }] : []),
   ]
+  
+  // Organization-level navigation (for partner admins/owners)
+  const orgNavigation = isPartnerAdmin ? [
+    { title: "Organization Team", href: `/org/team`, icon: Building2 },
+    { title: "Invite Members", href: `/org/invitations`, icon: UserPlus },
+  ] : []
 
   return (
     <div
@@ -213,6 +238,12 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
       {/* Navigation */}
       <ScrollArea className="flex-1 py-4">
         <nav className={cn("space-y-1", isCollapsed ? "px-2" : "px-3")}>
+          {/* Workspace Navigation */}
+          {!isCollapsed && (
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2">
+              Workspace
+            </p>
+          )}
           {navigation.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
@@ -235,6 +266,40 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
               </Link>
             )
           })}
+          
+          {/* Organization Navigation (for partner admins/owners) */}
+          {orgNavigation.length > 0 && (
+            <>
+              {!isCollapsed && (
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2 mt-4">
+                  Organization
+                </p>
+              )}
+              {isCollapsed && <Separator className="my-2" />}
+              {orgNavigation.map((item) => {
+                const Icon = item.icon
+                const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={isCollapsed ? item.title : undefined}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg text-sm font-medium transition-colors",
+                      isCollapsed ? "justify-center p-3" : "px-3 py-2.5",
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="w-5 h-5 shrink-0" />
+                    {!isCollapsed && <span>{item.title}</span>}
+                  </Link>
+                )
+              })}
+            </>
+          )}
         </nav>
       </ScrollArea>
 
@@ -243,17 +308,17 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
         {isCollapsed ? (
           <div className="flex justify-center">
             <Avatar className="h-9 w-9">
-              <AvatarFallback className="text-xs bg-muted text-muted-foreground">JS</AvatarFallback>
+              <AvatarFallback className="text-xs bg-primary/10 text-primary">{userInitials}</AvatarFallback>
             </Avatar>
           </div>
         ) : (
           <div className="flex items-center gap-3 px-2">
             <Avatar className="h-9 w-9 shrink-0">
-              <AvatarFallback className="text-xs bg-muted text-muted-foreground">JS</AvatarFallback>
+              <AvatarFallback className="text-xs bg-primary/10 text-primary">{userInitials}</AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">John Smith</p>
-              <p className="text-xs text-muted-foreground truncate">john@acme.com</p>
+              <p className="text-sm font-medium truncate">{userName}</p>
+              <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

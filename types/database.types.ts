@@ -575,7 +575,7 @@ export interface PartnerRequestWithPartner extends PartnerRequest {
 }
 
 export const partnerRequestBrandingSchema = z.object({
-  logo_url: z.string().url().optional(),
+  logo_url: z.string().url().optional().or(z.literal("")),
   primary_color: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/)
@@ -584,7 +584,7 @@ export const partnerRequestBrandingSchema = z.object({
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/)
     .optional(),
-  favicon_url: z.string().url().optional(),
+  favicon_url: z.string().url().optional().or(z.literal("")),
   company_name: z.string().max(255).optional(),
 })
 

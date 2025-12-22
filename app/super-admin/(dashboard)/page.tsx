@@ -165,7 +165,7 @@ export default function SuperAdminDashboard() {
                 {isLoading ? (
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mt-2" />
                 ) : (
-                  <p className="text-3xl font-bold tracking-tight text-foreground">Genius</p>
+                  <p className="text-3xl font-bold tracking-tight text-foreground">Inspralv</p>
                 )}
               </div>
               <div className="w-12 h-12 rounded-full bg-chart-1/10 flex items-center justify-center">
