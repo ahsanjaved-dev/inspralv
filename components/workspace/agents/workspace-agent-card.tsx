@@ -20,11 +20,16 @@ import {
   MessageSquare,
   Clock,
   DollarSign,
+  Phone,
+  AlertCircle,
+  Loader2,
 } from "lucide-react"
 import type { AIAgent } from "@/types/database.types"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { TestCallButton } from "@/components/agents/test-call-button"
+import { useState } from "react"
+import { TestCallModal } from "@/components/agents/test-call-modal"
+import { useTestCallValidation } from "../../../lib/hooks/use-test-call-validations"
 
 interface WorkspaceAgentCardProps {
   agent: AIAgent
@@ -42,6 +47,9 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
   const baseUrl = `/w/${workspaceSlug}`
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  
+  const validation = useTestCallValidation(agent)
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -143,8 +151,22 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
           )}
         </div>
 
+        {/* Buttons Row */}
         <div className="flex gap-2 mt-4">
-          <TestCallButton agent={agent} className="flex-1" />
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            disabled={validation.isLoading || !validation.canCall}
+            onClick={() => validation.canCall && setIsModalOpen(true)}
+          >
+            {validation.isLoading ? (
+              <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+            ) : (
+              <Phone className="mr-2 h-3 w-3" />
+            )}
+            Test Call
+          </Button>
           <Button variant="outline" size="sm" className="flex-1" asChild>
             <Link href={`${baseUrl}/agents/${agent.id}`}>
               <Pencil className="mr-2 h-3 w-3" />
@@ -152,7 +174,23 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
             </Link>
           </Button>
         </div>
+
+        {/* Disabled Reason - shown below buttons */}
+        {!validation.isLoading && !validation.canCall && validation.reason && (
+          <div className="mt-3 flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 dark:bg-muted/30 rounded-md p-2 border border-border/50">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-500 dark:text-amber-400" />
+            <div>
+              <span className="font-medium text-foreground/80">{validation.reason}:</span>{" "}
+              {validation.solution}
+            </div>
+          </div>
+        )}
       </CardContent>
+
+      {/* Test Call Modal */}
+      {validation.canCall && (
+        <TestCallModal agent={agent} open={isModalOpen} onOpenChange={setIsModalOpen} />
+      )}
     </Card>
   )
 }

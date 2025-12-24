@@ -35,7 +35,7 @@ export interface RetellLLMApiResponse {
 }
 
 // ============================================================================
-// API KEY HELPER
+// API KEY HELPER (for legacy support)
 // ============================================================================
 
 function getRetellSecretKey(agentSecretApiKeys: AgentSecretApiKey[]): string {
@@ -44,22 +44,22 @@ function getRetellSecretKey(agentSecretApiKeys: AgentSecretApiKey[]): string {
   )
 
   if (!apiKey?.key) {
-    throw new Error("No active Retell secret API key found. Please add a Retell secret API key to the agent.")
+    throw new Error("No active Retell secret API key found.")
   }
 
   return apiKey.key
 }
 
 // ============================================================================
-// CREATE RETELL LLM
+// CREATE RETELL LLM - WITH KEY
 // ============================================================================
 
-export async function createRetellLLM(
+export async function createRetellLLMWithKey(
   payload: RetellLLMPayload,
-  agentSecretApiKeys: AgentSecretApiKey[]
+  apiKey: string
 ): Promise<RetellLLMApiResponse> {
   try {
-    const apiKey = getRetellSecretKey(agentSecretApiKeys)
+    console.log("[RetellConfig] Creating LLM with payload:", JSON.stringify(payload, null, 2))
 
     const response = await fetch(`${RETELL_BASE_URL}/create-retell-llm`, {
       method: "POST",
@@ -72,38 +72,35 @@ export async function createRetellLLM(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
-      console.error("Retell LLM error details:", JSON.stringify(errorData, null, 2))
+      console.error("[RetellConfig] LLM create error:", errorData)
       return {
         success: false,
-        error: errorData.message || errorData.error || `Retell API error: ${response.status} ${response.statusText}`,
+        error: errorData.message || errorData.error || `Retell API error: ${response.status}`,
       }
     }
 
     const data: RetellLLMResponse = await response.json()
-    return {
-      success: true,
-      data,
-    }
+    console.log("[RetellConfig] LLM created successfully:", data.llm_id)
+    return { success: true, data }
   } catch (error) {
+    console.error("[RetellConfig] LLM create exception:", error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
     }
   }
 }
 
 // ============================================================================
-// UPDATE RETELL LLM
+// UPDATE RETELL LLM - WITH KEY
 // ============================================================================
 
-export async function updateRetellLLM(
+export async function updateRetellLLMWithKey(
   llmId: string,
   payload: Partial<RetellLLMPayload>,
-  agentSecretApiKeys: AgentSecretApiKey[]
+  apiKey: string
 ): Promise<RetellLLMApiResponse> {
   try {
-    const apiKey = getRetellSecretKey(agentSecretApiKeys)
-
     const response = await fetch(`${RETELL_BASE_URL}/update-retell-llm/${llmId}`, {
       method: "PATCH",
       headers: {
@@ -117,34 +114,29 @@ export async function updateRetellLLM(
       const errorData = await response.json().catch(() => ({}))
       return {
         success: false,
-        error: errorData.message || errorData.error || `Retell API error: ${response.status} ${response.statusText}`,
+        error: errorData.message || errorData.error || `Retell API error: ${response.status}`,
       }
     }
 
     const data: RetellLLMResponse = await response.json()
-    return {
-      success: true,
-      data,
-    }
+    return { success: true, data }
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
     }
   }
 }
 
 // ============================================================================
-// DELETE RETELL LLM
+// DELETE RETELL LLM - WITH KEY
 // ============================================================================
 
-export async function deleteRetellLLM(
+export async function deleteRetellLLMWithKey(
   llmId: string,
-  agentSecretApiKeys: AgentSecretApiKey[]
-): Promise<RetellLLMApiResponse> {
+  apiKey: string
+): Promise<{ success: boolean; error?: string }> {
   try {
-    const apiKey = getRetellSecretKey(agentSecretApiKeys)
-
     const response = await fetch(`${RETELL_BASE_URL}/delete-retell-llm/${llmId}`, {
       method: "DELETE",
       headers: {
@@ -156,7 +148,7 @@ export async function deleteRetellLLM(
       const errorData = await response.json().catch(() => ({}))
       return {
         success: false,
-        error: errorData.message || errorData.error || `Retell API error: ${response.status} ${response.statusText}`,
+        error: errorData.message || errorData.error || `Retell API error: ${response.status}`,
       }
     }
 
@@ -164,22 +156,23 @@ export async function deleteRetellLLM(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
     }
   }
 }
 
 // ============================================================================
-// CREATE RETELL AGENT
+// CREATE RETELL AGENT - WITH KEY
 // ============================================================================
 
-export async function createRetellAgent(
+export async function createRetellAgentWithKey(
   payload: RetellAgentPayload,
-  agentSecretApiKeys: AgentSecretApiKey[]
+  apiKey: string
 ): Promise<RetellResponse> {
   try {
-    const apiKey = getRetellSecretKey(agentSecretApiKeys)
+    console.log("[RetellConfig] Creating agent with payload:", JSON.stringify(payload, null, 2))
 
+    // FIXED: Use correct Retell endpoint (no /v2 prefix per docs)
     const response = await fetch(`${RETELL_BASE_URL}/create-agent`, {
       method: "POST",
       headers: {
@@ -190,39 +183,43 @@ export async function createRetellAgent(
     })
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      console.error("Retell Agent error details:", JSON.stringify(errorData, null, 2))
+      const errorText = await response.text()
+      let errorData: any = {}
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {
+        errorData = { message: errorText || `HTTP ${response.status}` }
+      }
+      console.error("[RetellConfig] Agent create error:", response.status, errorData)
       return {
         success: false,
-        error: errorData.message || errorData.error || `Retell API error: ${response.status} ${response.statusText}`,
+        error: errorData.message || errorData.error || `Retell API error: ${response.status}`,
       }
     }
 
     const data: RetellAgentResponse = await response.json()
-    return {
-      success: true,
-      data,
-    }
+    console.log("[RetellConfig] Agent created successfully:", data.agent_id)
+    return { success: true, data }
   } catch (error) {
+    console.error("[RetellConfig] Agent create exception:", error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
     }
   }
 }
 
 // ============================================================================
-// UPDATE RETELL AGENT
+// UPDATE RETELL AGENT - WITH KEY
 // ============================================================================
 
-export async function updateRetellAgent(
+export async function updateRetellAgentWithKey(
   externalAgentId: string,
   payload: Partial<RetellAgentPayload>,
-  agentSecretApiKeys: AgentSecretApiKey[]
+  apiKey: string
 ): Promise<RetellResponse> {
   try {
-    const apiKey = getRetellSecretKey(agentSecretApiKeys)
-
+    // FIXED: Use correct Retell endpoint (no /v2 prefix per docs)
     const response = await fetch(`${RETELL_BASE_URL}/update-agent/${externalAgentId}`, {
       method: "PATCH",
       headers: {
@@ -233,37 +230,40 @@ export async function updateRetellAgent(
     })
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+      const errorText = await response.text()
+      let errorData: any = {}
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {
+        errorData = { message: errorText || `HTTP ${response.status}` }
+      }
+      console.error("[RetellConfig] Agent update error:", response.status, errorData)
       return {
         success: false,
-        error: errorData.message || errorData.error || `Retell API error: ${response.status} ${response.statusText}`,
+        error: errorData.message || errorData.error || `Retell API error: ${response.status}`,
       }
     }
 
     const data: RetellAgentResponse = await response.json()
-    return {
-      success: true,
-      data,
-    }
+    return { success: true, data }
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
     }
   }
 }
 
 // ============================================================================
-// DELETE RETELL AGENT
+// DELETE RETELL AGENT - WITH KEY
 // ============================================================================
 
-export async function deleteRetellAgent(
+export async function deleteRetellAgentWithKey(
   externalAgentId: string,
-  agentSecretApiKeys: AgentSecretApiKey[]
+  apiKey: string
 ): Promise<RetellResponse> {
   try {
-    const apiKey = getRetellSecretKey(agentSecretApiKeys)
-
+    // FIXED: Use correct Retell endpoint (no /v2 prefix per docs)
     const response = await fetch(`${RETELL_BASE_URL}/delete-agent/${externalAgentId}`, {
       method: "DELETE",
       headers: {
@@ -272,10 +272,16 @@ export async function deleteRetellAgent(
     })
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+      const errorText = await response.text()
+      let errorData: any = {}
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {
+        errorData = { message: errorText || `HTTP ${response.status}` }
+      }
       return {
         success: false,
-        error: errorData.message || errorData.error || `Retell API error: ${response.status} ${response.statusText}`,
+        error: errorData.message || errorData.error || `Retell API error: ${response.status}`,
       }
     }
 
@@ -283,7 +289,61 @@ export async function deleteRetellAgent(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error occurred",
+      error: error instanceof Error ? error.message : "Unknown error",
     }
   }
+}
+
+// ============================================================================
+// LEGACY FUNCTIONS (backward compatibility)
+// ============================================================================
+
+export async function createRetellLLM(
+  payload: RetellLLMPayload,
+  agentSecretApiKeys: AgentSecretApiKey[]
+): Promise<RetellLLMApiResponse> {
+  const apiKey = getRetellSecretKey(agentSecretApiKeys)
+  return createRetellLLMWithKey(payload, apiKey)
+}
+
+export async function updateRetellLLM(
+  llmId: string,
+  payload: Partial<RetellLLMPayload>,
+  agentSecretApiKeys: AgentSecretApiKey[]
+): Promise<RetellLLMApiResponse> {
+  const apiKey = getRetellSecretKey(agentSecretApiKeys)
+  return updateRetellLLMWithKey(llmId, payload, apiKey)
+}
+
+export async function deleteRetellLLM(
+  llmId: string,
+  agentSecretApiKeys: AgentSecretApiKey[]
+): Promise<{ success: boolean; error?: string }> {
+  const apiKey = getRetellSecretKey(agentSecretApiKeys)
+  return deleteRetellLLMWithKey(llmId, apiKey)
+}
+
+export async function createRetellAgent(
+  payload: RetellAgentPayload,
+  agentSecretApiKeys: AgentSecretApiKey[]
+): Promise<RetellResponse> {
+  const apiKey = getRetellSecretKey(agentSecretApiKeys)
+  return createRetellAgentWithKey(payload, apiKey)
+}
+
+export async function updateRetellAgent(
+  externalAgentId: string,
+  payload: Partial<RetellAgentPayload>,
+  agentSecretApiKeys: AgentSecretApiKey[]
+): Promise<RetellResponse> {
+  const apiKey = getRetellSecretKey(agentSecretApiKeys)
+  return updateRetellAgentWithKey(externalAgentId, payload, apiKey)
+}
+
+export async function deleteRetellAgent(
+  externalAgentId: string,
+  agentSecretApiKeys: AgentSecretApiKey[]
+): Promise<RetellResponse> {
+  const apiKey = getRetellSecretKey(agentSecretApiKeys)
+  return deleteRetellAgentWithKey(externalAgentId, apiKey)
 }

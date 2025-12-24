@@ -1,126 +1,195 @@
 "use client"
 
+import { useState } from "react"
 import { useParams } from "next/navigation"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Plug, ExternalLink, Check } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useWorkspaceIntegrations } from "@/lib/hooks/use-workspace-integrations"
+import { ConnectIntegrationDialog } from "@/components/workspace/integrations/connect-integartion-dialog"
+import { Plug, Loader2, Check, Plus } from "lucide-react"
 
-const integrations = [
+interface AvailableIntegration {
+  id: string
+  name: string
+  description: string
+  icon: string
+  category: string
+}
+
+const availableIntegrations: AvailableIntegration[] = [
   {
     id: "vapi",
     name: "Vapi",
-    description: "Connect your Vapi account to sync voice agents.",
+    description: "Build and deploy AI voice agents with Vapi's platform",
     icon: "🎙️",
-    status: "available",
     category: "Voice AI",
   },
   {
     id: "retell",
     name: "Retell AI",
-    description: "Integrate with Retell for advanced voice capabilities.",
-    icon: "📞",
-    status: "available",
+    description: "Create conversational AI agents with Retell",
+    icon: "🤖",
     category: "Voice AI",
   },
   {
-    id: "hubspot",
-    name: "HubSpot",
-    description: "Sync leads and contacts with HubSpot CRM.",
-    icon: "🔶",
-    status: "coming_soon",
-    category: "CRM",
-  },
-  {
-    id: "salesforce",
-    name: "Salesforce",
-    description: "Connect your Salesforce account for lead management.",
-    icon: "☁️",
-    status: "coming_soon",
-    category: "CRM",
-  },
-  {
-    id: "zapier",
-    name: "Zapier",
-    description: "Automate workflows with 5000+ apps.",
-    icon: "⚡",
-    status: "coming_soon",
-    category: "Automation",
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    description: "Get notifications and updates in Slack.",
-    icon: "💬",
-    status: "coming_soon",
-    category: "Communication",
+    id: "synthflow",
+    name: "Synthflow",
+    description: "AI-powered voice automation platform",
+    icon: "🔊",
+    category: "Voice AI",
   },
 ]
 
-export default function IntegrationsPage() {
+export default function WorkspaceIntegrationsPage() {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
 
+  const [dialogState, setDialogState] = useState<{
+    open: boolean
+    integration: AvailableIntegration | null
+    isManageMode: boolean
+  }>({
+    open: false,
+    integration: null,
+    isManageMode: false,
+  })
+
+  const { data: connectedIntegrations, isLoading, error } = useWorkspaceIntegrations()
+
+  const connectedProviders = new Set(connectedIntegrations?.map((i) => i.provider) || [])
+
+  const handleOpenDialog = (integration: AvailableIntegration, isManageMode: boolean) => {
+    setDialogState({
+      open: true,
+      integration,
+      isManageMode,
+    })
+  }
+
+  const handleCloseDialog = () => {
+    setDialogState({
+      open: false,
+      integration: null,
+      isManageMode: false,
+    })
+  }
+
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Integrations</h1>
-          <p className="text-muted-foreground mt-1">Connect your favorite tools and services.</p>
-        </div>
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold">Integrations</h1>
+        <p className="text-muted-foreground mt-1">
+          Connect your voice AI providers to enable agent syncing
+        </p>
       </div>
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="text-center py-12 border rounded-lg bg-red-50 dark:bg-red-900/20">
+          <p className="text-red-600 dark:text-red-400">Failed to load integrations.</p>
+          <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
+            Retry
+          </Button>
+        </div>
+      )}
 
       {/* Integrations Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {integrations.map((integration) => (
-          <Card key={integration.id} className="hover:shadow-md transition-shadow">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="text-3xl">{integration.icon}</div>
-                  <div>
-                    <CardTitle className="text-base">{integration.name}</CardTitle>
-                    <Badge variant="secondary" className="mt-1 text-xs">
-                      {integration.category}
-                    </Badge>
-                  </div>
-                </div>
-                {integration.status === "coming_soon" && (
-                  <Badge variant="outline" className="text-xs">Coming Soon</Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <CardDescription className="mb-4">{integration.description}</CardDescription>
-              {integration.status === "available" ? (
-                <Button className="w-full">
-                  <Plug className="mr-2 h-4 w-4" />
-                  Connect
-                </Button>
-              ) : (
-                <Button variant="outline" className="w-full" disabled>
-                  Coming Soon
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {!isLoading && !error && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {availableIntegrations.map((integration) => {
+            const isConnected = connectedProviders.has(integration.id)
+            const connectedInfo = connectedIntegrations?.find((i) => i.provider === integration.id)
 
-      {/* Request Integration */}
-      <Card className="border-dashed">
-        <CardContent className="flex flex-col items-center justify-center py-8">
-          <p className="text-muted-foreground text-center">
-            Don't see the integration you need?{" "}
-            <a href="#" className="text-primary hover:underline">
-              Request an integration
-            </a>
+            return (
+              <Card key={integration.id} className="relative">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{integration.icon}</span>
+                      <div>
+                        <CardTitle className="text-lg">{integration.name}</CardTitle>
+                        <Badge variant="secondary" className="mt-1">
+                          {integration.category}
+                        </Badge>
+                      </div>
+                    </div>
+                    {isConnected && (
+                      <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                        <Check className="w-3 h-3 mr-1" />
+                        Connected
+                      </Badge>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <CardDescription>{integration.description}</CardDescription>
+
+                  {isConnected && connectedInfo && (
+                    <div className="text-sm text-muted-foreground">
+                      <p>Name: {connectedInfo.name}</p>
+                      {connectedInfo.additional_keys_count > 0 && (
+                        <p>{connectedInfo.additional_keys_count} additional key(s)</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    {isConnected ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => handleOpenDialog(integration, true)}
+                      >
+                        Manage
+                      </Button>
+                    ) : (
+                      <Button 
+                        size="sm" 
+                        className="w-full" 
+                        onClick={() => handleOpenDialog(integration, false)}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Connect
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Empty connected state info */}
+      {!isLoading && !error && connectedProviders.size === 0 && (
+        <div className="text-center py-8 border-2 border-dashed rounded-lg">
+          <Plug className="mx-auto h-12 w-12 text-muted-foreground" />
+          <h3 className="mt-4 text-lg font-semibold">No integrations connected</h3>
+          <p className="text-muted-foreground mt-2 max-w-sm mx-auto">
+            Connect a voice AI provider above to start syncing your agents.
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      )}
+
+      {/* Connect/Manage Dialog */}
+      <ConnectIntegrationDialog
+        open={dialogState.open}
+        onOpenChange={(open) => {
+          if (!open) handleCloseDialog()
+        }}
+        integration={dialogState.integration}
+        isManageMode={dialogState.isManageMode}
+      />
     </div>
   )
 }
-
-

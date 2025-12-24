@@ -6,6 +6,21 @@
 import type { AIAgent, AgentConfig } from "@/types/database.types"
 
 // ============================================================================
+// DEFAULT VOICE ID
+// ============================================================================
+
+// Default ElevenLabs voice ID (Rachel - female, American)
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
+
+// Validates if a string looks like a valid ElevenLabs voice ID
+// ElevenLabs IDs are 20-character alphanumeric strings
+function isValidElevenLabsVoiceId(voiceId: string | undefined): boolean {
+  if (!voiceId) return false
+  // ElevenLabs voice IDs are exactly 20 characters, alphanumeric
+  return /^[a-zA-Z0-9]{20,}$/.test(voiceId)
+}
+
+// ============================================================================
 // VAPI PAYLOAD TYPES
 // ============================================================================
 
@@ -139,7 +154,7 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
     name: agent.name,
     metadata: {
       internal_agent_id: agent.id,
-      workspace_id: agent.workspace_id, // Changed from organization_id
+      workspace_id: agent.workspace_id,
     },
   }
 
@@ -148,18 +163,21 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
     payload.firstMessage = config.first_message
   }
 
-  // Voice configuration
-  if (agent.voice_provider || config.voice_id) {
-    payload.voice = {
-      provider: mapVoiceProviderToVapi(agent.voice_provider),
-      voiceId: config.voice_id || "",
-    }
+  // Voice configuration - ALWAYS include with validated voice ID
+  // Use the provided voice_id only if it looks like a valid ElevenLabs ID
+  const voiceId = isValidElevenLabsVoiceId(config.voice_id)
+    ? config.voice_id!
+    : DEFAULT_VOICE_ID
 
-    if (config.voice_settings) {
-      payload.voice.stability = config.voice_settings.stability
-      payload.voice.similarityBoost = config.voice_settings.similarity_boost
-      payload.voice.speed = config.voice_settings.speed
-    }
+  payload.voice = {
+    provider: mapVoiceProviderToVapi(agent.voice_provider),
+    voiceId: voiceId,
+  }
+
+  if (config.voice_settings) {
+    payload.voice.stability = config.voice_settings.stability
+    payload.voice.similarityBoost = config.voice_settings.similarity_boost
+    payload.voice.speed = config.voice_settings.speed
   }
 
   // Model configuration

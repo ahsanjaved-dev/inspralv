@@ -23,7 +23,7 @@ export interface VapiResponse {
 }
 
 // ============================================================================
-// API KEY HELPER
+// LEGACY API KEY HELPER (for backward compatibility)
 // ============================================================================
 
 function getVapiSecretKey(agentSecretApiKeys: AgentSecretApiKey[]): string {
@@ -32,23 +32,25 @@ function getVapiSecretKey(agentSecretApiKeys: AgentSecretApiKey[]): string {
   )
 
   if (!apiKey?.key) {
-    throw new Error("No active VAPI secret API key found. Please add a VAPI secret API key to the agent.")
+    throw new Error(
+      "No active VAPI secret API key found. Please add a VAPI secret API key to the agent."
+    )
   }
 
   return apiKey.key
 }
 
 // ============================================================================
-// CREATE VAPI AGENT
+// NEW API FUNCTIONS (with direct key parameter)
 // ============================================================================
 
-export async function createVapiAgent(
+export async function createVapiAgentWithKey(
   payload: VapiAssistantPayload,
-  agentSecretApiKeys: AgentSecretApiKey[]
+  apiKey: string
 ): Promise<VapiResponse> {
   try {
-    const apiKey = getVapiSecretKey(agentSecretApiKeys)
-
+    console.log("[VapiConfig] Creating agent with payload:", JSON.stringify(payload, null, 2))
+    
     const response = await fetch(`${VAPI_BASE_URL}/assistant`, {
       method: "POST",
       headers: {
@@ -60,18 +62,23 @@ export async function createVapiAgent(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
+      console.error("[VapiConfig] Create error:", errorData)
       return {
         success: false,
-        error: errorData.message || `VAPI API error: ${response.status} ${response.statusText}`,
+        error:
+          errorData.message ||
+          `VAPI API error: ${response.status} ${response.statusText}`,
       }
     }
 
     const data: VapiAssistantResponse = await response.json()
+    console.log("[VapiConfig] Agent created successfully:", data.id)
     return {
       success: true,
       data,
     }
   } catch (error) {
+    console.error("[VapiConfig] Create exception:", error)
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error occurred",
@@ -79,18 +86,12 @@ export async function createVapiAgent(
   }
 }
 
-// ============================================================================
-// UPDATE VAPI AGENT
-// ============================================================================
-
-export async function updateVapiAgent(
+export async function updateVapiAgentWithKey(
   externalAgentId: string,
   payload: Partial<VapiAssistantPayload>,
-  agentSecretApiKeys: AgentSecretApiKey[]
+  apiKey: string
 ): Promise<VapiResponse> {
   try {
-    const apiKey = getVapiSecretKey(agentSecretApiKeys)
-
     const response = await fetch(`${VAPI_BASE_URL}/assistant/${externalAgentId}`, {
       method: "PATCH",
       headers: {
@@ -104,7 +105,9 @@ export async function updateVapiAgent(
       const errorData = await response.json().catch(() => ({}))
       return {
         success: false,
-        error: errorData.message || `VAPI API error: ${response.status} ${response.statusText}`,
+        error:
+          errorData.message ||
+          `VAPI API error: ${response.status} ${response.statusText}`,
       }
     }
 
@@ -121,17 +124,11 @@ export async function updateVapiAgent(
   }
 }
 
-// ============================================================================
-// DELETE VAPI AGENT
-// ============================================================================
-
-export async function deleteVapiAgent(
+export async function deleteVapiAgentWithKey(
   externalAgentId: string,
-  agentSecretApiKeys: AgentSecretApiKey[]
+  apiKey: string
 ): Promise<VapiResponse> {
   try {
-    const apiKey = getVapiSecretKey(agentSecretApiKeys)
-
     const response = await fetch(`${VAPI_BASE_URL}/assistant/${externalAgentId}`, {
       method: "DELETE",
       headers: {
@@ -143,7 +140,9 @@ export async function deleteVapiAgent(
       const errorData = await response.json().catch(() => ({}))
       return {
         success: false,
-        error: errorData.message || `VAPI API error: ${response.status} ${response.statusText}`,
+        error:
+          errorData.message ||
+          `VAPI API error: ${response.status} ${response.statusText}`,
       }
     }
 
@@ -156,4 +155,33 @@ export async function deleteVapiAgent(
       error: error instanceof Error ? error.message : "Unknown error occurred",
     }
   }
+}
+
+// ============================================================================
+// LEGACY API FUNCTIONS (for backward compatibility)
+// ============================================================================
+
+export async function createVapiAgent(
+  payload: VapiAssistantPayload,
+  agentSecretApiKeys: AgentSecretApiKey[]
+): Promise<VapiResponse> {
+  const apiKey = getVapiSecretKey(agentSecretApiKeys)
+  return createVapiAgentWithKey(payload, apiKey)
+}
+
+export async function updateVapiAgent(
+  externalAgentId: string,
+  payload: Partial<VapiAssistantPayload>,
+  agentSecretApiKeys: AgentSecretApiKey[]
+): Promise<VapiResponse> {
+  const apiKey = getVapiSecretKey(agentSecretApiKeys)
+  return updateVapiAgentWithKey(externalAgentId, payload, apiKey)
+}
+
+export async function deleteVapiAgent(
+  externalAgentId: string,
+  agentSecretApiKeys: AgentSecretApiKey[]
+): Promise<VapiResponse> {
+  const apiKey = getVapiSecretKey(agentSecretApiKeys)
+  return deleteVapiAgentWithKey(externalAgentId, apiKey)
 }

@@ -4,8 +4,6 @@
  * Uses PUBLIC API key for client-side calls
  */
 
-import type { AgentPublicApiKey } from "@/types/database.types"
-
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -19,31 +17,17 @@ export interface VapiWebCallSession {
 }
 
 // ============================================================================
-// PUBLIC API KEY HELPER
-// ============================================================================
-
-function getVapiPublicKey(agentPublicApiKeys: AgentPublicApiKey[]): string {
-  const apiKey = agentPublicApiKeys.find(
-    (key) => key.provider === "vapi" && key.is_active
-  )
-
-  if (!apiKey?.key) {
-    throw new Error("No active VAPI public API key found. Please add a public API key to enable test calls.")
-  }
-
-  return apiKey.key
-}
-
-// ============================================================================
 // CREATE VAPI WEB CALL SESSION
 // ============================================================================
 
 export async function createVapiWebCall(
   assistantId: string,
-  agentPublicApiKeys: AgentPublicApiKey[]
+  publicKey: string
 ): Promise<VapiWebCallSession> {
   try {
-    const publicKey = getVapiPublicKey(agentPublicApiKeys)
+    if (!publicKey) {
+      throw new Error("No VAPI public API key provided. Please add a public API key to enable test calls.")
+    }
 
     // For VAPI, the public key is used directly by the client SDK
     // We just validate it exists and return it
@@ -68,23 +52,21 @@ export async function createVapiWebCall(
 
 export function canMakeVapiWebCall(
   externalAgentId: string | null,
-  agentPublicApiKeys: AgentPublicApiKey[]
-): { canCall: boolean; reason?: string } {
+  hasPublicKey: boolean
+): { canCall: boolean; reason?: string; solution?: string } {
   if (!externalAgentId) {
     return {
       canCall: false,
       reason: "Agent has not been synced with VAPI yet",
+      solution: "Configure and save the agent with a valid secret API key to sync.",
     }
   }
-
-  const hasPublicKey = agentPublicApiKeys?.some(
-    (key) => key.provider === "vapi" && key.is_active
-  )
 
   if (!hasPublicKey) {
     return {
       canCall: false,
-      reason: "No active VAPI public API key configured",
+      reason: "No public API key configured for VAPI",
+      solution: "Add a public API key in the integration settings or agent configuration.",
     }
   }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import {
   Dialog,
   DialogContent,
@@ -61,14 +61,29 @@ export function TestCallModal({ agent, open, onOpenChange }: TestCallModalProps)
     reset,
   } = useWebCall()
 
+  // Track if we've already initiated a call for this modal open
+  const hasInitiatedRef = useRef(false)
+
   const statusInfo = getStatusInfo(status)
   const StatusIcon = statusInfo.icon
 
+  // Auto-start call when modal opens
   useEffect(() => {
-    if (open && status === "idle") {
-      startCall(agent.id)
+    if (open && !hasInitiatedRef.current) {
+      hasInitiatedRef.current = true
+      // Reset first, then start the call
+      reset()
+      // Use setTimeout to ensure state is reset before starting
+      setTimeout(() => {
+        startCall(agent.id)
+      }, 0)
     }
-  }, [open, status, agent.id, startCall])
+    
+    // Reset the flag when modal closes
+    if (!open) {
+      hasInitiatedRef.current = false
+    }
+  }, [open, agent.id, startCall, reset])
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
@@ -190,7 +205,7 @@ export function TestCallModal({ agent, open, onOpenChange }: TestCallModalProps)
             </>
           )}
 
-          {status === "connecting" && (
+          {(status === "connecting" || status === "idle") && (
             <Button variant="outline" onClick={handleClose}>
               Cancel
             </Button>

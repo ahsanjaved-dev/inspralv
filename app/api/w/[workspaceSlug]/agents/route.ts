@@ -92,7 +92,22 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       return apiError(`Agent limit reached for this workspace. Maximum: ${maxAgents} agents.`, 403)
     }
 
-    // Create agent
+    // CHANGED: Build config with default API keys automatically
+    // This ensures agents are always created with default keys from the workspace integration
+    const inputConfig = validation.data.config || {}
+    const existingApiKeyConfig = inputConfig.api_key_config || {}
+    
+    const configWithDefaultKeys = {
+      ...inputConfig,
+      api_key_config: {
+        secret_key: existingApiKeyConfig.secret_key || { type: "default" as const },
+        public_key: existingApiKeyConfig.public_key || { type: "default" as const },
+      },
+    }
+
+    console.log(`[AgentCreate] Creating agent with provider: ${validation.data.provider}, api_key_config:`, JSON.stringify(configWithDefaultKeys.api_key_config))
+
+    // Create agent with default API keys
     const { data: agent, error } = await ctx.adminClient
       .from("ai_agents")
       .insert({
@@ -104,7 +119,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         voice_provider: validation.data.voice_provider,
         model_provider: validation.data.model_provider,
         transcriber_provider: validation.data.transcriber_provider,
-        config: validation.data.config || {},
+        config: configWithDefaultKeys, // CHANGED: Use config with default API keys
         agent_secret_api_key: validation.data.agent_secret_api_key || [],
         agent_public_api_key: validation.data.agent_public_api_key || [],
         is_active: validation.data.is_active ?? true,

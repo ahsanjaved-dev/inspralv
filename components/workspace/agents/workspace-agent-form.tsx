@@ -1,7 +1,6 @@
 "use client"
 
-import { useState } from "react"
-import { useForm, useFieldArray } from "react-hook-form"
+import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
@@ -15,24 +14,23 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, Key, Plus, Trash2, Eye, EyeOff, Lock, Globe } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Loader2, Key, Lock, Globe, AlertCircle, ExternalLink, Check } from "lucide-react"
 import type { AIAgent } from "@/types/database.types"
 import type { CreateWorkspaceAgentInput } from "@/types/api.types"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-
+import { useAllIntegrationsWithDetails } from "@/lib/hooks/use-workspace-integrations"
 interface WorkspaceAgentFormProps {
   initialData?: AIAgent
   onSubmit: (data: CreateWorkspaceAgentInput) => Promise<void>
   isSubmitting: boolean
 }
 
-const apiKeySchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1, "Key name is required"),
-  key: z.string().min(1, "API key is required"),
-  provider: z.string().optional(),
-  is_active: z.boolean(),
+const selectedApiKeySchema = z.object({
+  type: z.enum(["none", "default", "additional"] as const),
+  additional_key_id: z.string().uuid().optional(),
+  additional_key_name: z.string().optional(),
 })
 
 const formSchema = z.object({
@@ -48,18 +46,26 @@ const formSchema = z.object({
     .object({
       system_prompt: z.string().optional(),
       first_message: z.string().optional(),
+      voice_id: z.string().optional(),
+      voice_settings: z
+        .object({
+          speed: z.number().optional(),
+          stability: z.number().optional(),
+          similarity_boost: z.number().optional(),
+        })
+        .optional(),
+      api_key_config: z
+        .object({
+          secret_key: selectedApiKeySchema.optional(),
+          public_key: selectedApiKeySchema.optional(),
+        })
+        .optional(),
     })
     .optional(),
-  agent_secret_api_key: z.array(apiKeySchema).optional().default([]),
-  agent_public_api_key: z.array(apiKeySchema).optional().default([]),
   is_active: z.boolean(),
 })
 
 type FormData = z.infer<typeof formSchema>
-
-function generateUUID(): string {
-  return crypto.randomUUID()
-}
 
 export function WorkspaceAgentForm({
   initialData,
@@ -68,15 +74,15 @@ export function WorkspaceAgentForm({
 }: WorkspaceAgentFormProps) {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
-  const [showSecretKey, setShowSecretKey] = useState<Record<number, boolean>>({})
-  const [showPublicKey, setShowPublicKey] = useState<Record<number, boolean>>({})
+
+  // Fetch all integrations with details for the current workspace
+  const { data: integrations, isLoading: integrationsLoading } = useAllIntegrationsWithDetails()
 
   const {
     register,
     handleSubmit,
     setValue,
     watch,
-    control,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(formSchema) as any,
@@ -92,55 +98,51 @@ export function WorkspaceAgentForm({
       config: {
         system_prompt: (initialData?.config as any)?.system_prompt || "",
         first_message: (initialData?.config as any)?.first_message || "",
+        voice_id: (initialData?.config as any)?.voice_id || "",
+        voice_settings: (initialData?.config as any)?.voice_settings || {},
+        // CHANGED: Default to "default" keys instead of "none"
+        api_key_config: (initialData?.config as any)?.api_key_config || {
+          secret_key: { type: "default" },
+          public_key: { type: "default" },
+        },
       },
-      agent_secret_api_key: initialData?.agent_secret_api_key || [],
-      agent_public_api_key: initialData?.agent_public_api_key || [],
     },
   })
 
-  const {
-    fields: secretKeyFields,
-    append: appendSecretKey,
-    remove: removeSecretKey,
-  } = useFieldArray({
-    control,
-    name: "agent_secret_api_key",
-  })
-
-  const {
-    fields: publicKeyFields,
-    append: appendPublicKey,
-    remove: removePublicKey,
-  } = useFieldArray({
-    control,
-    name: "agent_public_api_key",
-  })
-
   const selectedProvider = watch("provider")
+  const apiKeyConfig = watch("config.api_key_config")
 
-  const handleFormSubmit = async (data: FormData) => {
-    await onSubmit(data as CreateWorkspaceAgentInput)
+  // Get the integration for the selected provider
+  const currentIntegration = integrations?.find((i: any) => i.provider === selectedProvider)
+
+// FIX: Ensure api_key_config is always sent to backend with proper defaults
+const handleFormSubmit = async (data: FormData) => {
+  // Build a complete config object with api_key_config
+  const currentConfig = data.config || {}
+  const apiKeyConfigData = currentConfig.api_key_config || {}
+  
+  const completeConfig = {
+    system_prompt: currentConfig.system_prompt || "",
+    first_message: currentConfig.first_message || "",
+    voice_id: currentConfig.voice_id || "",
+    voice_settings: currentConfig.voice_settings || {},
+    api_key_config: {
+      secret_key: apiKeyConfigData.secret_key || { type: "default" as const },
+      public_key: apiKeyConfigData.public_key || { type: "default" as const },
+    },
   }
 
-  const addSecretKey = () => {
-    appendSecretKey({
-      id: generateUUID(),
-      name: `${selectedProvider.toUpperCase()} Secret Key`,
-      key: "",
-      provider: selectedProvider,
-      is_active: true,
-    })
+  const submitData = {
+    ...data,
+    config: completeConfig,
+    agent_secret_api_key: [],
+    agent_public_api_key: [],
   }
-
-  const addPublicKey = () => {
-    appendPublicKey({
-      id: generateUUID(),
-      name: `${selectedProvider.toUpperCase()} Public Key`,
-      key: "",
-      provider: selectedProvider,
-      is_active: true,
-    })
-  }
+  
+  console.log("[WorkspaceAgentForm] Submitting with config:", JSON.stringify(submitData.config, null, 2))
+  
+  await onSubmit(submitData as CreateWorkspaceAgentInput)
+}
 
   const getProviderDisplayName = (provider: string) => {
     switch (provider) {
@@ -155,6 +157,79 @@ export function WorkspaceAgentForm({
     }
   }
 
+  const handleSecretKeySelection = (value: string) => {
+    if (value === "none") {
+      setValue("config.api_key_config.secret_key", { type: "none" })
+    } else if (value === "default") {
+      setValue("config.api_key_config.secret_key", { type: "default" })
+    } else {
+      const additionalKey = currentIntegration?.additional_keys?.find((k: any) => k.id === value)
+      setValue("config.api_key_config.secret_key", {
+        type: "additional",
+        additional_key_id: value,
+        additional_key_name: additionalKey?.name || "Additional Key",
+      })
+    }
+  }
+
+  const handlePublicKeySelection = (value: string) => {
+    if (value === "none") {
+      setValue("config.api_key_config.public_key", { type: "none" })
+    } else if (value === "default") {
+      setValue("config.api_key_config.public_key", { type: "default" })
+    } else {
+      const additionalKey = currentIntegration?.additional_keys?.find((k: any) => k.id === value)
+      setValue("config.api_key_config.public_key", {
+        type: "additional",
+        additional_key_id: value,
+        additional_key_name: additionalKey?.name || "Additional Key",
+      })
+    }
+  }
+
+  const getSecretKeyValue = () => {
+    const config = apiKeyConfig?.secret_key
+    if (!config || config.type === "none") return "none"
+    if (config.type === "default") return "default"
+    return config.additional_key_id || "none"
+  }
+
+  const getPublicKeyValue = () => {
+    const config = apiKeyConfig?.public_key
+    if (!config || config.type === "none") return "none"
+    if (config.type === "default") return "default"
+    return config.additional_key_id || "none"
+  }
+
+  const renderApiKeyStatus = (type: "secret" | "public") => {
+    const config = type === "secret" ? apiKeyConfig?.secret_key : apiKeyConfig?.public_key
+
+    if (!config || config.type === "none") {
+      return (
+        <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30">
+          <AlertCircle className="w-3 h-3 mr-1" />
+          No Key Selected
+        </Badge>
+      )
+    }
+
+    if (config.type === "default") {
+      return (
+        <Badge className="bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400 border-green-500/20 hover:bg-green-500/20">
+          <Check className="w-3 h-3 mr-1" />
+          Default Key
+        </Badge>
+      )
+    }
+
+    return (
+      <Badge className="bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 border-blue-500/20 hover:bg-blue-500/20">
+        <Key className="w-3 h-3 mr-1" />
+        {config.additional_key_name || "Additional Key"}
+      </Badge>
+    )
+  }
+
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
       {/* Basic Information Card */}
@@ -166,7 +241,7 @@ export function WorkspaceAgentForm({
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">
-              Agent Name <span className="text-red-500">*</span>
+              Agent Name <span className="text-destructive">*</span>
             </Label>
             <Input
               id="name"
@@ -174,7 +249,7 @@ export function WorkspaceAgentForm({
               {...register("name")}
               disabled={isSubmitting}
             />
-            {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
           </div>
 
           <div className="space-y-2">
@@ -189,11 +264,16 @@ export function WorkspaceAgentForm({
 
           <div className="space-y-2">
             <Label htmlFor="provider">
-              AI Provider <span className="text-red-500">*</span>
+              AI Provider <span className="text-destructive">*</span>
             </Label>
             <Select
               value={selectedProvider}
-              onValueChange={(value: FormData["provider"]) => setValue("provider", value)}
+              onValueChange={(value: FormData["provider"]) => {
+                setValue("provider", value)
+                // CHANGED: Reset to default keys when provider changes (instead of none)
+                setValue("config.api_key_config.secret_key", { type: "default" })
+                setValue("config.api_key_config.public_key", { type: "default" })
+              }}
               disabled={isSubmitting}
             >
               <SelectTrigger>
@@ -213,7 +293,7 @@ export function WorkspaceAgentForm({
               id="is_active"
               {...register("is_active")}
               disabled={isSubmitting}
-              className="h-4 w-4 rounded border-gray-300"
+              className="h-4 w-4 rounded border-input bg-background text-primary focus:ring-primary"
             />
             <Label htmlFor="is_active" className="text-sm font-normal">
               Agent is active and can receive calls
@@ -222,242 +302,165 @@ export function WorkspaceAgentForm({
         </CardContent>
       </Card>
 
-      {/* Secret API Keys Card */}
+      {/* API Key Selection Card */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Lock className="w-5 h-5" />
-            Secret API Key (Private)
+            <Key className="w-5 h-5" />
+            API Key Configuration
           </CardTitle>
           <CardDescription>
-            Server-side key for creating and syncing agents with{" "}
-            {getProviderDisplayName(selectedProvider)}. Keep this secure!
+            Select which API keys from your{" "}
+            <Link
+              href={`/w/${workspaceSlug}/integrations`}
+              className="text-primary hover:underline inline-flex items-center gap-1"
+            >
+              integrations
+              <ExternalLink className="w-3 h-3" />
+            </Link>{" "}
+            to use for this agent.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {secretKeyFields.length === 0 ? (
-            <div className="text-center py-6 border-2 border-dashed rounded-lg">
-              <Lock className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-              <p className="text-sm text-muted-foreground mb-3">
-                Add a secret API key to sync this agent with{" "}
-                {getProviderDisplayName(selectedProvider)}.
+        <CardContent className="space-y-6">
+          {integrationsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : !currentIntegration ? (
+            <div className="text-center py-8 border-2 border-dashed rounded-lg bg-muted/30 dark:bg-muted/10">
+              <AlertCircle className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+              <h4 className="font-medium mb-2">
+                No {getProviderDisplayName(selectedProvider)} Integration
+              </h4>
+              <p className="text-sm text-muted-foreground mb-4">
+                Connect {getProviderDisplayName(selectedProvider)} in your integrations to use API
+                keys.
               </p>
-              <Button type="button" variant="outline" size="sm" onClick={addSecretKey}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Secret Key
+              <Button variant="outline" asChild>
+                <Link href={`/w/${workspaceSlug}/integrations`}>Go to Integrations</Link>
               </Button>
             </div>
           ) : (
             <>
-              {secretKeyFields.map((field, index) => (
-                <div key={field.id} className="p-4 border rounded-lg space-y-3 bg-muted/30">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">
-                      Secret Key #{index + 1}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeSecretKey(index)}
-                      disabled={isSubmitting}
-                      className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Key Name</Label>
-                      <Input
-                        placeholder="e.g., Production Secret Key"
-                        {...register(`agent_secret_api_key.${index}.name`)}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Provider</Label>
-                      <Select
-                        value={watch(`agent_secret_api_key.${index}.provider`) || selectedProvider}
-                        onValueChange={(value) =>
-                          setValue(`agent_secret_api_key.${index}.provider`, value)
-                        }
-                        disabled={isSubmitting}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="vapi">VAPI</SelectItem>
-                          <SelectItem value="retell">Retell AI</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Secret API Key</Label>
-                    <div className="relative">
-                      <Input
-                        type={showSecretKey[index] ? "text" : "password"}
-                        placeholder="sk_..."
-                        {...register(`agent_secret_api_key.${index}.key`)}
-                        disabled={isSubmitting}
-                        className="pr-10"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setShowSecretKey((prev) => ({ ...prev, [index]: !prev[index] }))
-                        }
-                        className="absolute right-0 top-0 h-full px-3"
-                      >
-                        {showSecretKey[index] ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
+              {/* Secret Key Selection */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      {...register(`agent_secret_api_key.${index}.is_active`)}
-                      disabled={isSubmitting}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                    <Label className="text-sm font-normal">Key is active</Label>
+                    <Lock className="w-4 h-4 text-muted-foreground" />
+                    <Label className="text-base font-medium">Secret API Key</Label>
                   </div>
-                  <input type="hidden" {...register(`agent_secret_api_key.${index}.id`)} />
+                  {renderApiKeyStatus("secret")}
                 </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={addSecretKey}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Another Secret Key
-              </Button>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Public API Keys Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="w-5 h-5" />
-            Public API Key (Optional)
-          </CardTitle>
-          <CardDescription>
-            Client-side key for test calls. Required to enable the "Test Call" feature.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {publicKeyFields.length === 0 ? (
-            <div className="text-center py-6 border-2 border-dashed rounded-lg">
-              <Globe className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-              <p className="text-sm text-muted-foreground mb-3">
-                Add a public API key to enable test calls for this agent.
-              </p>
-              <Button type="button" variant="outline" size="sm" onClick={addPublicKey}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Public Key
-              </Button>
-            </div>
-          ) : (
-            <>
-              {publicKeyFields.map((field, index) => (
-                <div
-                  key={field.id}
-                  className="p-4 border rounded-lg space-y-3 bg-blue-50/30 dark:bg-blue-900/10"
+                <p className="text-sm text-muted-foreground">
+                  Server-side key for creating and syncing agents with{" "}
+                  {getProviderDisplayName(selectedProvider)}.
+                </p>
+                <Select
+                  value={getSecretKeyValue()}
+                  onValueChange={handleSecretKeySelection}
+                  disabled={isSubmitting}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">
-                      Public Key #{index + 1}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removePublicKey(index)}
-                      disabled={isSubmitting}
-                      className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Key Name</Label>
-                      <Input
-                        placeholder="e.g., Test Call Public Key"
-                        {...register(`agent_public_api_key.${index}.name`)}
-                        disabled={isSubmitting}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Provider</Label>
-                      <Select
-                        value={watch(`agent_public_api_key.${index}.provider`) || selectedProvider}
-                        onValueChange={(value) =>
-                          setValue(`agent_public_api_key.${index}.provider`, value)
-                        }
-                        disabled={isSubmitting}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="vapi">VAPI</SelectItem>
-                          <SelectItem value="retell">Retell AI</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Public API Key</Label>
-                    <div className="relative">
-                      <Input
-                        type={showPublicKey[index] ? "text" : "password"}
-                        placeholder="pk_..."
-                        {...register(`agent_public_api_key.${index}.key`)}
-                        disabled={isSubmitting}
-                        className="pr-10"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setShowPublicKey((prev) => ({ ...prev, [index]: !prev[index] }))
-                        }
-                        className="absolute right-0 top-0 h-full px-3"
-                      >
-                        {showPublicKey[index] ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="Select a secret key" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-muted-foreground" />
+                        <span>No Key</span>
+                      </div>
+                    </SelectItem>
+                    {currentIntegration.has_default_secret_key && (
+                      <SelectItem value="default">
+                        <div className="flex items-center gap-2">
+                          <Key className="w-4 h-4 text-green-600 dark:text-green-400" />
+                          <span>Default Secret Key</span>
+                        </div>
+                      </SelectItem>
+                    )}
+                    {currentIntegration.additional_keys?.map(
+                      (key: any) =>
+                        key.has_secret_key && (
+                          <SelectItem key={key.id} value={key.id}>
+                            <div className="flex items-center gap-2">
+                              <Key className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                              <span>{key.name}</span>
+                            </div>
+                          </SelectItem>
+                        )
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-border" />
+
+              {/* Public Key Selection */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      {...register(`agent_public_api_key.${index}.is_active`)}
-                      disabled={isSubmitting}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                    <Label className="text-sm font-normal">Key is active</Label>
+                    <Globe className="w-4 h-4 text-muted-foreground" />
+                    <Label className="text-base font-medium">Public API Key (Optional)</Label>
                   </div>
-                  <input type="hidden" {...register(`agent_public_api_key.${index}.id`)} />
+                  {renderApiKeyStatus("public")}
                 </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={addPublicKey}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Another Public Key
-              </Button>
+                <p className="text-sm text-muted-foreground">
+                  Client-side key for test calls. Required to enable the "Test Call" feature.
+                </p>
+                <Select
+                  value={getPublicKeyValue()}
+                  onValueChange={handlePublicKeySelection}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="Select a public key" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-muted-foreground" />
+                        <span>No Key</span>
+                      </div>
+                    </SelectItem>
+                    {currentIntegration.has_default_public_key && (
+                      <SelectItem value="default">
+                        <div className="flex items-center gap-2">
+                          <Globe className="w-4 h-4 text-green-600 dark:text-green-400" />
+                          <span>Default Public Key</span>
+                        </div>
+                      </SelectItem>
+                    )}
+                    {currentIntegration.additional_keys?.map(
+                      (key: any) =>
+                        key.has_public_key && (
+                          <SelectItem key={key.id} value={key.id}>
+                            <div className="flex items-center gap-2">
+                              <Globe className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                              <span>{key.name}</span>
+                            </div>
+                          </SelectItem>
+                        )
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Integration Info */}
+              <div className="rounded-lg bg-muted/50 dark:bg-muted/20 p-4 text-sm border border-border/50">
+                <p className="text-muted-foreground">
+                  <Key className="inline w-4 h-4 mr-1" />
+                  API keys are managed in your{" "}
+                  <Link
+                    href={`/w/${workspaceSlug}/integrations`}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    Integrations settings
+                  </Link>
+                  . You have {currentIntegration.additional_keys_count || 0} additional key(s)
+                  configured.
+                </p>
+              </div>
             </>
           )}
         </CardContent>
@@ -532,6 +535,21 @@ export function WorkspaceAgentForm({
               </Select>
             </div>
           </div>
+
+          {/* Voice ID Input - NEW FIELD */}
+          <div className="space-y-2">
+            <Label htmlFor="voice_id">Voice ID</Label>
+            <Input
+              id="voice_id"
+              placeholder="e.g., 21m00Tcm4TlvDq8ikWAM (ElevenLabs voice ID)"
+              {...register("config.voice_id")}
+              disabled={isSubmitting}
+            />
+            <p className="text-xs text-muted-foreground">
+              Enter the voice ID from your voice provider. For ElevenLabs, find this in your voice
+              settings.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -546,7 +564,7 @@ export function WorkspaceAgentForm({
             <Label htmlFor="system_prompt">System Prompt</Label>
             <textarea
               id="system_prompt"
-              className="w-full min-h-[120px] px-3 py-2 text-sm rounded-md border border-input bg-background resize-y"
+              className="w-full min-h-[120px] px-3 py-2 text-sm rounded-md border border-input bg-background text-foreground resize-y focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background placeholder:text-muted-foreground"
               placeholder="You are a helpful sales assistant..."
               {...register("config.system_prompt")}
               disabled={isSubmitting}

@@ -4,8 +4,6 @@
  * Uses API key to register web call and get access token
  */
 
-import type { AgentSecretApiKey } from "@/types/database.types"
-
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -30,46 +28,45 @@ interface RetellWebCallResponse {
 }
 
 // ============================================================================
-// SECRET API KEY HELPER
-// ============================================================================
-
-function getRetellSecretKey(agentSecretApiKeys: AgentSecretApiKey[]): string {
-  const apiKey = agentSecretApiKeys.find(
-    (key) => key.provider === "retell" && key.is_active
-  )
-
-  if (!apiKey?.key) {
-    throw new Error("No active Retell secret API key found.")
-  }
-
-  return apiKey.key
-}
-
-// ============================================================================
 // CREATE RETELL WEB CALL SESSION
 // ============================================================================
 
 export async function createRetellWebCall(
   agentId: string,
-  agentSecretApiKeys: AgentSecretApiKey[]
+  secretKey: string
 ): Promise<RetellWebCallSession> {
   try {
-    const apiKey = getRetellSecretKey(agentSecretApiKeys)
+    if (!secretKey) {
+      throw new Error("No Retell secret API key provided.")
+    }
 
-    // Register web call with Retell
+    console.log("[RetellWebCall] Creating web call for agent:", agentId)
+
+    // Retell v2 API for web calls
     const response = await fetch(`${RETELL_BASE_URL}/v2/create-web-call`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${secretKey}`,
       },
       body: JSON.stringify({
         agent_id: agentId,
       }),
     })
 
+    console.log("[RetellWebCall] Response status:", response.status)
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+      const errorText = await response.text()
+      console.error("[RetellWebCall] Raw error response:", errorText)
+      
+      let errorData: any = {}
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {
+        errorData = { message: errorText || `HTTP ${response.status}` }
+      }
+      console.error("[RetellWebCall] Error:", response.status, errorData)
       return {
         success: false,
         provider: "retell",
@@ -78,6 +75,7 @@ export async function createRetellWebCall(
     }
 
     const data: RetellWebCallResponse = await response.json()
+    console.log("[RetellWebCall] Session created successfully:", data.call_id)
 
     return {
       success: true,
@@ -86,6 +84,7 @@ export async function createRetellWebCall(
       callId: data.call_id,
     }
   } catch (error) {
+    console.error("[RetellWebCall] Exception:", error)
     return {
       success: false,
       provider: "retell",
@@ -100,23 +99,21 @@ export async function createRetellWebCall(
 
 export function canMakeRetellWebCall(
   externalAgentId: string | null,
-  agentSecretApiKeys: AgentSecretApiKey[]
-): { canCall: boolean; reason?: string } {
+  hasSecretKey: boolean
+): { canCall: boolean; reason?: string; solution?: string } {
   if (!externalAgentId) {
     return {
       canCall: false,
       reason: "Agent has not been synced with Retell yet",
+      solution: "Configure and save the agent with a valid secret API key to sync.",
     }
   }
-
-  const hasSecretKey = agentSecretApiKeys?.some(
-    (key) => key.provider === "retell" && key.is_active
-  )
 
   if (!hasSecretKey) {
     return {
       canCall: false,
-      reason: "No active Retell secret API key configured",
+      reason: "No secret API key configured for Retell",
+      solution: "Add a secret API key in the integration settings.",
     }
   }
 

@@ -100,6 +100,27 @@ export interface User {
 }
 
 // ============================================================================
+// AGENT API KEY SELECTION TYPES
+// ============================================================================
+
+export type ApiKeySelectionType = "none" | "default" | "additional"
+
+export const selectedApiKeySchema = z.object({
+  type: z.enum(["none", "default", "additional"] as const),
+  additional_key_id: z.string().uuid().optional(),
+  additional_key_name: z.string().optional(),
+})
+
+export type SelectedApiKey = z.infer<typeof selectedApiKeySchema>
+
+export const agentApiKeyConfigSchema = z.object({
+  secret_key: selectedApiKeySchema.optional(),
+  public_key: selectedApiKeySchema.optional(),
+})
+
+export type AgentApiKeyConfig = z.infer<typeof agentApiKeyConfigSchema>
+
+// ============================================================================
 // AGENT TYPES
 // ============================================================================
 
@@ -124,6 +145,7 @@ export interface AgentConfig {
   end_call_phrases?: string[]
   max_duration_seconds?: number
   retell_llm_id?: string
+  api_key_config?: AgentApiKeyConfig
 }
 
 export interface AIAgent {
@@ -238,7 +260,7 @@ export interface DashboardStats {
   total_cost: number
   conversations_this_month: number
   minutes_this_month: number
-  cost_this_month: number // <-- ADD THIS LINE
+  cost_this_month: number
   active_agents?: number
   conversations_today?: number
   average_duration?: number
@@ -462,8 +484,6 @@ export const createWorkspaceInvitationSchema = z.object({
 
 export type CreateWorkspaceInvitationInput = z.infer<typeof createWorkspaceInvitationSchema>
 
-// Add after line 330 (after PartnerDomain interface)
-
 // ============================================================================
 // PARTNER MEMBER TYPES
 // ============================================================================
@@ -501,6 +521,92 @@ export interface PartnerMembership {
   role: PartnerMemberRole
   is_platform_partner: boolean
 }
+
+// ============================================================================
+// WORKSPACE INTEGRATION TYPES
+// ============================================================================
+
+export type IntegrationProvider =
+  | "vapi"
+  | "retell"
+  | "synthflow"
+  | "hubspot"
+  | "salesforce"
+  | "zapier"
+  | "slack"
+
+// Additional API key schema
+export const additionalApiKeySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1, "Key name is required").max(255),
+  secret_key: z.string().min(1, "Secret API key is required"),
+  public_key: z.string().optional(),
+})
+
+export type AdditionalApiKey = z.infer<typeof additionalApiKeySchema>
+
+// API Keys structure for workspace integrations
+export interface IntegrationApiKeys {
+  default_secret_key: string
+  default_public_key?: string
+  additional_keys: AdditionalApiKey[]
+}
+
+export interface WorkspaceIntegration {
+  id: string
+  workspace_id: string
+  provider: IntegrationProvider
+  name: string
+  api_keys: IntegrationApiKeys
+  is_active: boolean
+  config: Record<string, unknown>
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Safe version without sensitive data (for listing)
+export interface WorkspaceIntegrationSafe {
+  id: string
+  workspace_id: string
+  provider: IntegrationProvider
+  name: string
+  has_public_key: boolean
+  additional_keys_count: number
+  is_active: boolean
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export const createWorkspaceIntegrationSchema = z.object({
+  provider: z.enum([
+    "vapi",
+    "retell",
+    "synthflow",
+    "hubspot",
+    "salesforce",
+    "zapier",
+    "slack",
+  ] as const),
+  name: z.string().min(1, "Connection name is required").max(255),
+  default_secret_key: z.string().min(1, "Default secret API key is required"),
+  default_public_key: z.string().optional(),
+  additional_keys: z.array(additionalApiKeySchema).optional().default([]),
+  config: z.record(z.string(), z.unknown()).optional(),
+})
+
+export type CreateWorkspaceIntegrationInput = z.infer<typeof createWorkspaceIntegrationSchema>
+
+export const updateWorkspaceIntegrationSchema = z.object({
+  name: z.string().min(1, "Connection name is required").max(255).optional(),
+  default_secret_key: z.string().min(1, "Default secret API key is required").optional(),
+  default_public_key: z.string().optional(),
+  additional_keys: z.array(additionalApiKeySchema).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+})
+
+export type UpdateWorkspaceIntegrationInput = z.infer<typeof updateWorkspaceIntegrationSchema>
 
 // ============================================================================
 // PARTNER REQUEST TYPES (Phase 1 - Milestone 1)
@@ -614,7 +720,7 @@ export const createPartnerRequestSchema = z.object({
     .min(3)
     .max(50)
     .regex(/^[a-z0-9-]+$/)
-    .optional(), // Now optional, used only as slug
+    .optional(),
   branding_data: partnerRequestBrandingSchema.optional(),
 
   // Plan Selection

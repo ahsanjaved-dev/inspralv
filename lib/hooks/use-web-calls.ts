@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useRef, useEffect } from "react"
+import { useParams } from "next/navigation"
 import type { AgentProvider } from "@/types/database.types"
 
 // ============================================================================
@@ -36,6 +37,9 @@ export interface WebCallSession {
 // ============================================================================
 
 export function useWebCall() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  
   const [state, setState] = useState<WebCallState>({
     status: "idle",
     callId: null,
@@ -164,8 +168,8 @@ export function useWebCall() {
     })
 
     try {
-      // Request call session from backend
-      const response = await fetch(`/api/agents/${agentId}/test-call`, {
+      // Request call session from backend (workspace-scoped endpoint)
+      const response = await fetch(`/api/w/${workspaceSlug}/agents/${agentId}/test-call`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -203,7 +207,7 @@ export function useWebCall() {
         error: error instanceof Error ? error.message : "Failed to start call",
       }))
     }
-  }, [startVapiCall, startRetellCall])
+  }, [workspaceSlug, startVapiCall, startRetellCall])
 
   // End call function
   const endCall = useCallback(() => {

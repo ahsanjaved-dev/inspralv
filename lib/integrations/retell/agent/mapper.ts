@@ -36,7 +36,7 @@ export interface RetellAgentPayload {
     type: "retell-llm"
     llm_id: string
   }
-  voice_id: string // REQUIRED by Retell
+  voice_id: string
   language?: string
   voice_model?: string
   voice_temperature?: number
@@ -103,7 +103,6 @@ export interface RetellAgentUpdate {
 // DEFAULT VOICE
 // ============================================================================
 
-// Retell requires voice_id - use this as fallback when user doesn't specify
 const RETELL_DEFAULT_VOICE_ID = "11labs-Adrian"
 
 // ============================================================================
@@ -151,8 +150,8 @@ export function mapToRetellAgent(agent: AIAgent, llmId: string): RetellAgentPayl
       type: "retell-llm",
       llm_id: llmId,
     },
-    // voice_id is REQUIRED by Retell API - use provided or default
-    voice_id: config.voice_id || RETELL_DEFAULT_VOICE_ID,
+    // Always use 11labs-Adrian as voice_id
+    voice_id: RETELL_DEFAULT_VOICE_ID,
   }
 
   // Voice settings

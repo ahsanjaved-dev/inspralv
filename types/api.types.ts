@@ -1,19 +1,13 @@
 import { z } from "zod"
-export const agentSecretApiKeySchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1).max(255),
-  key: z.string().min(1),
-  provider: z.string().optional(),
-  is_active: z.boolean().default(true),
-})
+import {
+  agentSecretApiKeySchema,
+  agentPublicApiKeySchema,
+  agentApiKeyConfigSchema,
+  additionalApiKeySchema,
+} from "./database.types"
 
-export const agentPublicApiKeySchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1).max(255),
-  key: z.string().min(1),
-  provider: z.string().optional(),
-  is_active: z.boolean().default(true),
-})
+// Re-export for convenience
+export { agentSecretApiKeySchema, agentPublicApiKeySchema }
 
 export const createAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -45,6 +39,7 @@ export const createAgentSchema = z.object({
         })
         .optional(),
       max_duration_seconds: z.number().min(60).max(3600).optional(),
+      api_key_config: agentApiKeyConfigSchema.optional(),
     })
     .optional(),
   agent_secret_api_key: z.array(agentSecretApiKeySchema).optional().default([]),
@@ -83,7 +78,7 @@ export const createIntegrationSchema = z.object({
     "crm",
   ] as const),
   name: z.string().min(1).max(255),
-  credentials: z.record(z.string(), z.string()).optional(), // Will be encrypted before storage
+  credentials: z.record(z.string(), z.string()).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
 })
 
@@ -184,6 +179,7 @@ export const createWorkspaceAgentSchema = z.object({
         })
         .optional(),
       max_duration_seconds: z.number().min(60).max(3600).optional(),
+      api_key_config: agentApiKeyConfigSchema.optional(),
     })
     .optional(),
   agent_secret_api_key: z.array(agentSecretApiKeySchema).optional().default([]),
@@ -195,6 +191,48 @@ export type CreateWorkspaceAgentInput = z.infer<typeof createWorkspaceAgentSchem
 
 export const updateWorkspaceAgentSchema = createWorkspaceAgentSchema.partial()
 export type UpdateWorkspaceAgentInput = z.infer<typeof updateWorkspaceAgentSchema>
+
+// ============================================================================
+// WORKSPACE INTEGRATION SCHEMAS
+// ============================================================================
+
+export type IntegrationProvider =
+  | "vapi"
+  | "retell"
+  | "synthflow"
+  | "hubspot"
+  | "salesforce"
+  | "zapier"
+  | "slack"
+
+export const createWorkspaceIntegrationSchema = z.object({
+  provider: z.enum([
+    "vapi",
+    "retell",
+    "synthflow",
+    "hubspot",
+    "salesforce",
+    "zapier",
+    "slack",
+  ] as const),
+  name: z.string().min(1, "Connection name is required").max(255),
+  default_secret_key: z.string().min(1, "Default secret API key is required"),
+  default_public_key: z.string().optional(),
+  additional_keys: z.array(additionalApiKeySchema).optional().default([]),
+  config: z.record(z.string(), z.unknown()).optional(),
+})
+
+export type CreateWorkspaceIntegrationInput = z.infer<typeof createWorkspaceIntegrationSchema>
+
+export const updateWorkspaceIntegrationSchema = z.object({
+  name: z.string().min(1, "Connection name is required").max(255).optional(),
+  default_secret_key: z.string().min(1, "Default secret API key is required").optional(),
+  default_public_key: z.string().optional(),
+  additional_keys: z.array(additionalApiKeySchema).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+})
+
+export type UpdateWorkspaceIntegrationInput = z.infer<typeof updateWorkspaceIntegrationSchema>
 
 // ============================================================================
 // PARTNER REQUEST API TYPES (Phase 1 - Milestone 1)

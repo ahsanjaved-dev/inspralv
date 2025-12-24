@@ -7,7 +7,6 @@ import {
   forbidden,
   notFound,
   serverError,
-  getValidationError,
 } from "@/lib/api/helpers"
 import { updateWorkspaceAgentSchema } from "@/types/api.types"
 import { safeVapiSync, shouldSyncToVapi } from "@/lib/integrations/vapi/agent/sync"
@@ -59,7 +58,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const validation = updateWorkspaceAgentSchema.safeParse(body)
 
     if (!validation.success) {
-      return apiError(getValidationError(validation.error))
+      return apiError(validation.error?.issues?.[0]?.message || "Invalid request data")
     }
 
     // Check agent exists and belongs to workspace
