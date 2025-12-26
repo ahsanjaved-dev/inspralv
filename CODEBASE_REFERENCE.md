@@ -1,6 +1,6 @@
 # Inspralv Codebase Reference
 
-> **Last Updated**: December 2024  
+> **Last Updated**: December 2025  
 > **Purpose**: Complete codebase analysis for AI assistants and developers
 
 ---
@@ -32,20 +32,20 @@
 
 ### Core Technologies
 
-| Category | Technology | Version |
-|----------|------------|---------|
-| **Framework** | Next.js (App Router) | 16.0.8 |
-| **Language** | TypeScript | 5.x |
-| **UI** | React, Tailwind CSS 4, Radix UI (shadcn/ui) | React 19.2.1 |
-| **Backend** | Supabase (PostgreSQL + Auth + Storage) | SSR 0.8.0 |
-| **State** | React Query (TanStack Query 5), Zustand | Query 5.90.12, Zustand 5.0.9 |
-| **Payments** | Stripe | 20.0.0 |
-| **Email** | Resend | 6.6.0 |
-| **Voice Providers** | VAPI, Retell AI, Synthflow | VAPI Web 2.5.2, Retell SDK 4.66.0 |
-| **Validation** | Zod | 4.1.13 |
-| **Forms** | React Hook Form | 7.68.0 |
-| **Charts** | Recharts | 3.5.1 |
-| **Date Utils** | date-fns | 4.1.0 |
+| Category            | Technology                                  | Version                                                    |
+| ------------------- | ------------------------------------------- | ---------------------------------------------------------- |
+| **Framework**       | Next.js (App Router)                        | 16.0.8                                                     |
+| **Language**        | TypeScript                                  | 5.x                                                        |
+| **UI**              | React, Tailwind CSS 4, Radix UI (shadcn/ui) | React 19.2.1                                               |
+| **Backend**         | Supabase (PostgreSQL + Auth + Storage)      | SSR 0.8.0                                                  |
+| **State**           | React Query (TanStack Query 5), Zustand     | Query 5.90.12, Zustand 5.0.9                               |
+| **Payments**        | Stripe                                      | 20.0.0                                                     |
+| **Email**           | Resend                                      | 6.6.0                                                      |
+| **Voice Providers** | VAPI, Retell AI, Synthflow                  | VAPI Web 2.5.2, Retell SDK 4.66.0, Retell Client SDK 2.0.7 |
+| **Validation**      | Zod                                         | 4.1.13                                                     |
+| **Forms**           | React Hook Form                             | 7.68.0                                                     |
+| **Charts**          | Recharts                                    | 3.5.1                                                      |
+| **Date Utils**      | date-fns                                    | 4.1.0                                                      |
 
 ### Key Capabilities
 
@@ -101,7 +101,7 @@ Client Request → Middleware (proxy.ts)
                       │
                       └─► Route Handler
                               │
-                              ├─► API Route: withWorkspace() HOF
+                              ├─► API Route: getWorkspaceContext() (helper `withWorkspace()` is available but not widely used)
                               │
                               └─► Page: getPartnerAuthContext()
 ```
@@ -117,23 +117,23 @@ Client Request → Middleware (proxy.ts)
 interface Partner {
   id: string
   name: string
-  slug: string                    // e.g., "acme-agency"
-  branding: PartnerBranding       // Logo, colors, company name
-  plan_tier: string               // "free" | "starter" | "pro" | "enterprise"
-  features: PartnerFeatures       // Feature flags
+  slug: string // e.g., "acme-agency"
+  branding: PartnerBranding // Logo, colors, company name
+  plan_tier: string // "free" | "starter" | "pro" | "enterprise"
+  features: PartnerFeatures // Feature flags
   resource_limits: ResourceLimits // Max workspaces, users, agents
-  is_platform_partner: boolean    // True for the main platform
+  is_platform_partner: boolean // True for the main platform
 }
 
 // 2. WORKSPACE (Middle Level - Client Project)
 interface Workspace {
   id: string
-  partner_id: string              // Belongs to a partner
+  partner_id: string // Belongs to a partner
   name: string
-  slug: string                    // e.g., "client-alpha"
+  slug: string // e.g., "client-alpha"
   resource_limits: ResourceLimits // Inherited/overridden from partner
-  current_month_minutes: number   // Usage tracking
-  current_month_cost: number      // Cost tracking
+  current_month_minutes: number // Usage tracking
+  current_month_cost: number // Cost tracking
   status: string
 }
 
@@ -190,7 +190,7 @@ interface User {
 inspralv/
 ├── prisma/                       # Prisma ORM
 │   ├── schema.prisma             # Database schema definition
-│   └── migrations/               # Database migrations
+│   └── (no migrations folder committed)
 ├── prisma.config.ts              # Prisma configuration
 ├── app/                          # Next.js App Router
 │   ├── (auth)/                   # Auth pages (login, signup, etc.)
@@ -329,6 +329,9 @@ inspralv/
 │   │   ├── workspace-sidebar.tsx
 │   │   ├── workspace-header.tsx
 │   │   ├── workspace-selector.tsx
+│   │   ├── create-workspace-form.tsx
+│   │   ├── integrations/
+│   │   │   └── connect-integartion-dialog.tsx
 │   │   ├── agents/
 │   │   │   ├── workspace-agent-card.tsx
 │   │   │   ├── workspace-agent-form.tsx
@@ -474,9 +477,10 @@ inspralv/
 │   └── api.types.ts              # API-specific types
 │
 ├── proxy.ts                      # Next.js middleware
-├── CLAUDE.md                     # AI assistant guide
 ├── CODEBASE_REFERENCE.md         # This file
 ├── OPTIMIZATION_PLAN.md          # Performance optimization plan
+├── README.md
+├── next.config.ts
 └── package.json
 ```
 
@@ -484,209 +488,34 @@ inspralv/
 
 ## Database Schema
 
-### Core Tables (Inferred from Types)
+### Source of Truth: Prisma Schema
 
-```sql
--- PARTNER (Agency/Organization)
-CREATE TABLE partners (
-  id UUID PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  slug VARCHAR(100) UNIQUE NOT NULL,
-  branding JSONB DEFAULT '{}',        -- {logo_url, primary_color, company_name...}
-  plan_tier VARCHAR(50) DEFAULT 'starter',
-  features JSONB DEFAULT '{}',        -- {white_label, custom_domain, api_access...}
-  resource_limits JSONB DEFAULT '{}', -- {max_workspaces, max_agents...}
-  stripe_customer_id VARCHAR(255),
-  stripe_subscription_id VARCHAR(255),
-  subscription_status VARCHAR(50),
-  settings JSONB DEFAULT '{}',
-  is_platform_partner BOOLEAN DEFAULT FALSE,
-  deleted_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+The authoritative schema for this project is `prisma/schema.prisma` (it maps to the Supabase Postgres database). The generated Supabase types live in `types/database.types.ts`.
 
--- PARTNER DOMAINS (White-Label Hostname Mapping)
-CREATE TABLE partner_domains (
-  id UUID PRIMARY KEY,
-  partner_id UUID REFERENCES partners(id),
-  hostname VARCHAR(255) UNIQUE NOT NULL,
-  is_primary BOOLEAN DEFAULT FALSE,
-  verified_at TIMESTAMPTZ,
-  verification_token VARCHAR(255),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+#### Key Tables / Models (high level)
 
--- PARTNER MEMBERS (Users belonging to a Partner)
-CREATE TABLE partner_members (
-  id UUID PRIMARY KEY,
-  partner_id UUID REFERENCES partners(id),
-  user_id UUID REFERENCES auth.users(id),
-  role VARCHAR(50) NOT NULL,          -- 'owner' | 'admin' | 'member'
-  invited_by UUID,
-  joined_at TIMESTAMPTZ,
-  removed_at TIMESTAMPTZ,
-  removed_by UUID,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+- **Partners & White-labeling**
+  - `partners`: `branding` (JSON), `plan_tier`, `features` (JSON), `resource_limits` (JSON), Stripe fields, `is_platform_partner`, `onboarding_status`, `request_id`
+  - `partner_domains`: hostname mapping
+  - `partner_members`: partner-level membership
+  - `partner_invitations`: tokenized partner invites
+  - `partner_requests`: onboarding pipeline (in Prisma these include required `desired_subdomain` + `custom_domain`)
 
--- WORKSPACES (Projects within a Partner)
-CREATE TABLE workspaces (
-  id UUID PRIMARY KEY,
-  partner_id UUID REFERENCES partners(id),
-  name VARCHAR(255) NOT NULL,
-  slug VARCHAR(100) NOT NULL,
-  description TEXT,
-  resource_limits JSONB DEFAULT '{}',
-  settings JSONB DEFAULT '{}',
-  current_month_minutes INTEGER DEFAULT 0,
-  current_month_cost DECIMAL(10,2) DEFAULT 0,
-  last_usage_reset_at TIMESTAMPTZ,
-  status VARCHAR(50) DEFAULT 'active',
-  deleted_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(partner_id, slug)
-);
+- **Workspaces**
+  - `workspaces`: `resource_limits` (JSON), `current_month_minutes` + `current_month_cost` (numeric/decimal), soft delete via `deleted_at`
+  - `workspace_members`: workspace-level membership
+  - `workspace_invitations`: tokenized workspace invites
+  - `workspace_integrations`: provider integrations with `api_keys` (JSON) and per-workspace activation
 
--- WORKSPACE MEMBERS
-CREATE TABLE workspace_members (
-  id UUID PRIMARY KEY,
-  workspace_id UUID REFERENCES workspaces(id),
-  user_id UUID REFERENCES auth.users(id),
-  role VARCHAR(50) NOT NULL,          -- 'owner' | 'admin' | 'member' | 'viewer'
-  invited_by UUID,
-  invited_at TIMESTAMPTZ,
-  joined_at TIMESTAMPTZ,
-  removed_at TIMESTAMPTZ,
-  removed_by UUID,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+- **Voice Agents & Calls**
+  - `ai_agents`: provider enums, external IDs, sync fields (`needs_resync`, `sync_status`, `last_synced_at`, `last_sync_error`), metrics (`total_minutes`, `total_cost`, `total_conversations`), tags, versioning
+  - `conversations`: `call_status` enum is richer than the old doc (e.g. `initiated`, `ringing`, `in_progress`, `completed`, `failed`, `no_answer`, `busy`, `canceled`), plus follow-up fields and `transcript_search` (tsvector)
+  - `usage_tracking`: normalized per-resource usage rows (minutes, tokens, etc.) tied to conversations/workspaces
 
--- WORKSPACE INVITATIONS
-CREATE TABLE workspace_invitations (
-  id UUID PRIMARY KEY,
-  workspace_id UUID REFERENCES workspaces(id),
-  email VARCHAR(255) NOT NULL,
-  role VARCHAR(50) NOT NULL,          -- 'admin' | 'member' | 'viewer'
-  token VARCHAR(255) UNIQUE NOT NULL,
-  message TEXT,
-  invited_by UUID,
-  status VARCHAR(50) DEFAULT 'pending', -- 'pending' | 'accepted' | 'expired' | 'cancelled'
-  expires_at TIMESTAMPTZ NOT NULL,
-  accepted_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- AI AGENTS
-CREATE TABLE ai_agents (
-  id UUID PRIMARY KEY,
-  workspace_id UUID REFERENCES workspaces(id),
-  name VARCHAR(255) NOT NULL,
-  description TEXT,
-  provider VARCHAR(50) NOT NULL,      -- 'vapi' | 'retell' | 'synthflow'
-  voice_provider VARCHAR(50),         -- 'elevenlabs' | 'deepgram' | 'azure' | 'openai' | 'cartesia'
-  model_provider VARCHAR(50),         -- 'openai' | 'anthropic' | 'google' | 'groq'
-  transcriber_provider VARCHAR(50),   -- 'deepgram' | 'assemblyai' | 'openai'
-  config JSONB DEFAULT '{}',          -- Agent configuration
-  agent_secret_api_key JSONB DEFAULT '[]',
-  agent_public_api_key JSONB DEFAULT '[]',
-  external_agent_id VARCHAR(255),     -- ID from provider (VAPI/Retell)
-  is_active BOOLEAN DEFAULT TRUE,
-  created_by UUID,
-  deleted_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- CONVERSATIONS (Call Records)
-CREATE TABLE conversations (
-  id UUID PRIMARY KEY,
-  workspace_id UUID REFERENCES workspaces(id),
-  agent_id UUID REFERENCES ai_agents(id),
-  external_call_id VARCHAR(255),
-  direction VARCHAR(50),              -- 'inbound' | 'outbound'
-  status VARCHAR(50),                 -- 'queued' | 'in_progress' | 'completed' | 'failed' | 'no_answer'
-  phone_number VARCHAR(50),
-  caller_name VARCHAR(255),
-  started_at TIMESTAMPTZ,
-  ended_at TIMESTAMPTZ,
-  duration_seconds INTEGER DEFAULT 0,
-  recording_url TEXT,
-  transcript TEXT,
-  summary TEXT,
-  sentiment VARCHAR(50),              -- 'positive' | 'neutral' | 'negative'
-  quality_score DECIMAL(3,2),
-  customer_rating INTEGER,
-  total_cost DECIMAL(10,4),
-  cost_breakdown JSONB,
-  requires_follow_up BOOLEAN DEFAULT FALSE,
-  follow_up_notes TEXT,
-  metadata JSONB,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- PARTNER REQUESTS (White-Label Onboarding)
-CREATE TABLE partner_requests (
-  id UUID PRIMARY KEY,
-  status VARCHAR(50) DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected' | 'provisioning'
-  company_name VARCHAR(255) NOT NULL,
-  contact_email VARCHAR(255) NOT NULL,
-  contact_name VARCHAR(255) NOT NULL,
-  phone VARCHAR(50),
-  desired_subdomain VARCHAR(100),
-  custom_domain VARCHAR(255),
-  business_description TEXT,
-  expected_users INTEGER,
-  use_case TEXT,
-  branding_data JSONB DEFAULT '{}',
-  selected_plan VARCHAR(50),
-  billing_info JSONB,
-  requested_at TIMESTAMPTZ DEFAULT NOW(),
-  reviewed_at TIMESTAMPTZ,
-  reviewed_by UUID,
-  rejection_reason TEXT,
-  provisioned_partner_id UUID REFERENCES partners(id),
-  metadata JSONB DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- SUPER ADMIN
-CREATE TABLE super_admin (
-  id UUID PRIMARY KEY REFERENCES auth.users(id),
-  email VARCHAR(255) NOT NULL,
-  full_name VARCHAR(255),
-  first_name VARCHAR(100),
-  last_name VARCHAR(100),
-  avatar_url TEXT,
-  is_active BOOLEAN DEFAULT TRUE,
-  last_login_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- AUDIT LOG
-CREATE TABLE audit_log (
-  id UUID PRIMARY KEY,
-  user_id UUID NOT NULL,
-  partner_id UUID,
-  workspace_id UUID,
-  action VARCHAR(100) NOT NULL,
-  entity_type VARCHAR(100),
-  entity_id UUID,
-  old_values JSONB,
-  new_values JSONB,
-  metadata JSONB,
-  ip_address VARCHAR(45),
-  user_agent TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+- **Users & Admin**
+  - `users`: public profile linked to `auth.users`
+  - `super_admin`: whitelist table for super admins
+  - `audit_log`: tracks `user_id`, `workspace_id`, `action`, `entity_type`, JSON old/new values (note: current Prisma model does **not** include `partner_id`)
 
 ---
 
@@ -734,13 +563,13 @@ CREATE TABLE audit_log (
 ```typescript
 // lib/api/auth.ts
 interface PartnerAuthContext {
-  user: PartnerAuthUser          // Authenticated user
-  partner: ResolvedPartner       // Current partner (from hostname)
-  partnerRole: PartnerMemberRole | null  // User's role in partner
+  user: PartnerAuthUser // Authenticated user
+  partner: ResolvedPartner // Current partner (from hostname)
+  partnerRole: PartnerMemberRole | null // User's role in partner
   partnerMembership: PartnerMembership | null
-  workspaces: AccessibleWorkspace[]      // User's workspaces in this partner
-  supabase: SupabaseClient
-  adminClient: SupabaseClient    // Bypasses RLS
+  workspaces: AccessibleWorkspace[] // User's workspaces in this partner
+  supabase: Awaited<ReturnType<typeof createClient>>
+  adminClient: ReturnType<typeof createAdminClient> // Bypasses RLS
 }
 
 // lib/api/workspace-auth.ts
@@ -776,26 +605,24 @@ const adminClient = createAdminClient()
 ```typescript
 // app/api/w/[workspaceSlug]/agents/route.ts
 
-import { withWorkspace } from "@/lib/api/workspace-auth"
-import { apiResponse, apiError, serverError } from "@/lib/api/helpers"
+import { getWorkspaceContext } from "@/lib/api/workspace-auth"
+import { apiResponse, unauthorized } from "@/lib/api/helpers"
 
-export const GET = withWorkspace(async (request, context, routeContext) => {
-  const { workspace, user, adminClient } = context
-  
-  // workspace.id, workspace.role available
-  const { data, error } = await adminClient
+export async function GET(request, { params }) {
+  const { workspaceSlug } = await params
+  const ctx = await getWorkspaceContext(workspaceSlug)
+  if (!ctx) return unauthorized()
+
+  // ctx.workspace.id, ctx.workspace.role, ctx.adminClient available
+  const { data } = await ctx.adminClient
     .from("ai_agents")
     .select("*")
-    .eq("workspace_id", workspace.id)
-  
+    .eq("workspace_id", ctx.workspace.id)
   return apiResponse({ data })
-})
+}
 
-export const POST = withWorkspace(async (request, context) => {
-  const body = await request.json()
-  // Create agent...
-  return apiResponse(newAgent, 201)
-}, { requiredRoles: ["owner", "admin", "member"] })
+// Note: `withWorkspace()` exists in `lib/api/workspace-auth.ts`, but current route handlers primarily call
+// `getWorkspaceContext()` directly inside each handler.
 ```
 
 #### API Response Helpers
@@ -803,13 +630,13 @@ export const POST = withWorkspace(async (request, context) => {
 ```typescript
 // lib/api/helpers.ts
 
-apiResponse(data, status = 200)   // Success response
-apiError(message, status = 400)   // Client error
-serverError(message)              // 500 error
-unauthorized()                    // 401
-forbidden(message)                // 403
-notFound(resource)                // 404
-getValidationError(zodError)      // Get first Zod error message
+apiResponse(data, (status = 200)) // Success response
+apiError(message, (status = 400)) // Client error
+serverError(message) // 500 error
+unauthorized() // 401
+forbidden(message) // 403
+notFound(resource) // 404
+getValidationError(zodError) // Get first Zod error message
 ```
 
 ### API Routes Overview
@@ -825,6 +652,7 @@ getValidationError(zodError)      // Get first Zod error message
 │   ├── agents/
 │   │   ├── route.ts          # GET (list), POST (create)
 │   │   └── [id]/route.ts     # GET, PATCH, DELETE
+│   │       └── test-call/route.ts  # POST (initiate provider test call)
 │   ├── members/
 │   │   ├── route.ts          # GET (list), POST
 │   │   └── [memberId]/route.ts # PATCH, DELETE
@@ -833,6 +661,9 @@ getValidationError(zodError)      // Get first Zod error message
 │   │   └── [id]/route.ts     # DELETE (revoke)
 │   ├── conversations/route.ts
 │   ├── analytics/route.ts
+│   ├── integrations/
+│   │   ├── route.ts               # GET (list), POST (connect)
+│   │   └── [provider]/route.ts    # PATCH/DELETE (provider-specific ops)
 │   ├── settings/route.ts     # GET, PATCH
 │   └── dashboard/stats/route.ts
 │
@@ -919,7 +750,9 @@ RootLayout (app/layout.tsx)
 ### Component Categories
 
 #### UI Components (`components/ui/`)
+
 Primitives from shadcn/ui (Radix UI + Tailwind):
+
 - `button.tsx`, `card.tsx`, `dialog.tsx`, `dropdown-menu.tsx`
 - `input.tsx`, `select.tsx`, `table.tsx`, `tabs.tsx`
 - `avatar.tsx`, `badge.tsx`, `skeleton.tsx`
@@ -928,10 +761,14 @@ Primitives from shadcn/ui (Radix UI + Tailwind):
 - `switch.tsx`, `textarea.tsx`, `label.tsx`
 
 #### Workspace Components (`components/workspace/`)
+
 - `workspace-dashboard-layout.tsx` - Main dashboard layout
 - `workspace-sidebar.tsx` - Navigation sidebar with workspace selector
 - `workspace-header.tsx` - Top header with user menu
 - `workspace-selector.tsx` - Workspace picker component
+- `create-workspace-form.tsx` - Workspace creation flow UI
+- `integrations/`
+  - `connect-integartion-dialog.tsx` - Connect provider integration dialog
 - `agents/` - Agent-related components
   - `workspace-agent-card.tsx` - Agent display card
   - `workspace-agent-form.tsx` - Agent form component
@@ -944,12 +781,14 @@ Primitives from shadcn/ui (Radix UI + Tailwind):
   - `invite-member-dialog.tsx` - Member invitation dialog
 
 #### Agent Components (`components/agents/`)
+
 - `agent-card.tsx` - Generic agent card
 - `delete-agent-dialog.tsx` - Deletion confirmation
 - `test-call-button.tsx` - Initiate test call
 - `test-call-modal.tsx` - Test call interface
 
 #### Super Admin Components (`components/super-admin/`)
+
 - `sidebar.tsx` - Admin navigation
 - `header.tsx` - Admin header
 - `super-admin-layout-client.tsx` - Admin layout wrapper
@@ -961,11 +800,13 @@ Primitives from shadcn/ui (Radix UI + Tailwind):
 - `delete-partner-request-dialog.tsx` - Delete partner request
 
 #### Shared Components (`components/shared/`)
+
 - `error-boundary.tsx` - Error boundary component
 - `loading-spinner.tsx` - Loading spinner
 - `loading.tsx` - Loading state component
 
 #### Marketing Components (`components/marketing/`)
+
 - `partner-request-form.tsx` - Partner request form
 - `pricing-card.tsx` - Pricing plan cards
 
@@ -1075,89 +916,89 @@ Both VAPI and Retell support browser-based test calls:
 
 ### Authentication & Authorization
 
-| File | Purpose |
-|------|---------|
-| `lib/api/auth.ts` | `getPartnerAuthContext()` - Main auth context |
-| `lib/api/workspace-auth.ts` | `withWorkspace()` HOF, `getWorkspaceContext()` |
-| `lib/api/partner.ts` | `getPartnerFromHost()` - Partner resolution |
-| `lib/api/super-admin-auth.ts` | `getSuperAdminContext()` |
-| `lib/api/get-auth-cached.ts` | Cached auth context for server components |
-| `lib/api/get-partner-server.ts` | Server-side partner context |
-| `lib/rbac/permissions.ts` | RBAC permission matrix |
-| `lib/rbac/middleware.ts` | RBAC middleware |
-| `lib/auth/password.ts` | Password utilities |
-| `proxy.ts` | Middleware - session, redirects, CSP |
+| File                            | Purpose                                                                                                          |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `lib/api/auth.ts`               | `getPartnerAuthContext()` - Main auth context                                                                    |
+| `lib/api/workspace-auth.ts`     | `getWorkspaceContext()` + `withWorkspace()` helper (most routes currently call `getWorkspaceContext()` directly) |
+| `lib/api/partner.ts`            | `getPartnerFromHost()` - Partner resolution                                                                      |
+| `lib/api/super-admin-auth.ts`   | `getSuperAdminContext()`                                                                                         |
+| `lib/api/get-auth-cached.ts`    | Cached auth context for server components                                                                        |
+| `lib/api/get-partner-server.ts` | Server-side partner context                                                                                      |
+| `lib/rbac/permissions.ts`       | RBAC permission matrix                                                                                           |
+| `lib/rbac/middleware.ts`        | RBAC middleware                                                                                                  |
+| `lib/auth/password.ts`          | Password utilities                                                                                               |
+| `proxy.ts`                      | Middleware - session, redirects, CSP                                                                             |
 
 ### Supabase
 
-| File | Purpose |
-|------|---------|
-| `lib/supabase/client.ts` | Browser client |
-| `lib/supabase/server.ts` | Server client (SSR) |
-| `lib/supabase/admin.ts` | Admin client (bypasses RLS) |
-| `lib/supabase/middleware.ts` | Session refresh |
+| File                         | Purpose                     |
+| ---------------------------- | --------------------------- |
+| `lib/supabase/client.ts`     | Browser client              |
+| `lib/supabase/server.ts`     | Server client (SSR)         |
+| `lib/supabase/admin.ts`      | Admin client (bypasses RLS) |
+| `lib/supabase/middleware.ts` | Session refresh             |
 
 ### Prisma
 
-| File | Purpose |
-|------|---------|
-| `prisma/schema.prisma` | Database schema definition |
-| `prisma.config.ts` | Prisma configuration |
-| `lib/prisma/client.ts` | Prisma client singleton with connection pooling |
-| `lib/prisma/index.ts` | Prisma module exports |
-| `lib/generated/prisma/` | Generated Prisma client (auto-generated) |
+| File                    | Purpose                                         |
+| ----------------------- | ----------------------------------------------- |
+| `prisma/schema.prisma`  | Database schema definition                      |
+| `prisma.config.ts`      | Prisma configuration                            |
+| `lib/prisma/client.ts`  | Prisma client singleton with connection pooling |
+| `lib/prisma/index.ts`   | Prisma module exports                           |
+| `lib/generated/prisma/` | Generated Prisma client (auto-generated)        |
 
 ### API Helpers
 
-| File | Purpose |
-|------|---------|
-| `lib/api/helpers.ts` | Response utilities |
-| `lib/api/pagination.ts` | Pagination helpers |
-| `lib/api/etag.ts` | ETag/caching headers |
-| `lib/api/error-handler.ts` | Error handling |
-| `lib/api/fetcher.ts` | Fetch utilities |
-| `lib/audit.ts` | Audit logging |
-| `lib/rate-limit.ts` | Rate limiting |
+| File                       | Purpose              |
+| -------------------------- | -------------------- |
+| `lib/api/helpers.ts`       | Response utilities   |
+| `lib/api/pagination.ts`    | Pagination helpers   |
+| `lib/api/etag.ts`          | ETag/caching headers |
+| `lib/api/error-handler.ts` | Error handling       |
+| `lib/api/fetcher.ts`       | Fetch utilities      |
+| `lib/audit.ts`             | Audit logging        |
+| `lib/rate-limit.ts`        | Rate limiting        |
 
 ### State Management
 
-| File | Purpose |
-|------|---------|
-| `lib/hooks/use-workspace-agents.ts` | Agent CRUD with React Query |
-| `lib/hooks/use-workspace-members.ts` | Member management |
-| `lib/hooks/use-workspace-conversations.ts` | Conversation data |
-| `lib/hooks/use-workspace-settings.ts` | Workspace settings |
-| `lib/hooks/use-workspace-stats.ts` | Dashboard statistics |
-| `lib/hooks/use-auth.ts` | Auth actions (logout) |
-| `lib/hooks/use-partner.ts` | Partner data |
-| `lib/hooks/use-partner-auth.ts` | Partner auth context |
-| `lib/hooks/use-partner-team.ts` | Partner team management |
-| `lib/hooks/use-partner-dashboard-stats.ts` | Partner dashboard data |
-| `lib/hooks/use-partner-requests.ts` | Partner request management |
-| `lib/hooks/use-super-admin-partners.ts` | Super admin partner data |
-| `lib/hooks/use-branding.ts` | Partner branding |
-| `lib/hooks/use-web-calls.ts` | Voice calling |
-| `lib/hooks/use-optimistic.ts` | Optimistic updates |
-| `lib/hooks/use-prefetch.ts` | Data prefetching |
-| `lib/hooks/use-toast.ts` | Toast notifications |
-| `lib/providers/query-provider.tsx` | React Query provider |
+| File                                       | Purpose                     |
+| ------------------------------------------ | --------------------------- |
+| `lib/hooks/use-workspace-agents.ts`        | Agent CRUD with React Query |
+| `lib/hooks/use-workspace-members.ts`       | Member management           |
+| `lib/hooks/use-workspace-conversations.ts` | Conversation data           |
+| `lib/hooks/use-workspace-settings.ts`      | Workspace settings          |
+| `lib/hooks/use-workspace-stats.ts`         | Dashboard statistics        |
+| `lib/hooks/use-auth.ts`                    | Auth actions (logout)       |
+| `lib/hooks/use-partner.ts`                 | Partner data                |
+| `lib/hooks/use-partner-auth.ts`            | Partner auth context        |
+| `lib/hooks/use-partner-team.ts`            | Partner team management     |
+| `lib/hooks/use-partner-dashboard-stats.ts` | Partner dashboard data      |
+| `lib/hooks/use-partner-requests.ts`        | Partner request management  |
+| `lib/hooks/use-super-admin-partners.ts`    | Super admin partner data    |
+| `lib/hooks/use-branding.ts`                | Partner branding            |
+| `lib/hooks/use-web-calls.ts`               | Voice calling               |
+| `lib/hooks/use-optimistic.ts`              | Optimistic updates          |
+| `lib/hooks/use-prefetch.ts`                | Data prefetching            |
+| `lib/hooks/use-toast.ts`                   | Toast notifications         |
+| `lib/providers/query-provider.tsx`         | React Query provider        |
 
 ### Types
 
-| File | Purpose |
-|------|---------|
+| File                      | Purpose                  |
+| ------------------------- | ------------------------ |
 | `types/database.types.ts` | Core types + Zod schemas |
-| `types/api.types.ts` | API-specific types |
+| `types/api.types.ts`      | API-specific types       |
 
 ### Configuration
 
-| File | Purpose |
-|------|---------|
-| `config/plans.ts` | Plan tiers & features |
-| `config/site.ts` | Site metadata |
-| `lib/env.ts` | Environment validation |
-| `lib/constrants.ts` | App constants |
-| `lib/metadata.ts` | Page metadata helpers |
+| File                | Purpose                |
+| ------------------- | ---------------------- |
+| `config/plans.ts`   | Plan tiers & features  |
+| `config/site.ts`    | Site metadata          |
+| `lib/env.ts`        | Environment validation |
+| `lib/constrants.ts` | App constants          |
+| `lib/metadata.ts`   | Page metadata helpers  |
 
 ---
 
@@ -1172,9 +1013,9 @@ import { getPartnerAuthCached } from "@/lib/api/get-auth-cached"
 export default async function Page({ params }) {
   const { workspaceSlug } = await params
   const auth = await getPartnerAuthCached()
-  
+
   if (!auth) redirect("/login")
-  
+
   return <Dashboard />
 }
 ```
@@ -1188,10 +1029,10 @@ import { useWorkspaceAgents } from "@/lib/hooks/use-workspace-agents"
 
 export function AgentList() {
   const { data, isLoading, error } = useWorkspaceAgents()
-  
+
   if (isLoading) return <Loading />
   if (error) return <Error />
-  
+
   return <AgentGrid agents={data.data} />
 }
 ```
@@ -1200,16 +1041,21 @@ export function AgentList() {
 
 ```typescript
 // app/api/w/[workspaceSlug]/agents/route.ts
-import { withWorkspace } from "@/lib/api/workspace-auth"
+import { getWorkspaceContext } from "@/lib/api/workspace-auth"
+import { apiResponse, unauthorized } from "@/lib/api/helpers"
 
-export const GET = withWorkspace(async (req, ctx) => {
+export async function GET(req, { params }) {
+  const { workspaceSlug } = await params
+  const ctx = await getWorkspaceContext(workspaceSlug)
+  if (!ctx) return unauthorized()
+
   const agents = await ctx.adminClient
     .from("ai_agents")
     .select("*")
     .eq("workspace_id", ctx.workspace.id)
-  
+
   return apiResponse({ data: agents.data })
-})
+}
 ```
 
 ### Adding Audit Logs
@@ -1252,12 +1098,13 @@ export function useWorkspaceAgents(options) {
 // Mutations with cache invalidation
 export function useCreateWorkspaceAgent() {
   const queryClient = useQueryClient()
-  
+
   return useMutation({
-    mutationFn: (data) => fetch(`/api/w/${slug}/agents`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    mutationFn: (data) =>
+      fetch(`/api/w/${slug}/agents`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries(["workspace-agents", slug])
     },
@@ -1317,7 +1164,10 @@ response.headers.set("X-DNS-Prefetch-Control", "on")
 response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
 
 // Permissions Policy:
-response.headers.set("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=()")
+response.headers.set(
+  "Permissions-Policy",
+  "camera=(), microphone=(self), geolocation=(), payment=()"
+)
 
 // Content Security Policy:
 response.headers.set("Content-Security-Policy", buildCSP())
@@ -1415,8 +1265,8 @@ await warmCache(key, fetchFn, ttl)
 ### Cache Keys
 
 ```typescript
-CacheKeys.partner(hostname)           // Partner by hostname
-CacheKeys.partnerBranding(partnerId)  // Partner branding
+CacheKeys.partner(hostname) // Partner by hostname
+CacheKeys.partnerBranding(partnerId) // Partner branding
 CacheKeys.userWorkspaces(userId, partnerId)
 CacheKeys.workspace(workspaceId)
 CacheKeys.workspaceAgents(workspaceId)
@@ -1426,13 +1276,13 @@ CacheKeys.authContext(userId, partnerId)
 ### Cache TTLs
 
 ```typescript
-CacheTTL.PARTNER = 10 * 60          // 10 minutes
+CacheTTL.PARTNER = 10 * 60 // 10 minutes
 CacheTTL.PARTNER_BRANDING = 60 * 60 // 1 hour
-CacheTTL.USER_WORKSPACES = 5 * 60   // 5 minutes
-CacheTTL.AUTH_CONTEXT = 2 * 60      // 2 minutes
-CacheTTL.WORKSPACE = 5 * 60         // 5 minutes
-CacheTTL.STATIC = 60 * 60           // 1 hour
-CacheTTL.SHORT = 60                 // 1 minute
+CacheTTL.USER_WORKSPACES = 5 * 60 // 5 minutes
+CacheTTL.AUTH_CONTEXT = 2 * 60 // 2 minutes
+CacheTTL.WORKSPACE = 5 * 60 // 5 minutes
+CacheTTL.STATIC = 60 * 60 // 1 hour
+CacheTTL.SHORT = 60 // 1 minute
 ```
 
 ### Cache Invalidation
@@ -1480,12 +1330,12 @@ The codebase uses Prisma ORM alongside Supabase for type-safe database operation
 
 ### Prisma Files
 
-| File | Purpose |
-|------|---------|
-| `prisma/schema.prisma` | Database schema definition |
-| `prisma.config.ts` | Prisma configuration |
-| `lib/prisma/client.ts` | Prisma client singleton |
-| `lib/prisma/index.ts` | Prisma module exports |
+| File                    | Purpose                                  |
+| ----------------------- | ---------------------------------------- |
+| `prisma/schema.prisma`  | Database schema definition               |
+| `prisma.config.ts`      | Prisma configuration                     |
+| `lib/prisma/client.ts`  | Prisma client singleton                  |
+| `lib/prisma/index.ts`   | Prisma module exports                    |
 | `lib/generated/prisma/` | Generated Prisma client (auto-generated) |
 
 ### Basic Usage
@@ -1539,12 +1389,12 @@ const [user, membership] = await withTransaction(async (tx) => {
 
 ### Prisma vs Supabase Client
 
-| Use Prisma For | Use Supabase Client For |
-|----------------|------------------------|
+| Use Prisma For                 | Use Supabase Client For |
+| ------------------------------ | ----------------------- |
 | Complex queries with relations | Real-time subscriptions |
-| Transactions | Authentication |
-| Type-safe CRUD operations | Storage (file uploads) |
-| Aggregations | RLS-dependent queries |
+| Transactions                   | Authentication          |
+| Type-safe CRUD operations      | Storage (file uploads)  |
+| Aggregations                   | RLS-dependent queries   |
 
 ### Prisma Commands
 
@@ -1627,14 +1477,14 @@ export const env = {
   supabaseUrl: getEnvVar("NEXT_PUBLIC_SUPABASE_URL"),
   supabaseAnonKey: getEnvVar("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
   supabaseServiceRoleKey: getEnvVar("SUPABASE_SERVICE_ROLE_KEY"),
-  
+
   // Prisma Database
   databaseUrl: getEnvVar("DATABASE_URL", false),
   directUrl: getEnvVar("DIRECT_URL", false),
-  
+
   // App
   appUrl: getEnvVar("NEXT_PUBLIC_APP_URL", false) || "http://localhost:3000",
-  
+
   // Optional services...
   isDev: process.env.NODE_ENV === "development",
   isProd: process.env.NODE_ENV === "production",
@@ -1723,4 +1573,4 @@ npm run db:studio       # Open database GUI
 
 ---
 
-*This reference file is maintained for AI assistant understanding and developer onboarding.*
+_This reference file is maintained for AI assistant understanding and developer onboarding._

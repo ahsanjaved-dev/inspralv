@@ -38,11 +38,12 @@ export default function Error({ error, reset }: ErrorProps) {
 
   // Determine error type for better messaging
   const errorMessage = getErrorMessage(error)
-  const isNetworkError = error.message?.toLowerCase().includes("network") ||
+  const isNetworkError =
+    error.message?.toLowerCase().includes("network") ||
     error.message?.toLowerCase().includes("fetch")
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-red-50 via-white to-orange-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-linear-to-br from-red-50 via-white to-orange-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
       <Card className="w-full max-w-lg shadow-xl border-red-200 dark:border-red-900/50">
         <CardHeader className="text-center pb-4">
           <div className="mx-auto w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mb-4">
@@ -51,18 +52,13 @@ export default function Error({ error, reset }: ErrorProps) {
           <CardTitle className="text-2xl text-red-700 dark:text-red-400">
             Something went wrong
           </CardTitle>
-          <CardDescription className="text-base mt-2">
-            {errorMessage}
-          </CardDescription>
+          <CardDescription className="text-base mt-2">{errorMessage}</CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
           {/* Recovery Actions */}
           <div className="flex flex-col sm:flex-row gap-3">
-            <Button
-              onClick={reset}
-              className="flex-1 bg-red-600 hover:bg-red-700"
-            >
+            <Button onClick={reset} className="flex-1 bg-red-600 hover:bg-red-700">
               <RefreshCw className="mr-2 h-4 w-4" />
               Try Again
             </Button>
@@ -162,4 +158,3 @@ function getErrorMessage(error: Error): string {
 
   return "An unexpected error occurred. Our team has been notified."
 }
-
