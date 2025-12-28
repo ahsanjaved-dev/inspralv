@@ -227,6 +227,19 @@ export {
   type UpdateWorkspaceIntegrationInput,
 } from "./database.types"
 
+// Re-export knowledge base schemas from database.types
+export {
+  knowledgeDocumentTypeSchema,
+  knowledgeDocumentStatusSchema,
+  createKnowledgeDocumentSchema,
+  updateKnowledgeDocumentSchema,
+  type KnowledgeDocument,
+  type KnowledgeDocumentType,
+  type KnowledgeDocumentStatus,
+  type CreateKnowledgeDocumentInput,
+  type UpdateKnowledgeDocumentInput,
+} from "./database.types"
+
 // ============================================================================
 // PARTNER REQUEST API TYPES (Phase 1 - Milestone 1)
 // ============================================================================

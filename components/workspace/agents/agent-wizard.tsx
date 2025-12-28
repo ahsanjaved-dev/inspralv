@@ -30,7 +30,7 @@ import {
   Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { CreateWorkspaceAgentInput } from "@/types/api.types"
+import { functionToolsArraySchema, type CreateWorkspaceAgentInput } from "@/types/api.types"
 import type { FunctionTool } from "@/types/database.types"
 import { FunctionToolEditor } from "./function-tool-editor"
 
@@ -254,6 +254,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   const handleSubmit = async () => {
     if (!validateStep(currentStep)) return
 
+    const tools =
+      formData.tools.length > 0 ? functionToolsArraySchema.parse(formData.tools) : undefined
+
     // Map wizard data to API schema
     const apiData: CreateWorkspaceAgentInput = {
       name: formData.name,
@@ -270,7 +273,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
           speed: formData.voiceSpeed,
         },
         // Include function tools if any are configured
-        tools: formData.tools.length > 0 ? formData.tools : undefined,
+        tools,
         tools_server_url: formData.toolsServerUrl || undefined,
       },
       agent_secret_api_key: [],

@@ -1,6 +1,6 @@
 # Inspralv Codebase Reference
 
-> **Last Updated**: December 2025  
+> **Last Updated**: December 28, 2025  
 > **Purpose**: Complete codebase analysis for AI assistants and developers
 
 ---
@@ -53,7 +53,7 @@
 - **Multi-Tenant Architecture**: Partner → Workspace → User hierarchy
 - **AI Voice Agent Management**: Create, sync, and manage agents across VAPI, Retell, Synthflow
 - **Role-Based Access Control**: Comprehensive RBAC for partners and workspaces
-- **Super Admin Console**: Platform-wide management for partner requests and billing
+- **Super Admin Console**: Platform-wide management for partner requests, partner CRUD, and billing overview (Total Organizations + agencies table)
 - **Organization Management**: Partner-level team and settings management
 
 ---
@@ -191,7 +191,6 @@ inspralv/
 ├── prisma/                       # Prisma ORM
 │   ├── schema.prisma             # Database schema definition
 │   └── (no migrations folder committed)
-├── prisma.config.ts              # Prisma configuration
 ├── app/                          # Next.js App Router
 │   ├── (auth)/                   # Auth pages (login, signup, etc.)
 │   │   ├── login/page.tsx
@@ -310,6 +309,7 @@ inspralv/
 │   │   ├── badge.tsx
 │   │   ├── button.tsx
 │   │   ├── card.tsx
+│   │   ├── collapsible.tsx
 │   │   ├── dialog.tsx
 │   │   ├── dropdown-menu.tsx
 │   │   ├── input.tsx
@@ -336,7 +336,8 @@ inspralv/
 │   │   │   ├── workspace-agent-card.tsx
 │   │   │   ├── workspace-agent-form.tsx
 │   │   │   ├── agent-wizard.tsx
-│   │   │   └── agent-wizard-dynamic.tsx
+│   │   │   ├── agent-wizard-dynamic.tsx
+│   │   │   └── function-tool-editor.tsx
 │   │   ├── conversations/
 │   │   │   ├── conversation-detail-modal.tsx
 │   │   │   └── conversation-detail-dynamic.tsx
@@ -428,10 +429,12 @@ inspralv/
 │   │   ├── use-partner-team.ts   # Partner team management
 │   │   ├── use-prefetch.ts       # Data prefetching
 │   │   ├── use-super-admin-partners.ts
+│   │   ├── use-test-call-validations.tsx
 │   │   ├── use-toast.ts          # Toast notifications
 │   │   ├── use-web-calls.ts      # Voice calling
 │   │   ├── use-workspace-agents.ts
 │   │   ├── use-workspace-conversations.ts
+│   │   ├── use-workspace-integrations.tsx
 │   │   ├── use-workspace-members.ts
 │   │   ├── use-workspace-settings.ts
 │   │   └── use-workspace-stats.ts
@@ -481,7 +484,12 @@ inspralv/
 ├── OPTIMIZATION_PLAN.md          # Performance optimization plan
 ├── README.md
 ├── next.config.ts
-└── package.json
+├── postcss.config.mjs
+├── eslint.config.mjs
+├── components.json
+├── package.json
+├── package-lock.json
+└── pnpm-lock.yaml
 ```
 
 ---
@@ -515,7 +523,7 @@ The authoritative schema for this project is `prisma/schema.prisma` (it maps to 
 - **Users & Admin**
   - `users`: public profile linked to `auth.users`
   - `super_admin`: whitelist table for super admins
-  - `audit_log`: tracks `user_id`, `workspace_id`, `action`, `entity_type`, JSON old/new values (note: current Prisma model does **not** include `partner_id`)
+  - `audit_log`: tracks `user_id`, `partner_id`, `workspace_id`, `action`, `entity_type`, JSON old/new values (note: `types/database.types.ts` may lag behind DB schema changes and should be regenerated when schema changes)
 
 ---
 
@@ -943,7 +951,6 @@ Both VAPI and Retell support browser-based test calls:
 | File                    | Purpose                                         |
 | ----------------------- | ----------------------------------------------- |
 | `prisma/schema.prisma`  | Database schema definition                      |
-| `prisma.config.ts`      | Prisma configuration                            |
 | `lib/prisma/client.ts`  | Prisma client singleton with connection pooling |
 | `lib/prisma/index.ts`   | Prisma module exports                           |
 | `lib/generated/prisma/` | Generated Prisma client (auto-generated)        |
@@ -1173,12 +1180,25 @@ response.headers.set(
 response.headers.set("Content-Security-Policy", buildCSP())
 ```
 
+> **Note**: `next.config.ts` also sets baseline security headers for all routes and applies `Cache-Control: no-store` to `/api/*`. `proxy.ts` is where the CSP (and other per-request headers) are enforced.
+
 ### Route Protection
 
 ```typescript
 // proxy.ts
 
-const publicPaths = ["/", "/login", "/signup", "/pricing", "/request-partner", ...]
+const publicPaths = [
+  "/",
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/accept-partner-invitation",
+  "/accept-workspace-invitation",
+  "/pricing",
+  "/request-partner",
+  "/api/health",
+]
 const protectedPaths = ["/select-workspace", "/workspace-onboarding", "/w/"]
 const superAdminPaths = ["/super-admin"]
 
@@ -1244,6 +1264,8 @@ await sendPartnerRejectionEmail(email, { company_name, reason, ... })
 ## Caching Strategy
 
 ### Cache Layer
+
+**Current implementation note**: `lib/cache/index.ts` is an in-memory `Map` cache (per Node process). There is no Redis/Upstash adapter in the repo yet.
 
 ```typescript
 // lib/cache/index.ts
@@ -1333,7 +1355,6 @@ The codebase uses Prisma ORM alongside Supabase for type-safe database operation
 | File                    | Purpose                                  |
 | ----------------------- | ---------------------------------------- |
 | `prisma/schema.prisma`  | Database schema definition               |
-| `prisma.config.ts`      | Prisma configuration                     |
 | `lib/prisma/client.ts`  | Prisma client singleton                  |
 | `lib/prisma/index.ts`   | Prisma module exports                    |
 | `lib/generated/prisma/` | Generated Prisma client (auto-generated) |

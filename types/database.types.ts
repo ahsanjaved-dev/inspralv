@@ -1648,3 +1648,80 @@ export const createWorkspaceInvitationSchema = z.object({
   role: z.enum(["owner", "admin", "member", "viewer"] as const),
   message: z.string().optional(),
 })
+
+// ============================================================================
+// KNOWLEDGE BASE TYPES AND SCHEMAS
+// ============================================================================
+
+export type KnowledgeDocumentType = 'document' | 'faq' | 'product_info' | 'policy' | 'script' | 'other'
+export type KnowledgeDocumentStatus = 'draft' | 'processing' | 'active' | 'archived' | 'error'
+
+export interface KnowledgeDocument {
+  id: string
+  workspace_id: string
+  title: string
+  description: string | null
+  document_type: KnowledgeDocumentType
+  status: KnowledgeDocumentStatus
+  content: string | null
+  file_name: string | null
+  file_url: string | null
+  file_type: string | null
+  file_size_bytes: number | null
+  tags: string[]
+  category: string | null
+  content_hash: string | null
+  embedding_status: string | null
+  usage_count: number
+  last_used_at: string | null
+  created_by: string | null
+  updated_by: string | null
+  deleted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export const knowledgeDocumentTypeSchema = z.enum([
+  'document',
+  'faq',
+  'product_info',
+  'policy',
+  'script',
+  'other',
+])
+
+export const knowledgeDocumentStatusSchema = z.enum([
+  'draft',
+  'processing',
+  'active',
+  'archived',
+  'error',
+])
+
+export const createKnowledgeDocumentSchema = z.object({
+  title: z.string().min(1, "Title is required").max(500),
+  description: z.string().max(2000).optional(),
+  document_type: knowledgeDocumentTypeSchema.default('document'),
+  content: z.string().optional(),
+  tags: z.array(z.string()).optional().default([]),
+  category: z.string().max(255).optional(),
+  // File upload fields (set by server after upload)
+  file_name: z.string().optional(),
+  file_url: z.string().optional(),
+  file_type: z.string().optional(),
+  file_size_bytes: z.number().optional(),
+})
+
+export type CreateKnowledgeDocumentInput = z.infer<typeof createKnowledgeDocumentSchema>
+
+export const updateKnowledgeDocumentSchema = z.object({
+  title: z.string().min(1, "Title is required").max(500).optional(),
+  description: z.string().max(2000).optional().nullable(),
+  document_type: knowledgeDocumentTypeSchema.optional(),
+  status: knowledgeDocumentStatusSchema.optional(),
+  content: z.string().optional().nullable(),
+  tags: z.array(z.string()).optional(),
+  category: z.string().max(255).optional().nullable(),
+})
+
+export type UpdateKnowledgeDocumentInput = z.infer<typeof updateKnowledgeDocumentSchema>

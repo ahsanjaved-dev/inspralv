@@ -32,13 +32,6 @@ const availableIntegrations: AvailableIntegration[] = [
     icon: "🤖",
     category: "Voice AI",
   },
-  {
-    id: "synthflow",
-    name: "Synthflow",
-    description: "AI-powered voice automation platform",
-    icon: "🔊",
-    category: "Voice AI",
-  },
 ]
 
 export default function WorkspaceIntegrationsPage() {
@@ -153,9 +146,9 @@ export default function WorkspaceIntegrationsPage() {
                         Manage
                       </Button>
                     ) : (
-                      <Button 
-                        size="sm" 
-                        className="w-full" 
+                      <Button
+                        size="sm"
+                        className="w-full"
                         onClick={() => handleOpenDialog(integration, false)}
                       >
                         <Plus className="mr-2 h-4 w-4" />

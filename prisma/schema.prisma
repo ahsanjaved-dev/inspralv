@@ -268,13 +268,14 @@ model Workspace {
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  partner        Partner                @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  members        WorkspaceMember[]
-  invitations    WorkspaceInvitation[]
-  agents         AiAgent[]
-  conversations  Conversation[]
-  usageTracking  UsageTracking[]
-  integrations   WorkspaceIntegration[]
+  partner            Partner                @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  members            WorkspaceMember[]
+  invitations        WorkspaceInvitation[]
+  agents             AiAgent[]
+  conversations      Conversation[]
+  usageTracking      UsageTracking[]
+  integrations       WorkspaceIntegration[]
+  knowledgeDocuments KnowledgeDocument[]
 
   @@unique([partnerId, slug])
   @@map("workspaces")
@@ -488,10 +489,12 @@ model User {
   updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  partnerMembers      PartnerMember[]
-  partnerInvitations  PartnerInvitation[]
-  createdAgents       AiAgent[]
+  partnerMembers          PartnerMember[]
+  partnerInvitations      PartnerInvitation[]
+  createdAgents           AiAgent[]
   followedUpConversations Conversation[]
+  createdDocuments        KnowledgeDocument[] @relation("DocumentCreator")
+  updatedDocuments        KnowledgeDocument[] @relation("DocumentUpdater")
 
   @@map("users")
 }
@@ -511,6 +514,77 @@ model SuperAdmin {
   updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("super_admin")
+}
+
+// =============================================================================
+// KNOWLEDGE DOCUMENTS
+// =============================================================================
+
+enum KnowledgeDocumentType {
+  document
+  faq
+  product_info
+  policy
+  script
+  other
+
+  @@map("knowledge_document_type")
+}
+
+enum KnowledgeDocumentStatus {
+  draft
+  processing
+  active
+  archived
+  error
+
+  @@map("knowledge_document_status")
+}
+
+model KnowledgeDocument {
+  id            String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String                   @map("workspace_id") @db.Uuid
+  
+  // Document metadata
+  title         String                   @db.VarChar(500)
+  description   String?
+  documentType  KnowledgeDocumentType    @default(document) @map("document_type")
+  status        KnowledgeDocumentStatus  @default(draft)
+  
+  // Content
+  content       String?
+  
+  // File upload info
+  fileName      String?                  @map("file_name") @db.VarChar(500)
+  fileUrl       String?                  @map("file_url")
+  fileType      String?                  @map("file_type") @db.VarChar(100)
+  fileSizeBytes BigInt?                  @map("file_size_bytes")
+  
+  // Categorization
+  tags          String[]                 @default([])
+  category      String?                  @db.VarChar(255)
+  
+  // Vector search
+  contentHash      String?               @map("content_hash") @db.VarChar(64)
+  embeddingStatus  String?               @default("pending") @map("embedding_status") @db.VarChar(20)
+  
+  // Usage tracking
+  usageCount    Int                      @default(0) @map("usage_count")
+  lastUsedAt    DateTime?                @map("last_used_at") @db.Timestamptz
+  
+  // Audit fields
+  createdBy     String?                  @map("created_by") @db.Uuid
+  updatedBy     String?                  @map("updated_by") @db.Uuid
+  deletedAt     DateTime?                @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  workspace     Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator       User?                    @relation("DocumentCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater       User?                    @relation("DocumentUpdater", fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@map("knowledge_documents")
 }
 
 // =============================================================================

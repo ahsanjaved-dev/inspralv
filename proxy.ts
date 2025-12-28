@@ -10,7 +10,7 @@ const publicPaths = [
   "/signup",
   "/forgot-password",
   "/reset-password",
-  "/accept-invitation",
+  "/accept-partner-invitation",
   "/accept-workspace-invitation",
   "/pricing",
   "/request-partner",
