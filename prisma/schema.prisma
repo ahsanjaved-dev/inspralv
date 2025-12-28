@@ -520,6 +520,7 @@ model SuperAdmin {
 model AuditLog {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId      String?   @map("user_id") @db.Uuid
+  partnerId   String?   @map("partner_id") @db.Uuid
   workspaceId String?   @map("workspace_id") @db.Uuid
   action      String
   entityType  String    @map("entity_type")
@@ -532,6 +533,7 @@ model AuditLog {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([userId])
+  @@index([partnerId])
   @@index([workspaceId])
   @@index([action])
   @@index([entityType])

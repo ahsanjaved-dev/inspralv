@@ -4,8 +4,10 @@ import {
   agentPublicApiKeySchema,
   agentApiKeyConfigSchema,
   additionalApiKeySchema,
+  functionToolsArraySchema,
   type AgentApiKeyConfig,
   type AdditionalApiKey,
+  type FunctionTool,
 } from "./database.types"
 
 // Re-export for convenience
@@ -14,8 +16,9 @@ export {
   agentPublicApiKeySchema, 
   agentApiKeyConfigSchema,
   additionalApiKeySchema,
+  functionToolsArraySchema,
 }
-export type { AgentApiKeyConfig, AdditionalApiKey }
+export type { AgentApiKeyConfig, AdditionalApiKey, FunctionTool }
 
 export const createAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -188,6 +191,9 @@ export const createWorkspaceAgentSchema = z.object({
         .optional(),
       max_duration_seconds: z.number().min(60).max(3600).optional(),
       api_key_config: agentApiKeyConfigSchema.optional(),
+      // Function tools configuration
+      tools: functionToolsArraySchema.optional(),
+      tools_server_url: z.string().url().optional(),
     })
     .optional(),
   agent_secret_api_key: z.array(agentSecretApiKeySchema).optional().default([]),
@@ -201,7 +207,7 @@ export const updateWorkspaceAgentSchema = createWorkspaceAgentSchema.partial()
 export type UpdateWorkspaceAgentInput = z.infer<typeof updateWorkspaceAgentSchema>
 
 // ============================================================================
-// WORKSPACE INTEGRATION SCHEMAS
+// WORKSPACE INTEGRATION SCHEMAS (Re-exported from database.types.ts)
 // ============================================================================
 
 export type IntegrationProvider =
@@ -213,34 +219,13 @@ export type IntegrationProvider =
   | "zapier"
   | "slack"
 
-export const createWorkspaceIntegrationSchema = z.object({
-  provider: z.enum([
-    "vapi",
-    "retell",
-    "synthflow",
-    "hubspot",
-    "salesforce",
-    "zapier",
-    "slack",
-  ] as const),
-  name: z.string().min(1, "Connection name is required").max(255),
-  default_secret_key: z.string().min(1, "Default secret API key is required"),
-  default_public_key: z.string().optional(),
-  additional_keys: z.array(additionalApiKeySchema).optional().default([]),
-  config: z.record(z.string(), z.unknown()).optional(),
-})
-
-export type CreateWorkspaceIntegrationInput = z.infer<typeof createWorkspaceIntegrationSchema>
-
-export const updateWorkspaceIntegrationSchema = z.object({
-  name: z.string().min(1, "Connection name is required").max(255).optional(),
-  default_secret_key: z.string().min(1, "Default secret API key is required").optional(),
-  default_public_key: z.string().optional(),
-  additional_keys: z.array(additionalApiKeySchema).optional(),
-  config: z.record(z.string(), z.unknown()).optional(),
-})
-
-export type UpdateWorkspaceIntegrationInput = z.infer<typeof updateWorkspaceIntegrationSchema>
+// Re-export integration schemas from database.types to avoid duplication
+export {
+  createWorkspaceIntegrationSchema,
+  updateWorkspaceIntegrationSchema,
+  type CreateWorkspaceIntegrationInput,
+  type UpdateWorkspaceIntegrationInput,
+} from "./database.types"
 
 // ============================================================================
 // PARTNER REQUEST API TYPES (Phase 1 - Milestone 1)

@@ -3,7 +3,7 @@
  * Transforms internal AIAgent schema to/from VAPI format
  */
 
-import type { AIAgent, AgentConfig } from "@/types/database.types"
+import type { AIAgent, AgentConfig, FunctionTool, FunctionToolParameters } from "@/types/database.types"
 
 // ============================================================================
 // DEFAULT VOICE ID
@@ -18,6 +18,55 @@ function isValidElevenLabsVoiceId(voiceId: string | undefined): boolean {
   if (!voiceId) return false
   // ElevenLabs voice IDs are exactly 20 characters, alphanumeric
   return /^[a-zA-Z0-9]{20,}$/.test(voiceId)
+}
+
+// ============================================================================
+// VAPI TOOL TYPES
+// ============================================================================
+
+/**
+ * VAPI Tool Message - spoken during tool execution
+ */
+export interface VapiToolMessage {
+  type: 'request-start' | 'request-response-delayed' | 'request-complete' | 'request-failed'
+  content?: string
+  /** Whether to block/wait for this message before proceeding */
+  blocking?: boolean
+}
+
+/**
+ * VAPI Function Definition
+ */
+export interface VapiFunctionDefinition {
+  name: string
+  description: string
+  parameters: FunctionToolParameters | { type: 'object'; properties: Record<string, never>; required?: string[] }
+}
+
+/**
+ * VAPI Tool Server Configuration
+ */
+export interface VapiToolServer {
+  url: string
+  timeoutSeconds?: number
+  secret?: string
+}
+
+/**
+ * VAPI Built-in Tool Types
+ */
+export type VapiToolType = 'function' | 'endCall' | 'transferCall' | 'dtmf'
+
+/**
+ * VAPI Tool - Supports both custom functions and built-in tools
+ * Reference: https://docs.vapi.ai/tools
+ */
+export interface VapiTool {
+  type: VapiToolType
+  messages?: VapiToolMessage[]
+  function?: VapiFunctionDefinition
+  async?: boolean
+  server?: VapiToolServer
 }
 
 // ============================================================================
@@ -40,6 +89,7 @@ export interface VapiAssistantPayload {
     temperature?: number
     maxTokens?: number
     systemPrompt?: string
+    tools?: VapiTool[]
   }
   transcriber?: {
     provider: string
@@ -49,6 +99,8 @@ export interface VapiAssistantPayload {
   endCallPhrases?: string[]
   maxDurationSeconds?: number
   metadata?: Record<string, unknown>
+  /** Server URL for tool calls (fallback if not specified per-tool) */
+  serverUrl?: string
 }
 
 // ============================================================================
@@ -144,6 +196,119 @@ function mapTranscriberProviderFromVapi(provider: string | null | undefined): st
 }
 
 // ============================================================================
+// TOOL MAPPING: Internal FunctionTool → VAPI Tool
+// ============================================================================
+
+/**
+ * Creates a VAPI endCall tool
+ * This built-in tool allows the AI to end the call when appropriate
+ */
+export function createEndCallTool(description?: string, executionMessage?: string): VapiTool {
+  return {
+    type: 'endCall',
+    function: {
+      name: 'end_call_tool',
+      description: description || 'Use this tool to end the call when the customer says goodbye, thanks, or the conversation is naturally complete.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+    messages: [
+      {
+        type: 'request-start',
+        content: executionMessage || 'Thank you for calling. Goodbye!',
+        blocking: true, // IMPORTANT: Must be true for endCall to actually end the call
+      },
+    ],
+  }
+}
+
+/**
+ * Maps an internal FunctionTool to VAPI Tool format
+ * Supports both custom functions and built-in tools like endCall
+ */
+export function mapToolToVapi(tool: FunctionTool, defaultServerUrl?: string): VapiTool {
+  // Handle built-in endCall tool
+  if (tool.tool_type === 'endCall') {
+    return createEndCallTool(tool.description, tool.execution_message)
+  }
+
+  // Handle built-in transferCall tool
+  if (tool.tool_type === 'transferCall') {
+    return {
+      type: 'transferCall',
+      function: {
+        name: tool.name || 'transfer_call_tool',
+        description: tool.description || 'Transfer the call to another number or agent.',
+        parameters: tool.parameters,
+      },
+      messages: tool.execution_message
+        ? [{ type: 'request-start', content: tool.execution_message, blocking: true }]
+        : undefined,
+    }
+  }
+
+  // Handle built-in dtmf tool
+  if (tool.tool_type === 'dtmf') {
+    return {
+      type: 'dtmf',
+      function: {
+        name: tool.name || 'dtmf_tool',
+        description: tool.description || 'Send DTMF tones.',
+        parameters: tool.parameters,
+      },
+    }
+  }
+
+  // Handle custom function tools (default behavior)
+  const vapiTool: VapiTool = {
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    },
+  }
+
+  // Set async mode if specified
+  if (tool.async !== undefined) {
+    vapiTool.async = tool.async
+  }
+
+  // Set server URL (tool-specific or default)
+  const serverUrl = tool.server_url || defaultServerUrl
+  if (serverUrl) {
+    vapiTool.server = {
+      url: serverUrl,
+    }
+  }
+
+  // Add execution message if specified
+  if (tool.speak_during_execution && tool.execution_message) {
+    vapiTool.messages = [
+      {
+        type: 'request-start',
+        content: tool.execution_message,
+        blocking: false,
+      },
+    ]
+  }
+
+  return vapiTool
+}
+
+/**
+ * Maps an array of internal FunctionTools to VAPI Tools format
+ */
+export function mapToolsToVapi(tools: FunctionTool[], defaultServerUrl?: string): VapiTool[] {
+  return tools
+    .filter((tool) => tool.enabled !== false)
+    .map((tool) => mapToolToVapi(tool, defaultServerUrl))
+}
+
+// ============================================================================
 // MAPPER: Internal Schema → VAPI
 // ============================================================================
 
@@ -195,6 +360,33 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
       payload.model.temperature = config.model_settings.temperature
       payload.model.maxTokens = config.model_settings.max_tokens
     }
+
+    // Add tools to model configuration
+    const allTools: VapiTool[] = []
+    
+    if (config.tools && config.tools.length > 0) {
+      const vapiTools = mapToolsToVapi(config.tools, config.tools_server_url)
+      allTools.push(...vapiTools)
+    }
+    
+    // Check if endCall tool is already included in user-defined tools
+    const hasEndCallTool = (config.tools || []).some(
+      (tool) => tool.tool_type === 'endCall' || tool.name === 'end_call_tool'
+    )
+    
+    // Always include endCall tool for proper call termination (unless already defined)
+    if (!hasEndCallTool) {
+      allTools.push(createEndCallTool())
+    }
+    
+    if (allTools.length > 0) {
+      payload.model.tools = allTools
+    }
+  }
+
+  // Set server URL for tool calls (used as fallback)
+  if (config.tools_server_url) {
+    payload.serverUrl = config.tools_server_url
   }
 
   // Transcriber configuration

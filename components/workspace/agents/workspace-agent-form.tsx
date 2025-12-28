@@ -16,13 +16,14 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Loader2, Key, Lock, Globe, AlertCircle, ExternalLink, Check, AlertTriangle, CloudOff } from "lucide-react"
-import type { AIAgent } from "@/types/database.types"
+import { Loader2, Key, Lock, Globe, AlertCircle, ExternalLink, Check, AlertTriangle, CloudOff, Wrench } from "lucide-react"
+import type { AIAgent, FunctionTool } from "@/types/database.types"
 import type { CreateWorkspaceAgentInput } from "@/types/api.types"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useAllIntegrationsWithDetails } from "@/lib/hooks/use-workspace-integrations"
 import { useState } from "react"
+import { FunctionToolEditor } from "./function-tool-editor"
 
 interface WorkspaceAgentFormProps {
   initialData?: AIAgent
@@ -91,6 +92,14 @@ export function WorkspaceAgentForm({
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
   const [showKeyChangeWarning, setShowKeyChangeWarning] = useState(false)
+  
+  // Function tools state
+  const [tools, setTools] = useState<FunctionTool[]>(
+    (initialData?.config as any)?.tools || []
+  )
+  const [toolsServerUrl, setToolsServerUrl] = useState<string>(
+    (initialData?.config as any)?.tools_server_url || ""
+  )
 
   // Fetch all integrations with details for the current workspace
   const { data: integrations, isLoading: integrationsLoading } = useAllIntegrationsWithDetails()
@@ -155,6 +164,9 @@ export function WorkspaceAgentForm({
         public_key: apiKeyConfigData.public_key || { type: "none" as const },
         assigned_key_id: apiKeyConfigData.assigned_key_id || null,
       },
+      // Include function tools
+      tools: tools.length > 0 ? tools : undefined,
+      tools_server_url: toolsServerUrl || undefined,
     }
 
     const submitData = {
@@ -698,6 +710,29 @@ export function WorkspaceAgentForm({
               disabled={isSubmitting}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Function Tools Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wrench className="h-5 w-5" />
+            Function Tools
+          </CardTitle>
+          <CardDescription>
+            Add custom function tools to extend your agent's capabilities.
+            Tools allow your agent to perform actions like booking appointments, looking up customer data, or transferring calls.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FunctionToolEditor
+            tools={tools}
+            onChange={setTools}
+            serverUrl={toolsServerUrl}
+            onServerUrlChange={setToolsServerUrl}
+            disabled={isSubmitting}
+          />
         </CardContent>
       </Card>
 

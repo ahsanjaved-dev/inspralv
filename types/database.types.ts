@@ -1329,6 +1329,104 @@ export type AIAgent = Omit<Tables<'ai_agents'>, 'config' | 'agent_secret_api_key
 export type AgentProvider = Database['public']['Enums']['agent_provider']
 
 // ============================================================================
+// FUNCTION TOOL TYPES
+// ============================================================================
+
+/**
+ * JSON Schema for function parameters
+ * Follows OpenAI function calling schema format
+ */
+export interface FunctionToolParameterProperty {
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
+  description?: string
+  enum?: string[]
+  items?: FunctionToolParameterProperty
+  properties?: Record<string, FunctionToolParameterProperty>
+  required?: string[]
+  default?: unknown
+}
+
+export interface FunctionToolParameters {
+  type: 'object'
+  properties: Record<string, FunctionToolParameterProperty>
+  required?: string[]
+}
+
+/**
+ * Built-in tool types supported by voice AI providers
+ * - 'function': Custom function that calls your server
+ * - 'endCall': Built-in tool to end the call
+ * - 'transferCall': Built-in tool to transfer the call
+ * - 'dtmf': Built-in tool for dial-tone multi-frequency signals
+ */
+export type FunctionToolType = 'function' | 'endCall' | 'transferCall' | 'dtmf'
+
+/**
+ * Base function tool definition (provider-agnostic)
+ * This is stored in the database and mapped to provider-specific formats
+ */
+export interface FunctionTool {
+  /** Unique identifier for the tool */
+  id: string
+  /** Function name (used by LLM to call the tool) */
+  name: string
+  /** Description of what the function does (helps LLM decide when to use it) */
+  description: string
+  /** Parameters schema following JSON Schema format */
+  parameters: FunctionToolParameters
+  /** Tool type - 'function' for custom tools, or built-in types like 'endCall' */
+  tool_type?: FunctionToolType
+  /** Whether the function runs asynchronously (VAPI only) */
+  async?: boolean
+  /** Server URL to call when this tool is invoked (optional - uses default if not set) */
+  server_url?: string
+  /** Speak during tool execution (VAPI messages) */
+  speak_during_execution?: boolean
+  /** Message to speak while the tool is executing */
+  execution_message?: string
+  /** Whether the tool is enabled */
+  enabled?: boolean
+}
+
+/**
+ * Zod schema for FunctionTool validation
+ */
+export const functionToolParameterPropertySchema: z.ZodType<FunctionToolParameterProperty> = z.lazy(() =>
+  z.object({
+    type: z.enum(['string', 'number', 'integer', 'boolean', 'array', 'object']),
+    description: z.string().optional(),
+    enum: z.array(z.string()).optional(),
+    items: functionToolParameterPropertySchema.optional(),
+    properties: z.record(z.string(), functionToolParameterPropertySchema).optional(),
+    required: z.array(z.string()).optional(),
+    default: z.unknown().optional(),
+  })
+)
+
+export const functionToolParametersSchema = z.object({
+  type: z.literal('object'),
+  properties: z.record(z.string(), functionToolParameterPropertySchema),
+  required: z.array(z.string()).optional(),
+})
+
+export const functionToolTypeSchema = z.enum(['function', 'endCall', 'transferCall', 'dtmf'])
+
+export const functionToolSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1, 'Function name is required').regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, 'Function name must be a valid identifier'),
+  description: z.string().min(1, 'Description is required'),
+  parameters: functionToolParametersSchema,
+  tool_type: functionToolTypeSchema.optional().default('function'),
+  async: z.boolean().optional(),
+  server_url: z.string().url().optional(),
+  speak_during_execution: z.boolean().optional(),
+  execution_message: z.string().optional(),
+  enabled: z.boolean().optional().default(true),
+})
+
+export const functionToolsArraySchema = z.array(functionToolSchema)
+
+// ============================================================================
 // AGENT CONFIG TYPES
 // ============================================================================
 
@@ -1354,6 +1452,10 @@ export interface AgentConfig {
   api_key_config?: AgentApiKeyConfig
   retell_llm_id?: string
   end_call_phrases?: string[]
+  /** Custom function tools for the agent */
+  tools?: FunctionTool[]
+  /** Default server URL for tool calls (used if tool doesn't specify its own) */
+  tools_server_url?: string
 }
 
 // ============================================================================
@@ -1472,27 +1574,6 @@ export interface IntegrationApiKeys {
 }
 
 // ============================================================================
-// WORKSPACE INTEGRATION INPUT TYPES
-// ============================================================================
-
-export interface CreateWorkspaceIntegrationInput {
-  provider: string
-  name: string
-  default_secret_key: string
-  default_public_key?: string
-  additional_keys?: AdditionalApiKey[]
-  config?: Record<string, unknown>
-}
-
-export interface UpdateWorkspaceIntegrationInput {
-  name?: string
-  default_secret_key?: string
-  default_public_key?: string
-  additional_keys?: AdditionalApiKey[]
-  config?: Record<string, unknown>
-}
-
-// ============================================================================
 // WORKSPACE INVITATION INPUT TYPES
 // ============================================================================
 
@@ -1557,6 +1638,10 @@ export const updateWorkspaceIntegrationSchema = z.object({
   additional_keys: z.array(additionalApiKeySchema).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
 })
+
+// Infer types from Zod schemas
+export type CreateWorkspaceIntegrationInput = z.infer<typeof createWorkspaceIntegrationSchema>
+export type UpdateWorkspaceIntegrationInput = z.infer<typeof updateWorkspaceIntegrationSchema>
 
 export const createWorkspaceInvitationSchema = z.object({
   email: z.string().email("Invalid email address"),

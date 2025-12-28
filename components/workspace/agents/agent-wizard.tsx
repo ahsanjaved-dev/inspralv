@@ -20,7 +20,6 @@ import {
   ArrowRight,
   Check,
   Loader2,
-  Save,
   Play,
   Volume2,
   BookOpen,
@@ -28,16 +27,12 @@ import {
   Briefcase,
   Smile,
   Coffee,
-  PhoneForwarded,
-  CalendarPlus,
-  Search,
   Wrench,
-  Code,
-  Plus,
-  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { CreateWorkspaceAgentInput } from "@/types/api.types"
+import type { FunctionTool } from "@/types/database.types"
+import { FunctionToolEditor } from "./function-tool-editor"
 
 // ============================================================================
 // TYPES
@@ -67,15 +62,8 @@ interface WizardFormData {
   systemPrompt: string
   greeting: string
   style: "formal" | "friendly" | "casual"
-  tools: Tool[]
-}
-
-interface Tool {
-  id: string
-  name: string
-  description: string
-  type: "preset" | "custom"
-  parameters?: Record<string, unknown>
+  tools: FunctionTool[]
+  toolsServerUrl: string
 }
 
 // ============================================================================
@@ -129,33 +117,6 @@ const VOICES = [
   { id: "marcus", name: "Marcus", gender: "Male", style: "Deep", color: "bg-green-100", textColor: "text-green-600" },
   { id: "sophia", name: "Sophia", gender: "Female", style: "Calm", color: "bg-amber-100", textColor: "text-amber-600" },
   { id: "ethan", name: "Ethan", gender: "Male", style: "Energetic", color: "bg-cyan-100", textColor: "text-cyan-600" },
-]
-
-const PRESET_TOOLS = [
-  {
-    id: "transfer-call",
-    name: "Transfer Call",
-    description: "Transfer to human agent",
-    icon: PhoneForwarded,
-    color: "bg-blue-100",
-    textColor: "text-blue-600",
-  },
-  {
-    id: "book-meeting",
-    name: "Book Meeting",
-    description: "Schedule appointments",
-    icon: CalendarPlus,
-    color: "bg-green-100",
-    textColor: "text-green-600",
-  },
-  {
-    id: "lookup-customer",
-    name: "Lookup Customer",
-    description: "Search CRM data",
-    icon: Search,
-    color: "bg-purple-100",
-    textColor: "text-purple-600",
-  },
 ]
 
 const PROMPT_TEMPLATES = {
@@ -219,12 +180,10 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     greeting: "Hello! Thank you for calling. How can I help you today?",
     style: "friendly",
     tools: [],
+    toolsServerUrl: "",
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [showCustomToolForm, setShowCustomToolForm] = useState(false)
-  const [customToolName, setCustomToolName] = useState("")
-  const [customToolDesc, setCustomToolDesc] = useState("")
 
   // ============================================================================
   // VALIDATION
@@ -284,43 +243,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     }
   }
 
-  const addPresetTool = (toolId: string) => {
-    const preset = PRESET_TOOLS.find((t) => t.id === toolId)
-    if (!preset) return
-    if (formData.tools.find((t) => t.id === toolId)) return
-
-    setFormData((prev) => ({
-      ...prev,
-      tools: [
-        ...prev.tools,
-        { id: toolId, name: preset.name, description: preset.description, type: "preset" },
-      ],
-    }))
-  }
-
-  const removeTool = (toolId: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      tools: prev.tools.filter((t) => t.id !== toolId),
-    }))
-  }
-
-  const addCustomTool = () => {
-    if (!customToolName.trim()) return
-
-    const newTool: Tool = {
-      id: `custom-${Date.now()}`,
-      name: customToolName,
-      description: customToolDesc || "Custom tool",
-      type: "custom",
-    }
-
-    setFormData((prev) => ({ ...prev, tools: [...prev.tools, newTool] }))
-    setCustomToolName("")
-    setCustomToolDesc("")
-    setShowCustomToolForm(false)
-  }
-
   const applyTemplate = (templateKey: keyof typeof PROMPT_TEMPLATES) => {
     updateFormData("systemPrompt", PROMPT_TEMPLATES[templateKey])
   }
@@ -347,6 +269,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
         voice_settings: {
           speed: formData.voiceSpeed,
         },
+        // Include function tools if any are configured
+        tools: formData.tools.length > 0 ? formData.tools : undefined,
+        tools_server_url: formData.toolsServerUrl || undefined,
       },
       agent_secret_api_key: [],
       agent_public_api_key: [],
@@ -359,8 +284,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   // ============================================================================
   // RENDER
   // ============================================================================
-
-  const isToolAdded = (toolId: string) => formData.tools.some((t) => t.id === toolId)
 
   return (
     <div className="space-y-6">
@@ -757,128 +680,20 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Wrench className="w-5 h-5" />
-                Tools
+                Function Tools
               </CardTitle>
-              <CardDescription>Add capabilities to your agent with preset or custom tools</CardDescription>
+              <CardDescription>
+                Add custom function tools to extend your agent's capabilities.
+                Tools allow your agent to perform actions like booking appointments, looking up data, or transferring calls.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Preset Tools */}
-              <div>
-                <Label className="mb-3 block">Preset Tools</Label>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {PRESET_TOOLS.map((tool) => {
-                    const Icon = tool.icon
-                    const added = isToolAdded(tool.id)
-                    return (
-                      <div
-                        key={tool.id}
-                        className={cn(
-                          "p-3 rounded-lg border-2 transition-all",
-                          added ? "opacity-50 border-border" : "border-transparent hover:border-primary/50"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", tool.color)}>
-                            <Icon className={cn("w-5 h-5", tool.textColor)} />
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{tool.name}</p>
-                            <p className="text-xs text-muted-foreground">{tool.description}</p>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => addPresetTool(tool.id)}
-                            disabled={added}
-                          >
-                            {added ? "Added" : "Add"}
-                          </Button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Added Tools */}
-              {formData.tools.length > 0 && (
-                <div>
-                  <Label className="mb-3 block">Added Tools ({formData.tools.length})</Label>
-                  <div className="space-y-2">
-                    {formData.tools.map((tool) => (
-                      <div key={tool.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border">
-                        <div className="flex items-center gap-3">
-                          <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", tool.type === "custom" ? "bg-amber-100" : "bg-muted")}>
-                            {tool.type === "custom" ? (
-                              <Code className="w-4 h-4 text-amber-600" />
-                            ) : (
-                              <Wrench className="w-4 h-4 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium text-sm">{tool.name}</p>
-                            <p className="text-xs text-muted-foreground">{tool.description}</p>
-                          </div>
-                          {tool.type === "custom" && (
-                            <Badge variant="secondary" className="text-xs">Custom</Badge>
-                          )}
-                        </div>
-                        <Button type="button" variant="ghost" size="icon" onClick={() => removeTool(tool.id)}>
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Custom Tool Builder */}
-              <div className="border-t border-border pt-6">
-                <div className="flex items-center justify-between mb-3">
-                  <Label className="mb-0">Custom Tool</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowCustomToolForm(!showCustomToolForm)}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Custom Tool
-                  </Button>
-                </div>
-                {showCustomToolForm && (
-                  <div className="space-y-4 p-4 rounded-lg bg-muted/30 border border-border">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Tool Name</Label>
-                        <Input
-                          value={customToolName}
-                          onChange={(e) => setCustomToolName(e.target.value)}
-                          placeholder="e.g., checkInventory"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Description</Label>
-                        <Input
-                          value={customToolDesc}
-                          onChange={(e) => setCustomToolDesc(e.target.value)}
-                          placeholder="What does this tool do?"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="button" size="sm" onClick={addCustomTool}>
-                        <Check className="w-4 h-4 mr-2" />
-                        Save Tool
-                      </Button>
-                      <Button type="button" variant="outline" size="sm" onClick={() => setShowCustomToolForm(false)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
+            <CardContent>
+              <FunctionToolEditor
+                tools={formData.tools}
+                onChange={(tools) => updateFormData("tools", tools)}
+                serverUrl={formData.toolsServerUrl}
+                onServerUrlChange={(url) => updateFormData("toolsServerUrl", url)}
+              />
             </CardContent>
           </Card>
 

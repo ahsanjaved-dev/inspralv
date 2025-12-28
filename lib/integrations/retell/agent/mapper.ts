@@ -3,7 +3,49 @@
  * Transforms internal AIAgent schema to/from Retell format
  */
 
-import type { AIAgent, AgentConfig } from "@/types/database.types"
+import type { AIAgent, AgentConfig, FunctionTool, FunctionToolParameters } from "@/types/database.types"
+
+// ============================================================================
+// RETELL TOOL TYPES
+// ============================================================================
+
+/**
+ * Retell General Tool - Custom function tool format
+ * Reference: https://docs.retellai.com/api-references/llm/create-llm
+ */
+export interface RetellGeneralTool {
+  type: 'custom_function'
+  name: string
+  description: string
+  /** 
+   * JSON Schema for parameters. Retell uses standard JSON Schema format.
+   * If no parameters, use { type: 'object', properties: {} }
+   */
+  parameters: FunctionToolParameters
+  /** 
+   * URL to call when this function is triggered.
+   * Retell will POST to this URL with the function call data.
+   */
+  url?: string
+  /**
+   * Timeout in milliseconds for the function call.
+   * Default is 120000 (2 minutes).
+   */
+  execution_timeout_ms?: number
+  /**
+   * Whether to speak during function execution.
+   * If true, agent will say filler words while waiting.
+   */
+  speak_during_execution?: boolean
+  /**
+   * Custom message to speak while function is executing.
+   */
+  speak_on_send?: string
+  /**
+   * Custom message to speak when function call fails.
+   */
+  speak_on_error?: string
+}
 
 // ============================================================================
 // RETELL LLM PAYLOAD TYPES
@@ -12,10 +54,13 @@ import type { AIAgent, AgentConfig } from "@/types/database.types"
 export interface RetellLLMPayload {
   model: string
   general_prompt?: string
-  general_tools?: Record<string, unknown>[]
+  /** Custom function tools for the LLM */
+  general_tools?: RetellGeneralTool[]
   begin_message?: string
   starting_state?: string
   states?: Record<string, unknown>[]
+  /** Webhook URL for function calls (used as default if not specified per-tool) */
+  webhook_url?: string
 }
 
 export interface RetellLLMResponse {
@@ -106,6 +151,48 @@ export interface RetellAgentUpdate {
 const RETELL_DEFAULT_VOICE_ID = "11labs-Adrian"
 
 // ============================================================================
+// TOOL MAPPING: Internal FunctionTool → Retell General Tool
+// ============================================================================
+
+/**
+ * Maps an internal FunctionTool to Retell General Tool format
+ */
+export function mapToolToRetell(tool: FunctionTool, defaultWebhookUrl?: string): RetellGeneralTool {
+  const retellTool: RetellGeneralTool = {
+    type: 'custom_function',
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+  }
+
+  // Set URL (tool-specific or default)
+  const toolUrl = tool.server_url || defaultWebhookUrl
+  if (toolUrl) {
+    retellTool.url = toolUrl
+  }
+
+  // Set speak during execution settings
+  if (tool.speak_during_execution !== undefined) {
+    retellTool.speak_during_execution = tool.speak_during_execution
+  }
+
+  if (tool.execution_message) {
+    retellTool.speak_on_send = tool.execution_message
+  }
+
+  return retellTool
+}
+
+/**
+ * Maps an array of internal FunctionTools to Retell General Tools format
+ */
+export function mapToolsToRetell(tools: FunctionTool[], defaultWebhookUrl?: string): RetellGeneralTool[] {
+  return tools
+    .filter((tool) => tool.enabled !== false)
+    .map((tool) => mapToolToRetell(tool, defaultWebhookUrl))
+}
+
+// ============================================================================
 // MAPPER: Internal Schema → Retell LLM
 // ============================================================================
 
@@ -132,6 +219,19 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
   // Begin message / greeting
   if (config.first_message) {
     payload.begin_message = config.first_message
+  }
+
+  // Add tools to LLM configuration
+  if (config.tools && config.tools.length > 0) {
+    const retellTools = mapToolsToRetell(config.tools, config.tools_server_url)
+    if (retellTools.length > 0) {
+      payload.general_tools = retellTools
+    }
+  }
+
+  // Set webhook URL for tool calls
+  if (config.tools_server_url) {
+    payload.webhook_url = config.tools_server_url
   }
 
   return payload
