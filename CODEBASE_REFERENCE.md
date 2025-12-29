@@ -1,6 +1,6 @@
-# Inspralv Codebase Reference
+# Genius365 Codebase Reference
 
-> **Last Updated**: December 28, 2025  
+> **Last Updated**: December 29, 2025  
 > **Purpose**: Complete codebase analysis for AI assistants and developers
 
 ---
@@ -28,7 +28,7 @@
 
 ## Executive Summary
 
-**Inspralv** is a Next.js 16 white-label AI Voice Agent Management Platform. It enables agencies (Partners) to manage AI voice agents across multiple providers (VAPI, Retell, Synthflow) with full multi-tenancy support, white-labeling, and workspace isolation.
+**Genius365** is a Next.js 16 white-label AI Voice Agent Management Platform. It enables agencies (Partners) to manage AI voice agents across multiple providers (VAPI, Retell, Synthflow) with full multi-tenancy support, white-labeling, and workspace isolation.
 
 ### Core Technologies
 
@@ -187,7 +187,7 @@ interface User {
 ## Directory Structure
 
 ```
-inspralv/
+Genius365/
 ├── prisma/                       # Prisma ORM
 │   ├── schema.prisma             # Database schema definition
 │   └── (no migrations folder committed)

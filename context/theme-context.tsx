@@ -34,7 +34,7 @@ interface ThemeProviderProps {
 export function ThemeProvider({
   children,
   defaultTheme = "system",
-  storageKey = "inspra-theme",
+  storageKey = "genius365-theme",
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(defaultTheme)
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light")

@@ -119,7 +119,10 @@ function autoDetectMappings(headers: string[]): ColumnMapping {
     for (const pattern of patterns) {
       const index = lowerHeaders.findIndex((h) => h.includes(pattern))
       if (index !== -1) {
-        mapping[field as keyof ColumnMapping] = headers[index]
+        const headerValue = headers[index]
+        if (headerValue) {
+          mapping[field as keyof ColumnMapping] = headerValue
+        }
         break
       }
     }

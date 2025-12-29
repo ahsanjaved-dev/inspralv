@@ -1,5 +1,5 @@
 /**
- * Cache Layer for InspralV Platform
+ * Cache Layer for Genius365 Platform
  * Phase 1.1.2: Implement caching for performance optimization
  *
  * This module provides a flexible caching interface that supports:

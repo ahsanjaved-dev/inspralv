@@ -1,9 +1,9 @@
 export const siteConfig = {
-  name: "Inspralv",
+  name: "Genius365",
   description: "AI Voice Integration Platform",
   url: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
   links: {
-    github: "https://github.com/yourusername/inspralv",
+    github: "https://github.com/yourusername/genius365",
   },
 }
 

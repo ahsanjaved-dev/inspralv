@@ -82,7 +82,7 @@ export default function SuperAdminLoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@inspralv.com"
+                placeholder="admin@genius365.ai"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -149,7 +149,7 @@ export default function SuperAdminLoginPage() {
       <div className="hidden lg:flex lg:flex-1 items-center justify-center p-16 rounded-l-[3rem] bg-gradient-to-br from-violet-200 via-blue-200 to-purple-200">
         <div className="max-w-lg text-center">
           <h2 className="text-4xl font-bold text-gray-800 mb-6 leading-tight">
-            Welcome to <span className="text-primary">Inspralv</span> Platform Admin
+            Welcome to <span className="text-primary">Genius365</span> Platform Admin
           </h2>
           <p className="text-xl text-gray-700">
             Manage partners, workspaces, and platform settings from one place.

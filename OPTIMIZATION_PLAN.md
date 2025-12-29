@@ -1,5 +1,5 @@
 # Platform Optimization Plan
-## InspralV - AI Voice Agent Platform Enhancement Roadmap
+## Genius365 - AI Voice Agent Platform Enhancement Roadmap
 
 **Created**: December 22, 2025  
 **Platform**: Next.js 16 | React 19 | Supabase | TypeScript  

@@ -66,7 +66,7 @@ export function PartnerRequestNotificationEmail({
             </Button>
           </Section>
 
-          <Text style={footer}>This is an automated notification from your Inspralv platform.</Text>
+          <Text style={footer}>This is an automated notification from your Genius365 platform.</Text>
         </Container>
       </Body>
     </Html>

@@ -88,7 +88,7 @@ export function PartnerRequestApprovedEmail({
           </Section>
 
           <Text style={footer}>
-            Need help? Contact your dedicated account manager or reach out to support@inspralv.com
+            Need help? Contact your dedicated account manager or reach out to support@genius365.ai
           </Text>
         </Container>
       </Body>

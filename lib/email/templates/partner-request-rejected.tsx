@@ -57,13 +57,13 @@ export function PartnerRequestRejectedEmail({
 
           <Text style={text}>
             If you have any questions or would like to discuss alternative options, please don't
-            hesitate to reach out to our team at support@inspralv.com
+            hesitate to reach out to our team at support@genius365.ai
           </Text>
 
           <Text style={footer}>
             Best regards,
             <br />
-            The Inspralv Team
+            The Genius365 Team
           </Text>
         </Container>
       </Body>

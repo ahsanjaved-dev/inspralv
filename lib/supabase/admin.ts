@@ -42,7 +42,7 @@ export function createAdminClient(): SupabaseClient {
     global: {
       // Headers for better debugging and monitoring
       headers: {
-        "x-client-info": "inspralv-admin",
+        "x-client-info": "genius365-admin",
       },
       // Fetch configuration for connection reuse
       fetch: (url, options) => {

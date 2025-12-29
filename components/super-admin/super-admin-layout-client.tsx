@@ -114,7 +114,7 @@ export function SuperAdminLayoutClient({ superAdmin, children }: SuperAdminLayou
           </div>
           {!collapsed && (
             <div>
-              <h1 className="text-lg font-bold text-foreground">Inspralv</h1>
+              <h1 className="text-lg font-bold text-foreground">Genius365</h1>
               <p className="text-xs text-muted-foreground">Super Admin</p>
             </div>
           )}

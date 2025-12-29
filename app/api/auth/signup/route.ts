@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 3: Get the partner from current hostname (platform partner for inspralv.com)
+    // Step 3: Get the partner from current hostname (platform partner for genius365.ai)
     const partner = await getPartnerFromHost()
 
     // Step 4: Auto-add user as member of the partner

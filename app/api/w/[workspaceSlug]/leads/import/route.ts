@@ -107,6 +107,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     for (let i = 0; i < leads.length; i++) {
       const lead = leads[i]
+      if (!lead) continue
       const rowNum = i + 1
 
       // Validate at least one contact method

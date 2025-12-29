@@ -174,6 +174,7 @@ export function WorkspaceAgentForm({
       config: completeConfig,
       agent_secret_api_key: [],
       agent_public_api_key: [],
+      knowledge_document_ids: [],
     }
     
     console.log("[WorkspaceAgentForm] Submitting with config:", JSON.stringify(submitData.config, null, 2))

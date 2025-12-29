@@ -37,7 +37,7 @@ export function SuperAdminHeader({ superAdmin }: SuperAdminHeaderProps) {
       <div className="flex items-center gap-3">
         <Shield className="h-8 w-8 text-primary" />
         <div>
-          <h1 className="text-xl font-bold">Inspralv Admin</h1>
+          <h1 className="text-xl font-bold">Genius365 Admin</h1>
           <p className="text-xs text-muted-foreground">Super Administrator</p>
         </div>
       </div>

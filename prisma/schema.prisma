@@ -1,5 +1,5 @@
 // =============================================================================
-// INSPRALV PRISMA SCHEMA
+// GENIUS365 PRISMA SCHEMA
 // =============================================================================
 // This schema maps to the existing Supabase PostgreSQL database.
 // Use Prisma for type-safe database queries alongside Supabase Auth.
