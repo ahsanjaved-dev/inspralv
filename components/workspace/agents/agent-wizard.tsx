@@ -311,6 +311,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       agent_secret_api_key: [],
       agent_public_api_key: [],
       is_active: true,
+      tags: [],
       // Include knowledge document IDs for linking
       knowledge_document_ids: formData.enableKnowledgeBase ? formData.knowledgeDocumentIds : [],
     }

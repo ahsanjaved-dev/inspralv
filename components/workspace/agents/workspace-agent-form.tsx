@@ -204,6 +204,7 @@ export function WorkspaceAgentForm({
       config: completeConfig,
       agent_secret_api_key: [],
       agent_public_api_key: [],
+      tags: [],
       knowledge_document_ids: [],
     }
     
@@ -770,8 +771,6 @@ export function WorkspaceAgentForm({
       {/* Phone Number Card - Only for existing Vapi agents */}
       {initialData && selectedProvider === "vapi" && (
         <Card>
-          {/* Debug: Log phone number state */}
-          {console.log("[PhoneNumber UI] Current state:", { phoneNumber, phoneNumberId })}
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Phone className="h-5 w-5" />
