@@ -109,6 +109,16 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       const lead = leads[i]
       const rowNum = i + 1
 
+      // Guard: malformed row
+      if (!lead) {
+        results.failed++
+        results.errors.push({
+          row: rowNum,
+          error: "Invalid row (empty lead data)",
+        })
+        continue
+      }
+
       // Validate at least one contact method
       if (!lead.email && !lead.phone && !lead.first_name && !lead.last_name) {
         results.failed++

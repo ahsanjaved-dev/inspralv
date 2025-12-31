@@ -119,7 +119,10 @@ function autoDetectMappings(headers: string[]): ColumnMapping {
     for (const pattern of patterns) {
       const index = lowerHeaders.findIndex((h) => h.includes(pattern))
       if (index !== -1) {
-        mapping[field as keyof ColumnMapping] = headers[index]
+        const header = headers[index]
+        if (header) {
+          mapping[field as keyof ColumnMapping] = header
+        }
         break
       }
     }
@@ -182,7 +185,7 @@ export function ImportLeadsDialog({ open, onOpenChange }: ImportLeadsDialogProps
     Papa.parse(selectedFile, {
       header: true,
       skipEmptyLines: true,
-      complete: (results) => {
+      complete: (results: any) => {
         const headers = results.meta.fields || []
         const rows = results.data as Record<string, string>[]
 
@@ -202,7 +205,7 @@ export function ImportLeadsDialog({ open, onOpenChange }: ImportLeadsDialogProps
         setColumnMapping(autoDetectMappings(headers))
         setStep("mapping")
       },
-      error: (error) => {
+      error: (error: any) => {
         console.error("Parse error:", error)
         toast.error("Failed to parse file. Please check the format.")
         setFile(null)

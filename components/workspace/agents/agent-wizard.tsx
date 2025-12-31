@@ -823,6 +823,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 onChange={(tools) => updateFormData("tools", tools)}
                 serverUrl={formData.toolsServerUrl}
                 onServerUrlChange={(url) => updateFormData("toolsServerUrl", url)}
+                provider={formData.provider}
               />
             </CardContent>
           </Card>

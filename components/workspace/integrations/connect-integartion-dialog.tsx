@@ -167,6 +167,7 @@ export function ConnectIntegrationDialog({
     }
   }, [open, isManageMode, integrationDetails, reset])
 
+
   // Check if user can add more keys
   const canAddMoreKeys = () => {
     if (isManageMode) {

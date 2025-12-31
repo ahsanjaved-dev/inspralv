@@ -174,6 +174,8 @@ export function WorkspaceAgentForm({
       config: completeConfig,
       agent_secret_api_key: [],
       agent_public_api_key: [],
+      // Workspace-scoped schema expects this field (defaults to [] in the zod schema)
+      knowledge_document_ids: [],
     }
     
     console.log("[WorkspaceAgentForm] Submitting with config:", JSON.stringify(submitData.config, null, 2))
@@ -320,7 +322,8 @@ export function WorkspaceAgentForm({
               </>
             ) : (
               <>
-                There was an error syncing this agent. Error: {initialData.last_sync_error || "Unknown error"}
+                There was an error syncing this agent to {getProviderDisplayName(initialData.provider)}.
+                Please double-check the API key and your tool configuration, then try again.
               </>
             )}
           </AlertDescription>
@@ -732,6 +735,7 @@ export function WorkspaceAgentForm({
             serverUrl={toolsServerUrl}
             onServerUrlChange={setToolsServerUrl}
             disabled={isSubmitting}
+            provider={selectedProvider}
           />
         </CardContent>
       </Card>

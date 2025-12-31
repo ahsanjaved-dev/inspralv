@@ -3,12 +3,16 @@
  * Phase 7: Integration Improvements
  *
  * Exports circuit breakers, retry logic, webhook utilities,
- * and provider-specific integrations (VAPI, Retell).
+ * provider-specific integrations (VAPI, Retell),
+ * and the new function_tools system for comprehensive tool management.
  */
 
 export * from "./circuit-breaker"
 export * from "./retry"
 export * from "./webhook"
+
+// Function Tools - New comprehensive tool system
+export * as functionTools from "./function_tools"
 
 // VAPI exports
 export {

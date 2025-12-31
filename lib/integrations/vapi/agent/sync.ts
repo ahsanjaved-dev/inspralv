@@ -7,6 +7,7 @@ import {
   deleteVapiAgentWithKey,
 } from "./config"
 import { processVapiResponse, processDeleteResponse } from "./response"
+import { syncVapiFunctionTools } from "@/lib/integrations/function_tools/vapi"
 
 export type SyncOperation = "create" | "update" | "delete"
 
@@ -194,7 +195,52 @@ export async function safeVapiSync(
       }
     }
 
-    const payload = mapToVapi(agent)
+    // ------------------------------------------------------------------------
+    // Custom Function Tools (API Alternative)
+    // - Sync internal `config.tools` (function tools) to VAPI via /tool API
+    // - Persist `external_tool_id` back into the agent config
+    // - mapToVapi will then attach them via `model.toolIds`
+    // ------------------------------------------------------------------------
+    let agentForMapping: AIAgent = agent
+    if (operation !== "delete") {
+      const configAny = (agent.config || {}) as any
+      const tools = configAny.tools as any[] | undefined
+      const defaultServerUrl = configAny.tools_server_url as string | undefined
+
+      if (Array.isArray(tools) && tools.length > 0) {
+        const synced = await syncVapiFunctionTools(tools as any, keys.secretKey, {
+          defaultServerUrl,
+        })
+
+        if (synced.errors.length > 0) {
+          console.warn("[VapiSync] Tool sync warnings:", synced.errors)
+        }
+
+        // Only persist if something changed (e.g. new external_tool_id)
+        const changed =
+          JSON.stringify(tools.map((t) => t?.external_tool_id || null)) !==
+          JSON.stringify(synced.tools.map((t) => t?.external_tool_id || null))
+
+        if (changed) {
+          const supabase = getSupabaseAdmin()
+          const nextConfig = { ...configAny, tools: synced.tools }
+
+          await supabase
+            .from("ai_agents")
+            .update({ config: nextConfig, updated_at: new Date().toISOString() })
+            .eq("id", agent.id)
+
+          agentForMapping = {
+            ...agent,
+            config: nextConfig,
+          } as AIAgent
+        } else {
+          agentForMapping = agent
+        }
+      }
+    }
+
+    const payload = mapToVapi(agentForMapping)
     let response
 
     switch (operation) {
