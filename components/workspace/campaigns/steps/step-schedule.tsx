@@ -107,7 +107,7 @@ export function StepSchedule({
   ) => {
     const currentSlots = config.schedule[day]
     const updated = [...currentSlots]
-    updated[index] = { ...updated[index], [field]: value }
+    updated[index] = { ...updated[index], [field]: value } as BusinessHoursTimeSlot
     updateDaySchedule(day, updated)
   }
 
@@ -126,8 +126,12 @@ export function StepSchedule({
     let total = 0
     for (const day of DAYS_OF_WEEK) {
       for (const slot of config.schedule[day.key]) {
-        const [startH, startM] = slot.start.split(":").map(Number)
-        const [endH, endM] = slot.end.split(":").map(Number)
+        const startParts = slot.start.split(":")
+        const endParts = slot.end.split(":")
+        const startH = startParts[0] ? Number(startParts[0]) : 0
+        const startM = startParts[1] ? Number(startParts[1]) : 0
+        const endH = endParts[0] ? Number(endParts[0]) : 0
+        const endM = endParts[1] ? Number(endParts[1]) : 0
         const hours = (endH + endM / 60) - (startH + startM / 60)
         if (hours > 0) total += hours
       }
@@ -358,9 +362,13 @@ export function StepSchedule({
                   {DAYS_OF_WEEK.map((day) => {
                     const slots = config.schedule[day.key]
                     const isActive = slots.length > 0
-                    const hours = slots.reduce((acc, slot) => {
-                      const [startH, startM] = slot.start.split(":").map(Number)
-                      const [endH, endM] = slot.end.split(":").map(Number)
+                    const hours = slots.reduce((acc: number, slot) => {
+                      const startParts = slot.start.split(":")
+                      const endParts = slot.end.split(":")
+                      const startH = startParts[0] ? Number(startParts[0]) : 0
+                      const startM = startParts[1] ? Number(startParts[1]) : 0
+                      const endH = endParts[0] ? Number(endParts[0]) : 0
+                      const endM = endParts[1] ? Number(endParts[1]) : 0
                       return acc + ((endH + endM / 60) - (startH + startM / 60))
                     }, 0)
 

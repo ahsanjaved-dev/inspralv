@@ -252,9 +252,13 @@ export function CampaignWizard({
     if (!validateStep(currentStep)) return
 
     // Filter out incomplete variable mappings (empty csv_column or prompt_placeholder)
-    const validVariableMappings = formData.variableMappings.filter(
-      (mapping) => mapping.csv_column.trim() && mapping.prompt_placeholder.trim()
-    )
+    // and ensure all mappings have default_value
+    const validVariableMappings = formData.variableMappings
+      .filter((mapping) => mapping.csv_column.trim() && mapping.prompt_placeholder.trim())
+      .map((mapping) => ({
+        ...mapping,
+        default_value: mapping.default_value || "",
+      }))
 
     // Convert datetime-local format to ISO 8601 format
     // datetime-local gives "2026-01-15T09:00" but Zod expects "2026-01-15T09:00:00.000Z"

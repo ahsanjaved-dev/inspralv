@@ -132,7 +132,7 @@ export function StepVariables({
 
   const updateVariableMapping = (index: number, field: keyof VariableMapping, value: string) => {
     const updated = [...formData.variableMappings]
-    updated[index] = { ...updated[index], [field]: value }
+    updated[index] = { ...updated[index], [field]: value } as VariableMapping
     updateFormData("variableMappings", updated)
   }
 

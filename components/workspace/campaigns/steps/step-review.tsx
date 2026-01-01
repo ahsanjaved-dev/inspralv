@@ -18,6 +18,7 @@ import {
   AlertTriangle,
 } from "lucide-react"
 import type { WizardFormData } from "../campaign-wizard"
+import type { BusinessHoursTimeSlot } from "@/types/database.types"
 
 interface StepReviewProps {
   formData: WizardFormData
@@ -54,12 +55,16 @@ export function StepReview({
 
   // Calculate total calling hours per week
   const totalHoursPerWeek = Object.values(formData.businessHoursConfig.schedule).reduce(
-    (total, slots) => {
+    (total: number, slots) => {
       return (
         total +
-        slots.reduce((acc, slot) => {
-          const [startH, startM] = slot.start.split(":").map(Number)
-          const [endH, endM] = slot.end.split(":").map(Number)
+        slots.reduce((acc: number, slot: BusinessHoursTimeSlot) => {
+          const startParts = slot.start.split(":")
+          const endParts = slot.end.split(":")
+          const startH = startParts[0] ? Number(startParts[0]) : 0
+          const startM = startParts[1] ? Number(startParts[1]) : 0
+          const endH = endParts[0] ? Number(endParts[0]) : 0
+          const endM = endParts[1] ? Number(endParts[1]) : 0
           return acc + ((endH + endM / 60) - (startH + startM / 60))
         }, 0)
       )

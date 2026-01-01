@@ -2370,7 +2370,7 @@ export interface BusinessHoursConfig {
 export interface VariableMapping {
   csv_column: string
   prompt_placeholder: string
-  default_value?: string
+  default_value: string
 }
 
 // Agent prompt overrides for campaign

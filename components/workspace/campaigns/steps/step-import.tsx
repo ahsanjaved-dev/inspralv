@@ -161,10 +161,11 @@ export function StepImport({
   const updateColumnMapping = (index: number, field: FieldKey, customName?: string) => {
     setColumnMappings((prev) => {
       const updated = [...prev]
+      const existing = updated[index]?.customVariableName
       updated[index] = {
         ...updated[index],
         mappedTo: field,
-        customVariableName: field === "custom" ? (customName || updated[index].customVariableName) : undefined,
+        customVariableName: field === "custom" ? (customName ?? existing) : undefined,
       } as ColumnMapping
       return updated
     })
