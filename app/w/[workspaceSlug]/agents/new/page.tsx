@@ -22,8 +22,8 @@ export default function NewWorkspaceAgentPage() {
       toast.success("Agent created successfully!")
       router.push(`/w/${workspaceSlug}/agents`)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to create agent"
-      toast.error(errorMessage)
+      console.error("[NewWorkspaceAgentPage] Create agent error:", error)
+      toast.error("Failed to create agent. Please try again.")
     }
   }
 
@@ -50,7 +50,7 @@ export default function NewWorkspaceAgentPage() {
       {createMutation.error && (
         <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg border border-red-200 dark:border-red-800">
           <p className="font-medium">Failed to create agent</p>
-          <p className="text-sm mt-1">{createMutation.error.message}</p>
+          <p className="text-sm mt-1">Please try again. If the problem continues, contact support.</p>
         </div>
       )}
 

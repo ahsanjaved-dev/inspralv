@@ -352,7 +352,8 @@ export function WorkspaceAgentForm({
               </>
             ) : (
               <>
-                There was an error syncing this agent. Error: {initialData.last_sync_error || "Unknown error"}
+                There was an error syncing this agent to {getProviderDisplayName(initialData.provider)}.
+                Please double-check the API key and your tool configuration, then try again.
               </>
             )}
           </AlertDescription>
@@ -764,6 +765,7 @@ export function WorkspaceAgentForm({
             serverUrl={toolsServerUrl}
             onServerUrlChange={setToolsServerUrl}
             disabled={isSubmitting}
+            provider={selectedProvider}
           />
         </CardContent>
       </Card>

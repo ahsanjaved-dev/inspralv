@@ -878,6 +878,25 @@ processVapiResponse(response, agentId) → { success, agent }
 safeVapiSync(agent, "create" | "update" | "delete") → VapiSyncResult
 ```
 
+### Vapi Custom Tools (API Alternative: Tool API + `model.toolIds`)
+
+Inspralv supports Vapi **custom function tools** via Vapi’s Tool API (`/tool`) and attaches them to assistants using `model.toolIds`.
+
+- **Where tools are stored**: `ai_agents.config.tools` (array of `FunctionTool` in `types/database.types.ts`)
+- **Webhook URL sources**:
+  - per-tool: `tool.server_url`
+  - fallback default: `ai_agents.config.tools_server_url`
+- **Tool sync** (creates/updates tools in Vapi and persists tool IDs back to our DB):
+  - `lib/integrations/function_tools/vapi/api/sync.ts` → `syncVapiFunctionTools()`
+  - Persists Vapi tool id into `tool.external_tool_id`
+- **Assistant sync** (attaches tool IDs to the assistant and keeps native tools inline):
+  - `lib/integrations/vapi/agent/sync.ts` calls `syncVapiFunctionTools()` before pushing the assistant payload
+  - `lib/integrations/vapi/agent/mapper.ts`:
+    - sends Vapi-managed tools via `payload.model.toolIds`
+    - sends other tools via `payload.model.tools` (endCall / transferCall / dtmf / etc.)
+
+**Why webhook matters**: Vapi built-in tools run inside Vapi, but custom **function** tools call your configured `server.url` (webhook) during a call to execute business logic and return results.
+
 ### Retell Special Case
 
 Retell requires creating an LLM first, then an Agent:

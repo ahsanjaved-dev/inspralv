@@ -1544,12 +1544,81 @@ export interface FunctionToolParameters {
 
 /**
  * Built-in tool types supported by voice AI providers
- * - 'function': Custom function that calls your server
+ * 
+ * Call Control:
  * - 'endCall': Built-in tool to end the call
  * - 'transferCall': Built-in tool to transfer the call
  * - 'dtmf': Built-in tool for dial-tone multi-frequency signals
+ * - 'handoff': Hand off to another assistant
+ * 
+ * API Integration:
+ * - 'function': Custom function that calls your server
+ * - 'apiRequest': Make HTTP API requests
+ * 
+ * Code Execution:
+ * - 'code': Execute Node.js or Python code
+ * - 'bash': Execute bash commands
+ * - 'computer': Computer use automation
+ * - 'textEditor': Text editing
+ * 
+ * Data:
+ * - 'query': Query knowledge bases
+ * 
+ * Google Integration:
+ * - 'googleCalendarCreateEvent': Create Google Calendar events
+ * - 'googleCalendarCheckAvailability': Check calendar availability
+ * - 'googleSheetsRowAppend': Append rows to Google Sheets
+ * 
+ * Communication:
+ * - 'slackSendMessage': Send Slack messages
+ * - 'smsSend': Send SMS messages
+ * 
+ * GoHighLevel:
+ * - 'goHighLevelCalendarAvailability': Check GHL calendar availability
+ * - 'goHighLevelCalendarEventCreate': Create GHL calendar events
+ * - 'goHighLevelContactCreate': Create GHL contacts
+ * - 'goHighLevelContactGet': Get GHL contacts
+ * 
+ * Other:
+ * - 'mcp': Model Context Protocol integration
  */
-export type FunctionToolType = "function" | "endCall" | "transferCall" | "dtmf"
+export type FunctionToolType =
+  // Call Control
+  | 'endCall'
+  | 'transferCall'
+  | 'dtmf'
+  | 'handoff'
+  // Retell Pre-built Tools (general_tools)
+  | 'end_call'
+  | 'transfer_call'
+  | 'press_digits'
+  | 'check_availability_cal'
+  | 'book_appointment_cal'
+  | 'send_sms'
+  // API Integration
+  | 'function'
+  | 'apiRequest'
+  // Code Execution
+  | 'code'
+  | 'bash'
+  | 'computer'
+  | 'textEditor'
+  // Data
+  | 'query'
+  // Google
+  | 'googleCalendarCreateEvent'
+  | 'googleCalendarCheckAvailability'
+  | 'googleSheetsRowAppend'
+  // Communication
+  | 'slackSendMessage'
+  | 'smsSend'
+  // GoHighLevel
+  | 'goHighLevelCalendarAvailability'
+  | 'goHighLevelCalendarEventCreate'
+  | 'goHighLevelContactCreate'
+  | 'goHighLevelContactGet'
+  // Other
+  | 'mcp'
 
 /**
  * Base function tool definition (provider-agnostic)
@@ -1576,6 +1645,113 @@ export interface FunctionTool {
   execution_message?: string
   /** Whether the tool is enabled */
   enabled?: boolean
+
+  // ============================================================================
+  // API REQUEST TOOL PROPERTIES
+  // ============================================================================
+  
+  /** HTTP method for apiRequest tool */
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  /** Target URL for apiRequest tool */
+  url?: string
+  /** Request timeout in seconds */
+  timeout_seconds?: number
+  /** Request headers schema */
+  headers_schema?: FunctionToolParameters
+  /** Request headers as key-value pairs */
+  headers?: Record<string, string>
+  /** Request body schema */
+  body_schema?: FunctionToolParameters
+
+  // ============================================================================
+  // TRANSFER CALL TOOL PROPERTIES
+  // ============================================================================
+  
+  /** Transfer destinations for transferCall tool */
+  destinations?: Array<{
+    type: 'number' | 'sip'
+    number?: string
+    sipUri?: string
+    description?: string
+  }>
+
+  // ============================================================================
+  // CODE EXECUTION TOOL PROPERTIES
+  // ============================================================================
+  
+  /** Runtime for code tool */
+  runtime?: 'node18' | 'python3.11'
+  /** Code to execute */
+  code?: string
+  /** Dependencies to install */
+  dependencies?: string[]
+
+  // ============================================================================
+  // HANDOFF TOOL PROPERTIES
+  // ============================================================================
+  
+  /** Assistant ID for handoff tool */
+  assistant_id?: string
+  /** Squad ID for handoff tool */
+  squad_id?: string
+
+  // ============================================================================
+  // QUERY TOOL PROPERTIES
+  // ============================================================================
+  
+  /** Knowledge base IDs for query tool */
+  knowledge_base_ids?: string[]
+  /** Number of results to return */
+  top_k?: number
+
+  // ============================================================================
+  // CREDENTIAL-BASED TOOL PROPERTIES
+  // (Google, GHL, Slack, SMS)
+  // ============================================================================
+  
+  /** Credential ID for authenticated tools */
+  credential_id?: string
+
+  // ============================================================================
+  // MCP TOOL PROPERTIES
+  // ============================================================================
+  
+  /** MCP server URL */
+  mcp_server_url?: string
+  /** MCP tool name */
+  mcp_tool_name?: string
+  /** MCP arguments */
+  mcp_arguments?: Record<string, unknown>
+
+  // ============================================================================
+  // RETELL PRE-BUILT TOOL PROPERTIES (general_tools)
+  // ============================================================================
+
+  /**
+   * Retell transfer destination (for transfer_call).
+   * Matches the structure Retell expects under `transfer_destination`.
+   */
+  transfer_destination?: {
+    type: 'predefined'
+    number: string
+  }
+
+  /** Digits to press (for press_digits). */
+  digits?: string
+
+  /** Cal.com API key (for check_availability_cal / book_appointment_cal). */
+  cal_api_key?: string
+  /** Cal.com event type id (for check_availability_cal / book_appointment_cal). */
+  event_type_id?: number
+  /** Timezone (for check_availability_cal / book_appointment_cal). */
+  timezone?: string
+
+  // ============================================================================
+  // EXTERNAL SYNC
+  // ============================================================================
+  
+  /** External tool ID (if synced to provider) */
+  external_tool_id?: string
 }
 
 /**
@@ -1600,7 +1776,44 @@ export const functionToolParametersSchema = z.object({
   required: z.array(z.string()).optional(),
 })
 
-export const functionToolTypeSchema = z.enum(["function", "endCall", "transferCall", "dtmf"])
+export const functionToolTypeSchema = z.enum([
+  // Call Control
+  'endCall',
+  'transferCall',
+  'dtmf',
+  'handoff',
+  // Retell (LLM general_tools)
+  'end_call',
+  'transfer_call',
+  'press_digits',
+  'check_availability_cal',
+  'book_appointment_cal',
+  'send_sms',
+  // API Integration
+  'function',
+  'apiRequest',
+  // Code Execution
+  'code',
+  'bash',
+  'computer',
+  'textEditor',
+  // Data
+  'query',
+  // Google
+  'googleCalendarCreateEvent',
+  'googleCalendarCheckAvailability',
+  'googleSheetsRowAppend',
+  // Communication
+  'slackSendMessage',
+  'smsSend',
+  // GoHighLevel
+  'goHighLevelCalendarAvailability',
+  'goHighLevelCalendarEventCreate',
+  'goHighLevelContactCreate',
+  'goHighLevelContactGet',
+  // Other
+  'mcp',
+])
 
 export const functionToolSchema = z.object({
   id: z.string(),
@@ -1616,6 +1829,57 @@ export const functionToolSchema = z.object({
   speak_during_execution: z.boolean().optional(),
   execution_message: z.string().optional(),
   enabled: z.boolean().optional().default(true),
+
+  // API Request properties
+  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+  url: z.string().optional(),  // URL can be empty initially
+  timeout_seconds: z.number().positive().optional(),
+  headers_schema: functionToolParametersSchema.optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  body_schema: functionToolParametersSchema.optional(),
+
+  // Transfer Call properties
+  destinations: z.array(z.object({
+    type: z.enum(['number', 'sip']),
+    number: z.string().optional(),
+    sipUri: z.string().optional(),
+    description: z.string().optional(),
+  })).optional(),
+
+  // Retell transfer_call properties
+  transfer_destination: z.object({
+    type: z.literal('predefined'),
+    number: z.string().min(1),
+  }).optional(),
+
+  // Retell Cal.com tool properties
+  cal_api_key: z.string().optional(),
+  event_type_id: z.number().int().positive().optional(),
+  timezone: z.string().optional(),
+
+  // Code Execution properties
+  runtime: z.enum(['node18', 'python3.11']).optional(),
+  code: z.string().optional(),
+  dependencies: z.array(z.string()).optional(),
+
+  // Handoff properties
+  assistant_id: z.string().optional(),
+  squad_id: z.string().optional(),
+
+  // Query properties
+  knowledge_base_ids: z.array(z.string()).optional(),
+  top_k: z.number().positive().optional(),
+
+  // Credential-based properties
+  credential_id: z.string().optional(),
+
+  // MCP properties
+  mcp_server_url: z.string().url().optional(),
+  mcp_tool_name: z.string().optional(),
+  mcp_arguments: z.record(z.string(), z.unknown()).optional(),
+
+  // External sync
+  external_tool_id: z.string().optional(),
 })
 
 export const functionToolsArraySchema = z.array(functionToolSchema)

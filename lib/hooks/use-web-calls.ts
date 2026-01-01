@@ -40,6 +40,17 @@ export function useWebCall() {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
   
+  const formatVapiError = (error: any): string => {
+    const message = error?.message || error?.reason || error?.toString?.() || ""
+    if (message.toLowerCase().includes("meeting has ended") || message.toLowerCase().includes("ejection")) {
+      return "The call session ended. Please start a new test call."
+    }
+    if (message.toLowerCase().includes("token") || message.toLowerCase().includes("auth")) {
+      return "Call token expired. Please try again."
+    }
+    return message || "Call failed. Please try again."
+  }
+
   const [state, setState] = useState<WebCallState>({
     status: "idle",
     callId: null,
@@ -92,11 +103,12 @@ export function useWebCall() {
       })
 
       vapiRef.current.on("error", (error: any) => {
-        console.error("VAPI error:", error)
+        console.warn("VAPI error:", error)
+        const friendly = formatVapiError(error)
         setState((prev) => ({ 
           ...prev, 
           status: "error", 
-          error: error?.message || "Call failed" 
+          error: friendly
         }))
         stopDurationTimer()
       })
@@ -105,11 +117,11 @@ export function useWebCall() {
       await vapiRef.current.start(session.externalAgentId)
       
     } catch (error) {
-      console.error("Failed to start VAPI call:", error)
+      console.warn("Failed to start VAPI call:", error)
       setState((prev) => ({
         ...prev,
         status: "error",
-        error: error instanceof Error ? error.message : "Failed to start call",
+        error: error instanceof Error ? formatVapiError(error) : "Failed to start call",
       }))
     }
   }, [startDurationTimer, stopDurationTimer])

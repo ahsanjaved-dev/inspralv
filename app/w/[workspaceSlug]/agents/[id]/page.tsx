@@ -24,7 +24,8 @@ export default function EditWorkspaceAgentPage() {
       toast.success("Agent updated successfully!")
       router.push(`/w/${workspaceSlug}/agents`)
     } catch (error: any) {
-      toast.error(error.message || "Failed to update agent")
+      console.error("[EditWorkspaceAgentPage] Update agent error:", error)
+      toast.error("Failed to update agent. Please try again.")
     }
   }
 
@@ -76,7 +77,7 @@ export default function EditWorkspaceAgentPage() {
       {updateMutation.error && (
         <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg border border-red-200 dark:border-red-800">
           <p className="font-medium">Failed to update agent</p>
-          <p className="text-sm mt-1">{updateMutation.error.message}</p>
+          <p className="text-sm mt-1">Please try again. If the problem continues, contact support.</p>
         </div>
       )}
 

@@ -11,9 +11,9 @@ import {
 } from "./database.types"
 
 // Re-export for convenience
-export { 
-  agentSecretApiKeySchema, 
-  agentPublicApiKeySchema, 
+export {
+  agentSecretApiKeySchema,
+  agentPublicApiKeySchema,
   agentApiKeyConfigSchema,
   additionalApiKeySchema,
   functionToolsArraySchema,
@@ -169,15 +169,7 @@ export type IntegrationProvider =
   | "slack"
 
 export const createIntegrationSchema = z.object({
-  integration_type: z.enum([
-    "make",
-    "ghl",
-    "twilio",
-    "slack",
-    "zapier",
-    "calendar",
-    "crm",
-  ] as const),
+  integration_type: z.enum(["make", "ghl", "twilio", "slack", "zapier", "calendar", "crm"] as const),
   name: z.string().min(1).max(255),
   credentials: z.record(z.string(), z.string()).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
