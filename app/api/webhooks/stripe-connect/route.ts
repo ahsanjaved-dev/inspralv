@@ -281,14 +281,15 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
     return
   }
 
-  // Handle regular subscription invoices
-  if (!invoice.subscription) {
+  // Handle regular subscription invoices (Stripe SDK v20+ uses parent.subscription_details)
+  const subscriptionRef = invoice.parent?.subscription_details?.subscription
+  if (!subscriptionRef) {
     return
   }
 
-  const subscriptionId = typeof invoice.subscription === "string" 
-    ? invoice.subscription 
-    : invoice.subscription.id
+  const subscriptionId = typeof subscriptionRef === "string" 
+    ? subscriptionRef 
+    : subscriptionRef.id
 
   try {
     // Get the subscription to check billing type
@@ -333,7 +334,9 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   console.log(`[Stripe Connect Webhook] Invoice payment failed: ${invoice.id}`)
 
-  if (!invoice.subscription) {
+  // Stripe SDK v20+ uses parent.subscription_details
+  const subscriptionRef = invoice.parent?.subscription_details?.subscription
+  if (!subscriptionRef) {
     return
   }
 
@@ -342,9 +345,9 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     return
   }
 
-  const subscriptionId = typeof invoice.subscription === "string" 
-    ? invoice.subscription 
-    : invoice.subscription.id
+  const subscriptionId = typeof subscriptionRef === "string" 
+    ? subscriptionRef 
+    : subscriptionRef.id
 
   try {
     await prisma.workspaceSubscription.updateMany({
