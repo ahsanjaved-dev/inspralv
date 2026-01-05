@@ -165,18 +165,19 @@ export function ConnectIntegrationDialog({
   // Reset form when dialog opens/closes or mode changes
   useEffect(() => {
     if (open && isManageMode && integrationDetails) {
-      // Extract Vapi config from integration details
-      const vapiConfig = integrationDetails.config || {}
+      // Extract Vapi config from integration details with proper typing
+      const rawConfig = integrationDetails.config as Record<string, unknown> | null
+      const vapiConfig = {
+        sip_trunk_credential_id: typeof rawConfig?.sip_trunk_credential_id === "string" ? rawConfig.sip_trunk_credential_id : "",
+        shared_outbound_phone_number_id: typeof rawConfig?.shared_outbound_phone_number_id === "string" ? rawConfig.shared_outbound_phone_number_id : "",
+        shared_outbound_phone_number: typeof rawConfig?.shared_outbound_phone_number === "string" ? rawConfig.shared_outbound_phone_number : "",
+      }
       reset({
         name: integrationDetails.name,
         default_secret_key: "",
         default_public_key: "",
         additional_keys: [],
-        vapi_config: {
-          sip_trunk_credential_id: vapiConfig.sip_trunk_credential_id || "",
-          shared_outbound_phone_number_id: vapiConfig.shared_outbound_phone_number_id || "",
-          shared_outbound_phone_number: vapiConfig.shared_outbound_phone_number || "",
-        },
+        vapi_config: vapiConfig,
       })
     } else if (open && !isManageMode) {
       reset({
@@ -244,11 +245,14 @@ export function ConnectIntegrationDialog({
         const hasKeyChanges = newAdditionalKeys.length > 0 || data.name !== integrationDetails?.name
         
         // Check if Vapi config has changed (for Vapi integrations)
-        const currentConfig = integrationDetails?.config || {}
+        const currentConfig = integrationDetails?.config as Record<string, unknown> | null
+        const currentSipTrunkId = typeof currentConfig?.sip_trunk_credential_id === "string" ? currentConfig.sip_trunk_credential_id : ""
+        const currentOutboundPhoneNumberId = typeof currentConfig?.shared_outbound_phone_number_id === "string" ? currentConfig.shared_outbound_phone_number_id : ""
+        const currentOutboundPhoneNumber = typeof currentConfig?.shared_outbound_phone_number === "string" ? currentConfig.shared_outbound_phone_number : ""
         const hasVapiConfigChanges = integration.id === "vapi" && (
-          data.vapi_config?.sip_trunk_credential_id !== (currentConfig.sip_trunk_credential_id || "") ||
-          data.vapi_config?.shared_outbound_phone_number_id !== (currentConfig.shared_outbound_phone_number_id || "") ||
-          data.vapi_config?.shared_outbound_phone_number !== (currentConfig.shared_outbound_phone_number || "")
+          data.vapi_config?.sip_trunk_credential_id !== currentSipTrunkId ||
+          data.vapi_config?.shared_outbound_phone_number_id !== currentOutboundPhoneNumberId ||
+          data.vapi_config?.shared_outbound_phone_number !== currentOutboundPhoneNumber
         )
 
         if (hasKeyChanges || hasVapiConfigChanges) {
