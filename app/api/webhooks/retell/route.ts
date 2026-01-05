@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { processCallCompletion } from "@/lib/billing/usage"
+import { Prisma } from "@/lib/generated/prisma"
 
 // Disable body parsing - we need the raw body for signature verification
 export const dynamic = "force-dynamic"
@@ -233,9 +234,9 @@ async function handleCallAnalyzed(payload: RetellWebhookPayload) {
           retell_analysis: {
             call_successful: call.call_analysis.call_successful,
             in_voicemail: call.call_analysis.in_voicemail,
-            custom_data: call.call_analysis.custom_analysis_data,
+            custom_data: call.call_analysis.custom_analysis_data as Prisma.InputJsonValue | undefined,
           },
-        },
+        } as Prisma.InputJsonValue,
       },
     })
 
