@@ -28,7 +28,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Key, Eye, EyeOff, ExternalLink, Plus, Trash2, Check, ShieldCheck } from "lucide-react"
+import { Loader2, Key, Eye, EyeOff, ExternalLink, Plus, Trash2, Check, ShieldCheck, Phone, Server } from "lucide-react"
 import {
   useCreateWorkspaceIntegration,
   useUpdateWorkspaceIntegration,
@@ -44,17 +44,26 @@ const additionalKeySchema = z.object({
   public_key: z.string().optional(),
 })
 
+// Vapi-specific config schema for SIP trunk settings
+const vapiConfigSchema = z.object({
+  sip_trunk_credential_id: z.string().optional(),
+  shared_outbound_phone_number_id: z.string().optional(),
+  shared_outbound_phone_number: z.string().optional(),
+})
+
 const formSchema = z.object({
   name: z.string().min(1, "Connection name is required").max(255),
   default_secret_key: z.string().min(1, "Default secret API key is required"),
   default_public_key: z.string().optional(),
   additional_keys: z.array(additionalKeySchema).optional().default([]),
+  vapi_config: vapiConfigSchema.optional(),
 })
 
 // Schema for manage mode (keys are optional since we're not showing them)
 const manageFormSchema = z.object({
   name: z.string().min(1, "Connection name is required").max(255),
   additional_keys: z.array(additionalKeySchema).optional().default([]),
+  vapi_config: vapiConfigSchema.optional(),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -137,6 +146,11 @@ export function ConnectIntegrationDialog({
       default_secret_key: "",
       default_public_key: "",
       additional_keys: [],
+      vapi_config: {
+        sip_trunk_credential_id: "",
+        shared_outbound_phone_number_id: "",
+        shared_outbound_phone_number: "",
+      },
     },
   })
 
@@ -151,11 +165,18 @@ export function ConnectIntegrationDialog({
   // Reset form when dialog opens/closes or mode changes
   useEffect(() => {
     if (open && isManageMode && integrationDetails) {
+      // Extract Vapi config from integration details
+      const vapiConfig = integrationDetails.config || {}
       reset({
         name: integrationDetails.name,
         default_secret_key: "",
         default_public_key: "",
         additional_keys: [],
+        vapi_config: {
+          sip_trunk_credential_id: vapiConfig.sip_trunk_credential_id || "",
+          shared_outbound_phone_number_id: vapiConfig.shared_outbound_phone_number_id || "",
+          shared_outbound_phone_number: vapiConfig.shared_outbound_phone_number || "",
+        },
       })
     } else if (open && !isManageMode) {
       reset({
@@ -163,6 +184,11 @@ export function ConnectIntegrationDialog({
         default_secret_key: "",
         default_public_key: "",
         additional_keys: [],
+        vapi_config: {
+          sip_trunk_credential_id: "",
+          shared_outbound_phone_number_id: "",
+          shared_outbound_phone_number: "",
+        },
       })
     }
   }, [open, isManageMode, integrationDetails, reset])
@@ -210,11 +236,29 @@ export function ConnectIntegrationDialog({
 
     try {
       if (isManageMode) {
-        // In manage mode, only add new additional keys
+        // In manage mode, add new additional keys and update config
         const newAdditionalKeys = data.additional_keys.filter((k) => k.name && k.secret_key)
 
-        if (newAdditionalKeys.length > 0 || data.name !== integrationDetails?.name) {
+        // Check if there are any changes to save
+        const hasKeyChanges = newAdditionalKeys.length > 0 || data.name !== integrationDetails?.name
+        
+        // Check if Vapi config has changed (for Vapi integrations)
+        const currentConfig = integrationDetails?.config || {}
+        const hasVapiConfigChanges = integration.id === "vapi" && (
+          data.vapi_config?.sip_trunk_credential_id !== (currentConfig.sip_trunk_credential_id || "") ||
+          data.vapi_config?.shared_outbound_phone_number_id !== (currentConfig.shared_outbound_phone_number_id || "") ||
+          data.vapi_config?.shared_outbound_phone_number !== (currentConfig.shared_outbound_phone_number || "")
+        )
+
+        if (hasKeyChanges || hasVapiConfigChanges) {
           const existingKeys = integrationDetails?.additional_keys || []
+
+          // Build config object for Vapi
+          const config = integration.id === "vapi" && data.vapi_config ? {
+            sip_trunk_credential_id: data.vapi_config.sip_trunk_credential_id || undefined,
+            shared_outbound_phone_number_id: data.vapi_config.shared_outbound_phone_number_id || undefined,
+            shared_outbound_phone_number: data.vapi_config.shared_outbound_phone_number || undefined,
+          } : undefined
 
           await updateIntegration.mutateAsync({
             name: data.name,
@@ -227,19 +271,27 @@ export function ConnectIntegrationDialog({
               })),
               ...newAdditionalKeys,
             ],
+            config,
           })
           toast.success("Integration updated successfully!")
         } else {
           toast.info("No changes to save")
         }
       } else {
-        // Create mode
+        // Create mode - build config for Vapi
+        const config = integration.id === "vapi" && data.vapi_config ? {
+          sip_trunk_credential_id: data.vapi_config.sip_trunk_credential_id || undefined,
+          shared_outbound_phone_number_id: data.vapi_config.shared_outbound_phone_number_id || undefined,
+          shared_outbound_phone_number: data.vapi_config.shared_outbound_phone_number || undefined,
+        } : undefined
+
         await createIntegration.mutateAsync({
           provider: integration.id as any,
           name: data.name || `${integration.name} Connection`,
           default_secret_key: data.default_secret_key,
           default_public_key: data.default_public_key || undefined,
           additional_keys: data.additional_keys.filter((k) => k.name && k.secret_key),
+          config,
         })
         toast.success(`${integration.name} connected successfully!`)
       }
@@ -380,6 +432,73 @@ export function ConnectIntegrationDialog({
                         ))}
                       </div>
                     )}
+
+                    <Separator />
+                  </div>
+                )}
+
+                {/* Vapi SIP Trunk Configuration (Vapi only, manage mode) */}
+                {isManageMode && integration.id === "vapi" && (
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium flex items-center gap-2">
+                      <Server className="h-4 w-4" />
+                      SIP Trunk Configuration
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
+                      Configure your SIP trunk for BYO phone numbers. This enables inbound/outbound calls via your own carrier.
+                    </p>
+
+                    {/* SIP Trunk Credential ID */}
+                    <div className="space-y-2">
+                      <Label htmlFor="sip_trunk_credential_id">SIP Trunk Credential ID</Label>
+                      <Input
+                        id="sip_trunk_credential_id"
+                        placeholder="Vapi credential ID from byo-sip-trunk"
+                        {...register("vapi_config.sip_trunk_credential_id")}
+                        disabled={isPending}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Create a SIP trunk credential in Vapi and paste the ID here.
+                      </p>
+                    </div>
+
+                    <Separator className="my-4" />
+
+                    <h4 className="text-sm font-medium flex items-center gap-2">
+                      <Phone className="h-4 w-4" />
+                      Shared Outbound Number
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
+                      All agents in this workspace will use this number for outbound calls (caller ID).
+                    </p>
+
+                    {/* Shared Outbound Phone Number ID */}
+                    <div className="space-y-2">
+                      <Label htmlFor="shared_outbound_phone_number_id">Phone Number ID</Label>
+                      <Input
+                        id="shared_outbound_phone_number_id"
+                        placeholder="Vapi phone number ID"
+                        {...register("vapi_config.shared_outbound_phone_number_id")}
+                        disabled={isPending}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        The Vapi phone number ID linked to your SIP trunk for outbound calls.
+                      </p>
+                    </div>
+
+                    {/* Shared Outbound Phone Number (Display) */}
+                    <div className="space-y-2">
+                      <Label htmlFor="shared_outbound_phone_number">Phone Number (for display)</Label>
+                      <Input
+                        id="shared_outbound_phone_number"
+                        placeholder="+15551234567"
+                        {...register("vapi_config.shared_outbound_phone_number")}
+                        disabled={isPending}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        The E.164 formatted number shown in the UI (e.g., +15551234567).
+                      </p>
+                    </div>
 
                     <Separator />
                   </div>

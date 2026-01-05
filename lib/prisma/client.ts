@@ -38,6 +38,10 @@ export type {
   User,
   SuperAdmin,
   AuditLog,
+  BillingCredits,
+  CreditTransaction,
+  WorkspaceCredits,
+  WorkspaceCreditTransaction,
 } from "@/lib/generated/prisma"
 
 // Re-export enums from generated Prisma
@@ -53,6 +57,7 @@ export {
   PartnerRequestStatus,
   ResourceType,
   SyncStatus,
+  CreditTransactionType,
 } from "@/lib/generated/prisma"
 
 // Extend the global type to include prisma

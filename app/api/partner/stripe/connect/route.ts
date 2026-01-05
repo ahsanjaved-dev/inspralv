@@ -8,7 +8,7 @@
 import { NextRequest } from "next/server"
 import { getPartnerAuthContext, isPartnerAdmin } from "@/lib/api/auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
-import { getStripe } from "@/lib/stripe"
+import { getStripe, getConnectAccountId } from "@/lib/stripe"
 import { env } from "@/lib/env"
 import { prisma } from "@/lib/prisma"
 
@@ -18,8 +18,12 @@ import { prisma } from "@/lib/prisma"
 export async function GET() {
   try {
     const auth = await getPartnerAuthContext()
-    if (!auth) {
+    if (!auth || !auth.partner) {
       return unauthorized()
+    }
+
+    if (!prisma) {
+      return serverError("Database not configured")
     }
 
     // Get partner with Connect account info
@@ -36,9 +40,9 @@ export async function GET() {
       return apiError("Partner not found", 404)
     }
 
-    // Check for Connect account ID in settings
+    // Check for Connect account ID in settings (handles both key formats)
     const settings = partner.settings as Record<string, unknown> || {}
-    const stripeConnectAccountId = settings.stripe_connect_account_id as string | undefined
+    const stripeConnectAccountId = getConnectAccountId(settings)
 
     if (!stripeConnectAccountId) {
       return apiResponse({
@@ -87,13 +91,17 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const auth = await getPartnerAuthContext()
-    if (!auth) {
+    if (!auth || !auth.partner) {
       return unauthorized()
     }
 
     // Only admins can set up Connect
     if (!isPartnerAdmin(auth)) {
       return forbidden("Only partner admins can set up Stripe Connect")
+    }
+
+    if (!prisma) {
+      return serverError("Database not configured")
     }
 
     // Get partner
@@ -112,7 +120,7 @@ export async function POST(request: NextRequest) {
 
     const stripe = getStripe()
     const settings = partner.settings as Record<string, unknown> || {}
-    let stripeConnectAccountId = settings.stripe_connect_account_id as string | undefined
+    let stripeConnectAccountId = getConnectAccountId(settings)
 
     // Create Connect account if doesn't exist
     if (!stripeConnectAccountId) {

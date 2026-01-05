@@ -4,6 +4,8 @@ import { WorkspaceInvitationEmail } from "./templates/workspace-invitation"
 import { PartnerRequestNotificationEmail } from "./templates/partner-request-notification"
 import { PartnerRequestApprovedEmail } from "./templates/partner-request-approved"
 import { PartnerRequestRejectedEmail } from "./templates/partner-request-rejected"
+import { PaymentFailedEmail } from "./templates/payment-failed"
+import { LowBalanceAlertEmail } from "./templates/low-balance-alert"
 
 const resend = env.resendApiKey ? new Resend(env.resendApiKey) : null
 
@@ -147,6 +149,62 @@ export async function sendPartnerRejectionEmail(
       companyName: data.company_name,
       contactName: data.contact_name,
       reason: data.reason,
+    }),
+  })
+}
+
+// NEW: Payment failed notification
+export async function sendPaymentFailedEmail(
+  recipientEmails: string[],
+  partnerData: {
+    partner_name: string
+    plan_name: string
+    amount_due: string
+    attempt_date: string
+    update_payment_url: string
+  }
+) {
+  // Use test email in development, real emails in production
+  const to = env.isDev ? [TEST_EMAIL] : recipientEmails
+
+  return sendEmail({
+    to,
+    subject: `Payment Failed for Your ${partnerData.plan_name} Subscription`,
+    react: PaymentFailedEmail({
+      partnerName: partnerData.partner_name,
+      planName: partnerData.plan_name,
+      amountDue: partnerData.amount_due,
+      attemptDate: partnerData.attempt_date,
+      updatePaymentUrl: partnerData.update_payment_url,
+    }),
+  })
+}
+
+// NEW: Low balance alert notification
+export async function sendLowBalanceAlertEmail(
+  recipientEmails: string[],
+  alertData: {
+    recipient_name: string
+    account_name: string
+    account_type: "partner" | "workspace"
+    current_balance: string
+    threshold: string
+    topup_url: string
+  }
+) {
+  // Use test email in development, real emails in production
+  const to = env.isDev ? [TEST_EMAIL] : recipientEmails
+
+  return sendEmail({
+    to,
+    subject: `Low Credit Balance Alert - ${alertData.account_name}`,
+    react: LowBalanceAlertEmail({
+      recipientName: alertData.recipient_name,
+      accountName: alertData.account_name,
+      accountType: alertData.account_type,
+      currentBalance: alertData.current_balance,
+      threshold: alertData.threshold,
+      topupUrl: alertData.topup_url,
     }),
   })
 }

@@ -1,15 +1,37 @@
 "use client"
 
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
+import { useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { CreditCard, Clock, DollarSign, TrendingUp, Download, ExternalLink } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { Clock, DollarSign, TrendingUp } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+import { WorkspaceCreditsCard } from "@/components/workspace/billing/workspace-credits-card"
+import { useWorkspaceCredits } from "@/lib/hooks/use-workspace-credits"
+import { toast } from "sonner"
 
 export default function BillingPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const workspaceSlug = params.workspaceSlug as string
+  
+  const { data, refetch } = useWorkspaceCredits(workspaceSlug)
+  const credits = data?.credits
+
+  // Handle success callback from payment redirect
+  useEffect(() => {
+    const topupStatus = searchParams.get("topup")
+    if (topupStatus === "success") {
+      toast.success("Credits added successfully!")
+      refetch()
+      // Clean up URL
+      window.history.replaceState({}, "", window.location.pathname)
+    }
+  }, [searchParams, refetch])
+
+  // Get per-minute rate for display
+  const perMinuteRate = credits?.perMinuteRateCents 
+    ? (credits.perMinuteRateCents / 100).toFixed(2) 
+    : "0.20"
 
   return (
     <div className="space-y-6">
@@ -17,72 +39,43 @@ export default function BillingPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Billing</h1>
-          <p className="text-muted-foreground mt-1">Manage your subscription and view usage.</p>
+          <p className="text-muted-foreground mt-1">Manage your credits and view usage.</p>
         </div>
-        <Button variant="outline">
-          <Download className="mr-2 h-4 w-4" />
-          Download Invoice
-        </Button>
       </div>
 
-      {/* Current Plan */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Current Plan</CardTitle>
-              <CardDescription>Your workspace subscription details</CardDescription>
-            </div>
-            <Badge>Pro</Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <p className="text-sm text-muted-foreground">Monthly Price</p>
-              <p className="text-2xl font-bold">$99/mo</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Billing Period</p>
-              <p className="text-lg font-medium">Dec 1 - Dec 31, 2024</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Next Invoice</p>
-              <p className="text-lg font-medium">Jan 1, 2025</p>
-            </div>
-          </div>
-          <div className="flex gap-3 mt-6">
-            <Button variant="outline">Change Plan</Button>
-            <Button variant="outline">
-              <CreditCard className="mr-2 h-4 w-4" />
-              Update Payment Method
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Credits Card */}
+      <WorkspaceCreditsCard 
+        workspaceSlug={workspaceSlug}
+        stripeConnectAccountId={data?.stripeConnectAccountId || undefined}
+      />
 
       {/* Usage Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="stat-card">
           <div className="flex items-center justify-between">
             <div>
-              <p className="stat-label">Minutes Used</p>
-              <p className="stat-value">0</p>
-              <p className="text-xs text-muted-foreground mt-1">of 1,000 included</p>
+              <p className="stat-label">Estimated Minutes</p>
+              <p className="stat-value">{credits?.estimatedMinutesRemaining || 0}</p>
+              <p className="text-xs text-muted-foreground mt-1">at current balance</p>
             </div>
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
               <Clock className="w-6 h-6 text-primary" />
             </div>
           </div>
-          <Progress value={0} className="mt-3" />
+          <Progress 
+            value={credits?.estimatedMinutesRemaining ? Math.min(100, credits.estimatedMinutesRemaining) : 0} 
+            className="mt-3" 
+          />
         </Card>
 
         <Card className="stat-card">
           <div className="flex items-center justify-between">
             <div>
-              <p className="stat-label">Current Spend</p>
-              <p className="stat-value">$0.00</p>
-              <p className="text-xs text-muted-foreground mt-1">This billing period</p>
+              <p className="stat-label">Current Balance</p>
+              <p className="stat-value">${credits?.balanceDollars?.toFixed(2) || "0.00"}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {credits?.isBillingExempt ? "Uses org credits" : "Prepaid credits"}
+              </p>
             </div>
             <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center">
               <DollarSign className="w-6 h-6 text-green-600" />
@@ -93,9 +86,9 @@ export default function BillingPage() {
         <Card className="stat-card">
           <div className="flex items-center justify-between">
             <div>
-              <p className="stat-label">Overage Rate</p>
-              <p className="stat-value">$0.15</p>
-              <p className="text-xs text-muted-foreground mt-1">Per minute over limit</p>
+              <p className="stat-label">Per-Minute Rate</p>
+              <p className="stat-value">${perMinuteRate}</p>
+              <p className="text-xs text-muted-foreground mt-1">Set by organization</p>
             </div>
             <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center">
               <TrendingUp className="w-6 h-6 text-orange-600" />
@@ -104,22 +97,42 @@ export default function BillingPage() {
         </Card>
       </div>
 
-      {/* Payment History */}
+      {/* Info Card */}
       <Card>
         <CardHeader>
-          <CardTitle>Payment History</CardTitle>
-          <CardDescription>View your past invoices and payments</CardDescription>
+          <CardTitle>How Billing Works</CardTitle>
+          <CardDescription>Understanding your workspace billing</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="text-center py-8 text-muted-foreground">
-            <CreditCard className="h-8 w-8 mx-auto mb-3 opacity-50" />
-            <p>No payment history yet</p>
-            <p className="text-sm">Your invoices will appear here once you have billing activity.</p>
+        <CardContent className="space-y-4 text-sm text-muted-foreground">
+          <div className="flex items-start gap-3">
+            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-xs font-bold text-primary">1</span>
+            </div>
+            <p>
+              <strong className="text-foreground">Prepaid Credits:</strong> Add credits to your workspace balance. 
+              Credits are deducted as you use voice AI minutes.
+            </p>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-xs font-bold text-primary">2</span>
+            </div>
+            <p>
+              <strong className="text-foreground">Per-Minute Billing:</strong> Each minute of voice AI usage 
+              is charged at ${perMinuteRate}/minute. Partial minutes are rounded up.
+            </p>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-xs font-bold text-primary">3</span>
+            </div>
+            <p>
+              <strong className="text-foreground">Low Balance Alerts:</strong> You'll be notified when your 
+              balance drops below the threshold so you can top up before running out.
+            </p>
           </div>
         </CardContent>
       </Card>
     </div>
   )
 }
-
-

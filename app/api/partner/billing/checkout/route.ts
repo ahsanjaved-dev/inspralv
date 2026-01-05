@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
       return apiError(`Price not configured for plan: ${plan}. Please set STRIPE_PRICE_${plan.toUpperCase()} env var.`)
     }
 
+    if (!prisma) {
+      return serverError("Database not configured")
+    }
+
     // 5. Get partner from database using Prisma
     const partner = await prisma.partner.findUnique({
       where: { id: auth.partner.id },

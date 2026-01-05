@@ -1474,9 +1474,35 @@ export interface AgentConfig {
 // ============================================================================
 
 export interface AgentTelephonyConfig {
-  /** Vapi phone number ID assigned to this agent */
+  /** Vapi phone number ID assigned to this agent (for inbound calls) */
   vapi_phone_number_id?: string
 }
+
+// ============================================================================
+// VAPI INTEGRATION CONFIG (SIP TRUNK)
+// ============================================================================
+
+/**
+ * Configuration for Vapi workspace integration
+ * Stored in workspace_integrations.config for provider="vapi"
+ */
+export interface VapiIntegrationConfig {
+  /** Vapi SIP trunk credential ID (created via byo-sip-trunk) */
+  sip_trunk_credential_id?: string
+  /** Shared outbound phone number ID (all agents call from this number) */
+  shared_outbound_phone_number_id?: string
+  /** E164 number for display (e.g., +15551234567) */
+  shared_outbound_phone_number?: string
+}
+
+/**
+ * Zod schema for VapiIntegrationConfig validation
+ */
+export const vapiIntegrationConfigSchema = z.object({
+  sip_trunk_credential_id: z.string().optional(),
+  shared_outbound_phone_number_id: z.string().optional(),
+  shared_outbound_phone_number: z.string().optional(),
+})
 
 // ============================================================================
 // CONVERSATION TYPES

@@ -2,13 +2,16 @@ import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
-import type { AIAgent, IntegrationApiKeys, AgentConfig } from "@/types/database.types"
+import type { AIAgent, IntegrationApiKeys, AgentConfig, VapiIntegrationConfig } from "@/types/database.types"
 import {
   listPhoneNumbers,
   createFreeUsPhoneNumber,
   attachPhoneNumberToAssistant,
   getPhoneNumber,
+  createByoPhoneNumber,
+  listByoPhoneNumbers,
 } from "@/lib/integrations/vapi/phone-numbers"
+import { z } from "zod"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string; id: string }>
@@ -30,18 +33,19 @@ function getSupabaseAdmin() {
 }
 
 // ============================================================================
-// GET SECRET KEY FOR VAPI AGENT
+// VAPI INTEGRATION DETAILS
 // ============================================================================
 
-async function getVapiSecretKeyForAgent(agent: AIAgent): Promise<string | null> {
+interface VapiIntegrationDetails {
+  secretKey: string
+  config: VapiIntegrationConfig
+}
+
+async function getVapiIntegrationDetails(agent: AIAgent): Promise<VapiIntegrationDetails | null> {
   // Check legacy keys first
   const legacySecretKey = agent.agent_secret_api_key?.find(
     (key) => key.provider === "vapi" && key.is_active
   )
-
-  if (legacySecretKey?.key) {
-    return legacySecretKey.key
-  }
 
   // Need to fetch from workspace_integrations
   if (!agent.workspace_id) {
@@ -54,7 +58,7 @@ async function getVapiSecretKeyForAgent(agent: AIAgent): Promise<string | null> 
 
     const { data: integration, error } = await supabase
       .from("workspace_integrations")
-      .select("api_keys")
+      .select("api_keys, config")
       .eq("workspace_id", agent.workspace_id)
       .eq("provider", "vapi")
       .eq("is_active", true)
@@ -62,41 +66,62 @@ async function getVapiSecretKeyForAgent(agent: AIAgent): Promise<string | null> 
 
     if (error || !integration) {
       console.error("[PhoneNumber] Failed to fetch VAPI integration:", error)
+      // If we have a legacy key, return it without config
+      if (legacySecretKey?.key) {
+        return { secretKey: legacySecretKey.key, config: {} }
+      }
       return null
     }
 
     const apiKeys = integration.api_keys as IntegrationApiKeys
+    const vapiConfig = (integration.config as VapiIntegrationConfig) || {}
     const apiKeyConfig = agent.config?.api_key_config
 
+    // Determine the secret key to use
+    let secretKey: string | null = null
+
+    // If legacy key exists, use it
+    if (legacySecretKey?.key) {
+      secretKey = legacySecretKey.key
+    }
     // NEW FLOW: Check assigned_key_id first
-    if (apiKeyConfig?.assigned_key_id) {
+    else if (apiKeyConfig?.assigned_key_id) {
       const keyId = apiKeyConfig.assigned_key_id
 
       if (keyId === "default") {
-        return apiKeys.default_secret_key || null
+        secretKey = apiKeys.default_secret_key || null
       } else {
         const additionalKey = apiKeys.additional_keys?.find((k) => k.id === keyId)
-        return additionalKey?.secret_key || null
+        secretKey = additionalKey?.secret_key || null
       }
     }
-
     // LEGACY FLOW: Check secret_key.type
-    if (!apiKeyConfig?.secret_key || apiKeyConfig.secret_key.type === "none") {
-      return apiKeys.default_secret_key || null
+    else if (!apiKeyConfig?.secret_key || apiKeyConfig.secret_key.type === "none") {
+      secretKey = apiKeys.default_secret_key || null
     } else if (apiKeyConfig.secret_key.type === "default") {
-      return apiKeys.default_secret_key || null
+      secretKey = apiKeys.default_secret_key || null
     } else if (apiKeyConfig.secret_key.type === "additional") {
       const additionalKey = apiKeys.additional_keys?.find(
         (k) => k.id === apiKeyConfig.secret_key?.additional_key_id
       )
-      return additionalKey?.secret_key || null
+      secretKey = additionalKey?.secret_key || null
     }
 
-    return null
+    if (!secretKey) {
+      return null
+    }
+
+    return { secretKey, config: vapiConfig }
   } catch (error) {
-    console.error("[PhoneNumber] Error fetching secret key:", error)
+    console.error("[PhoneNumber] Error fetching integration details:", error)
     return null
   }
+}
+
+// Helper to get just the secret key (backward compatibility)
+async function getVapiSecretKeyForAgent(agent: AIAgent): Promise<string | null> {
+  const details = await getVapiIntegrationDetails(agent)
+  return details?.secretKey || null
 }
 
 // ============================================================================
@@ -429,6 +454,189 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     })
   } catch (error) {
     console.error("DELETE /api/w/[slug]/agents/[id]/phone-number error:", error)
+    return serverError()
+  }
+}
+
+// ============================================================================
+// PUT /api/w/[workspaceSlug]/agents/[id]/phone-number
+// Assign an existing phone number (BYO or Vapi) to this agent for inbound calls
+// ============================================================================
+
+const assignPhoneNumberSchema = z.object({
+  // Either provide an existing phoneNumberId from Vapi
+  phoneNumberId: z.string().optional(),
+  // Or create a new BYO phone number with these params
+  byoNumber: z.string().optional(), // E.164 format
+  byoName: z.string().optional(),
+})
+
+export async function PUT(request: NextRequest, { params }: RouteContext) {
+  try {
+    const { workspaceSlug, id } = await params
+    const ctx = await getWorkspaceContext(workspaceSlug, ["owner", "admin", "member"])
+
+    if (!ctx) {
+      return forbidden("No permission to manage phone numbers")
+    }
+
+    // Parse request body
+    const body = await request.json()
+    const validation = assignPhoneNumberSchema.safeParse(body)
+
+    if (!validation.success) {
+      return apiError(validation.error.issues[0]?.message || "Invalid request", 400)
+    }
+
+    const { phoneNumberId: existingPhoneNumberId, byoNumber, byoName } = validation.data
+
+    if (!existingPhoneNumberId && !byoNumber) {
+      return apiError("Either phoneNumberId or byoNumber must be provided", 400)
+    }
+
+    // Get agent
+    const { data: agent, error: agentError } = await ctx.adminClient
+      .from("ai_agents")
+      .select("*")
+      .eq("id", id)
+      .eq("workspace_id", ctx.workspace.id)
+      .is("deleted_at", null)
+      .single()
+
+    if (agentError || !agent) {
+      return apiError("Agent not found", 404)
+    }
+
+    const typedAgent = agent as AIAgent
+
+    // Must be a Vapi agent
+    if (typedAgent.provider !== "vapi") {
+      return apiError("Phone numbers are only supported for Vapi agents", 400)
+    }
+
+    // Agent must be synced
+    if (!typedAgent.external_agent_id) {
+      return apiError(
+        "Agent must be synced with Vapi before assigning a phone number. Save the agent with an API key first.",
+        400
+      )
+    }
+
+    // Get Vapi integration details
+    const integrationDetails = await getVapiIntegrationDetails(typedAgent)
+    if (!integrationDetails) {
+      return apiError(
+        "No Vapi secret API key configured. Add one in the integration settings.",
+        400
+      )
+    }
+
+    const { secretKey, config: vapiConfig } = integrationDetails
+    let phoneNumberId: string
+    let displayNumber: string
+
+    // Case 1: Assign an existing phone number
+    if (existingPhoneNumberId) {
+      phoneNumberId = existingPhoneNumberId
+
+      // Fetch the phone number details from Vapi
+      const fetchResult = await getPhoneNumber({
+        apiKey: secretKey,
+        phoneNumberId: existingPhoneNumberId,
+      })
+
+      if (!fetchResult.success || !fetchResult.data) {
+        return apiError(
+          fetchResult.error || "Phone number not found in Vapi",
+          404
+        )
+      }
+
+      displayNumber = fetchResult.data.number || fetchResult.data.sipUri || existingPhoneNumberId
+    }
+    // Case 2: Create a new BYO phone number linked to SIP trunk
+    else if (byoNumber) {
+      const sipTrunkCredentialId = vapiConfig.sip_trunk_credential_id
+      if (!sipTrunkCredentialId) {
+        return apiError(
+          "No SIP trunk configured. Add a SIP trunk credential ID in the Vapi integration settings first.",
+          400
+        )
+      }
+
+      // Create BYO phone number
+      const createResult = await createByoPhoneNumber({
+        apiKey: secretKey,
+        number: byoNumber,
+        credentialId: sipTrunkCredentialId,
+        name: byoName || `Agent: ${typedAgent.name}`,
+        numberE164CheckEnabled: false, // Allow flexibility in number format
+      })
+
+      if (!createResult.success || !createResult.data) {
+        return apiError(
+          createResult.error || "Failed to create BYO phone number in Vapi",
+          500
+        )
+      }
+
+      phoneNumberId = createResult.data.id
+      displayNumber = createResult.data.number || byoNumber
+
+      console.log("[PhoneNumber] Created BYO phone number:", {
+        id: phoneNumberId,
+        number: displayNumber,
+        credentialId: sipTrunkCredentialId,
+      })
+    } else {
+      return apiError("Either phoneNumberId or byoNumber must be provided", 400)
+    }
+
+    // Attach the phone number to the assistant (for inbound routing)
+    const attachResult = await attachPhoneNumberToAssistant({
+      apiKey: secretKey,
+      phoneNumberId,
+      assistantId: typedAgent.external_agent_id,
+    })
+
+    if (!attachResult.success) {
+      console.error("[PhoneNumber] Failed to attach phone number:", attachResult.error)
+      // Continue anyway - the number is assigned locally
+    }
+
+    // Update agent in database with the phone number
+    const updatedConfig: AgentConfig = {
+      ...typedAgent.config,
+      telephony: {
+        ...typedAgent.config?.telephony,
+        vapi_phone_number_id: phoneNumberId,
+      },
+    }
+
+    const { error: updateError } = await ctx.adminClient
+      .from("ai_agents")
+      .update({
+        external_phone_number: displayNumber,
+        config: updatedConfig,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+
+    if (updateError) {
+      console.error("[PhoneNumber] Failed to update agent:", updateError)
+      return apiError("Phone number assigned but failed to save to agent", 500)
+    }
+
+    return apiResponse({
+      success: true,
+      phoneNumber: displayNumber,
+      phoneNumberId,
+      message: byoNumber
+        ? "BYO phone number created and assigned to agent for inbound calls"
+        : "Phone number assigned to agent for inbound calls",
+    })
+  } catch (error) {
+    console.error("PUT /api/w/[slug]/agents/[id]/phone-number error:", error)
     return serverError()
   }
 }

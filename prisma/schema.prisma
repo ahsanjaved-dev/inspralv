@@ -20,9 +20,9 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-  // DATABASE_URL - Pooled connection (port 6543) for runtime
-  // DIRECT_URL   - Direct connection (port 5432) for migrations
-  // Find these in Supabase Dashboard > Project Settings > Database > Connection string
+  schemas   = ["public"]
+  // NOTE: Only "public" schema - Supabase manages "auth" schema.
+  // Don't use "prisma db push" - use raw SQL for schema changes to avoid auth FK conflicts.
 }
 
 // =============================================================================
@@ -33,6 +33,8 @@ enum AgentProvider {
   vapi
   retell
   synthflow
+  @@map("agent_provider")
+  @@schema("public")
 }
 
 enum VoiceProvider {
@@ -41,6 +43,8 @@ enum VoiceProvider {
   azure
   openai
   cartesia
+  @@map("voice_provider")
+  @@schema("public")
 }
 
 enum ModelProvider {
@@ -48,17 +52,23 @@ enum ModelProvider {
   anthropic
   google
   groq
+  @@map("model_provider")
+  @@schema("public")
 }
 
 enum TranscriberProvider {
   deepgram
   assemblyai
   openai
+  @@map("transcriber_provider")
+  @@schema("public")
 }
 
 enum CallDirection {
   inbound
   outbound
+  @@map("call_direction")
+  @@schema("public")
 }
 
 enum CallStatus {
@@ -70,12 +80,16 @@ enum CallStatus {
   no_answer
   busy
   canceled
+  @@map("call_status")
+  @@schema("public")
 }
 
 enum UserRole {
   org_owner
   org_admin
   org_member
+  @@map("user_role")
+  @@schema("public")
 }
 
 enum UserStatus {
@@ -83,6 +97,8 @@ enum UserStatus {
   active
   inactive
   suspended
+  @@map("user_status")
+  @@schema("public")
 }
 
 enum PartnerRequestStatus {
@@ -90,6 +106,8 @@ enum PartnerRequestStatus {
   approved
   rejected
   provisioning
+  @@map("partner_request_status")
+  @@schema("public")
 }
 
 enum ResourceType {
@@ -101,6 +119,8 @@ enum ResourceType {
   stt_minutes
   phone_number_rental
   sms_messages
+  @@map("resource_type")
+  @@schema("public")
 }
 
 enum SyncStatus {
@@ -108,6 +128,8 @@ enum SyncStatus {
   pending
   synced
   error
+  @@map("sync_status")
+  @@schema("public")
 }
 
 enum LeadStatus {
@@ -117,6 +139,8 @@ enum LeadStatus {
   converted
   lost
   nurturing
+  @@map("lead_status")
+  @@schema("public")
 }
 
 enum LeadSource {
@@ -125,6 +149,8 @@ enum LeadSource {
   import
   api
   webhook
+  @@map("lead_source")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -151,14 +177,16 @@ model Partner {
   updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  domains           PartnerDomain[]
-  members           PartnerMember[]
-  workspaces        Workspace[]
-  invitations       PartnerInvitation[]
-  partnerRequest    PartnerRequest?     @relation("ProvisionedPartner")
-  originatingRequest PartnerRequest?    @relation("OriginatingRequest", fields: [requestId], references: [id])
+  domains            PartnerDomain[]
+  members            PartnerMember[]
+  workspaces         Workspace[]
+  invitations        PartnerInvitation[]
+  partnerRequest     PartnerRequest?     @relation("ProvisionedPartner")
+  originatingRequest PartnerRequest?     @relation("OriginatingRequest", fields: [requestId], references: [id])
+  billingCredits     BillingCredits?
 
   @@map("partners")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -178,6 +206,7 @@ model PartnerDomain {
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 
   @@map("partner_domains")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -202,6 +231,7 @@ model PartnerMember {
 
   @@unique([partnerId, userId])
   @@map("partner_members")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -227,6 +257,7 @@ model PartnerInvitation {
   inviter User    @relation(fields: [invitedBy], references: [id])
 
   @@map("partner_invitations")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -262,6 +293,7 @@ model PartnerRequest {
   originatingPartner Partner? @relation("OriginatingRequest")
 
   @@map("partner_requests")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -280,6 +312,9 @@ model Workspace {
   currentMonthCost    Decimal   @default(0) @map("current_month_cost") @db.Decimal
   lastUsageResetAt    DateTime  @default(now()) @map("last_usage_reset_at") @db.Timestamptz
   status              String    @default("active")
+  // Billing fields
+  isBillingExempt     Boolean   @default(false) @map("is_billing_exempt")
+  perMinuteRateCents  Int       @default(20) @map("per_minute_rate_cents")
   deletedAt           DateTime? @map("deleted_at") @db.Timestamptz
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -294,9 +329,11 @@ model Workspace {
   integrations       WorkspaceIntegration[]
   knowledgeDocuments KnowledgeDocument[]
   leads              Lead[]
+  workspaceCredits   WorkspaceCredits?
 
   @@unique([partnerId, slug])
   @@map("workspaces")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -321,6 +358,7 @@ model WorkspaceMember {
 
   @@unique([workspaceId, userId])
   @@map("workspace_members")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -345,6 +383,7 @@ model WorkspaceInvitation {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@map("workspace_invitations")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -368,6 +407,7 @@ model WorkspaceIntegration {
 
   @@unique([workspaceId, provider])
   @@map("workspace_integrations")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -414,6 +454,7 @@ model AiAgent {
   knowledgeDocuments AgentKnowledgeDocument[]
 
   @@map("ai_agents")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -458,6 +499,7 @@ model Conversation {
   usageTracking UsageTracking[]
 
   @@map("conversations")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -486,6 +528,7 @@ model UsageTracking {
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
   @@map("usage_tracking")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -519,6 +562,7 @@ model User {
   createdLeads            Lead[]              @relation("CreatedLeads")
 
   @@map("users")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -536,6 +580,7 @@ model SuperAdmin {
   updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("super_admin")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -551,6 +596,7 @@ enum KnowledgeDocumentType {
   other
 
   @@map("knowledge_document_type")
+  @@schema("public")
 }
 
 enum KnowledgeDocumentStatus {
@@ -561,6 +607,7 @@ enum KnowledgeDocumentStatus {
   error
 
   @@map("knowledge_document_status")
+  @@schema("public")
 }
 
 model KnowledgeDocument {
@@ -608,6 +655,7 @@ model KnowledgeDocument {
   agents        AgentKnowledgeDocument[]
 
   @@map("knowledge_documents")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -628,6 +676,7 @@ model AgentKnowledgeDocument {
   @@index([agentId])
   @@index([knowledgeDocumentId])
   @@map("agent_knowledge_documents")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -684,6 +733,7 @@ model Lead {
   @@index([phone])
   @@index([createdAt])
   @@map("leads")
+  @@schema("public")
 }
 
 // =============================================================================
@@ -712,4 +762,101 @@ model AuditLog {
   @@index([entityType])
   @@index([createdAt])
   @@map("audit_log")
+  @@schema("public")
+}
+
+// =============================================================================
+// BILLING CREDITS (Partner-level usage credits)
+// =============================================================================
+
+enum CreditTransactionType {
+  topup
+  usage
+  refund
+  adjustment
+  @@map("credit_transaction_type")
+  @@schema("public")
+}
+
+model BillingCredits {
+  id                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId                String   @unique @map("partner_id") @db.Uuid
+  balanceCents             Int      @default(0) @map("balance_cents")
+  lowBalanceThresholdCents Int      @default(1000) @map("low_balance_threshold_cents") // $10 default
+  perMinuteRateCents       Int      @default(15) @map("per_minute_rate_cents") // $0.15 default
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  partner      Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  transactions CreditTransaction[]
+
+  @@map("billing_credits")
+  @@schema("public")
+}
+
+model CreditTransaction {
+  id                    String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  billingCreditsId      String                @map("billing_credits_id") @db.Uuid
+  type                  CreditTransactionType
+  amountCents           Int                   @map("amount_cents") // Positive for credits, negative for debits
+  balanceAfterCents     Int                   @map("balance_after_cents")
+  description           String?
+  metadata              Json                  @default("{}")
+  stripePaymentIntentId String?               @map("stripe_payment_intent_id")
+  conversationId        String?               @map("conversation_id") @db.Uuid
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  billingCredits BillingCredits @relation(fields: [billingCreditsId], references: [id], onDelete: Cascade)
+
+  @@index([billingCreditsId])
+  @@index([type])
+  @@index([stripePaymentIntentId])
+  @@index([createdAt])
+  @@map("credit_transactions")
+  @@schema("public")
+}
+
+// =============================================================================
+// WORKSPACE BILLING CREDITS (Workspace-level usage credits)
+// =============================================================================
+
+model WorkspaceCredits {
+  id                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId              String   @unique @map("workspace_id") @db.Uuid
+  balanceCents             Int      @default(0) @map("balance_cents")
+  lowBalanceThresholdCents Int      @default(500) @map("low_balance_threshold_cents") // $5 default
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  workspace    Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions WorkspaceCreditTransaction[]
+
+  @@map("workspace_credits")
+  @@schema("public")
+}
+
+model WorkspaceCreditTransaction {
+  id                    String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceCreditsId    String                @map("workspace_credits_id") @db.Uuid
+  type                  CreditTransactionType
+  amountCents           Int                   @map("amount_cents") // Positive for credits, negative for debits
+  balanceAfterCents     Int                   @map("balance_after_cents")
+  description           String?
+  metadata              Json                  @default("{}")
+  stripePaymentIntentId String?               @map("stripe_payment_intent_id")
+  conversationId        String?               @map("conversation_id") @db.Uuid
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  workspaceCredits WorkspaceCredits @relation(fields: [workspaceCreditsId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceCreditsId])
+  @@index([type])
+  @@index([stripePaymentIntentId])
+  @@index([createdAt])
+  @@map("workspace_credit_transactions")
+  @@schema("public")
 }

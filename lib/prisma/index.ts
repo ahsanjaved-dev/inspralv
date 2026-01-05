@@ -37,6 +37,10 @@ export type {
   User,
   SuperAdmin,
   AuditLog,
+  BillingCredits,
+  CreditTransaction,
+  WorkspaceCredits,
+  WorkspaceCreditTransaction,
 } from "./client"
 
 // Enums (both value and type exports - TypeScript handles this correctly)
@@ -52,4 +56,5 @@ export {
   PartnerRequestStatus,
   ResourceType,
   SyncStatus,
+  CreditTransactionType,
 } from "./client"

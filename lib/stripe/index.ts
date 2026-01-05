@@ -99,6 +99,136 @@ export async function getOrCreateCustomer(
 }
 
 // =============================================================================
+// SUBSCRIPTION HELPERS
+// =============================================================================
+
+/**
+ * Update an existing subscription to a new plan
+ * Returns proration details
+ */
+export async function updateSubscriptionPlan(
+  subscriptionId: string,
+  newPriceId: string
+): Promise<{
+  subscription: Stripe.Subscription
+  prorationAmount: number
+  immediateCharge: boolean
+}> {
+  const stripeClient = getStripe()
+
+  // Get current subscription to check proration
+  const currentSubscription = await stripeClient.subscriptions.retrieve(subscriptionId)
+
+  // Get the subscription item ID (assuming single-item subscriptions)
+  const subscriptionItemId = currentSubscription.items.data[0]?.id
+  if (!subscriptionItemId) {
+    throw new Error("Subscription has no items")
+  }
+
+  // Update the subscription with proration
+  const updatedSubscription = await stripeClient.subscriptions.update(subscriptionId, {
+    items: [
+      {
+        id: subscriptionItemId,
+        price: newPriceId,
+      },
+    ],
+    proration_behavior: "create_prorations", // Create prorations for upgrades/downgrades
+    billing_cycle_anchor: "unchanged", // Keep the same billing cycle
+  })
+
+  // Calculate proration amount from the upcoming invoice
+  let prorationAmount = 0
+  let immediateCharge = false
+
+  // Get the upcoming invoice to see proration details
+  try {
+    const upcomingInvoice = await stripeClient.invoices.createPreview({
+      subscription: subscriptionId,
+    })
+
+    // Use the total amount due as the proration amount
+    prorationAmount = upcomingInvoice.amount_due
+
+    // Check if there will be an immediate charge
+    immediateCharge = prorationAmount > 0
+  } catch {
+    // Upcoming invoice might not be available immediately
+  }
+
+  return {
+    subscription: updatedSubscription,
+    prorationAmount,
+    immediateCharge,
+  }
+}
+
+/**
+ * Get proration preview without actually changing the subscription
+ */
+export async function previewSubscriptionChange(
+  subscriptionId: string,
+  newPriceId: string
+): Promise<{
+  prorationAmount: number
+  prorationDate: number
+  nextBillingDate: number
+  immediateCharge: boolean
+}> {
+  const stripeClient = getStripe()
+
+  const currentSubscription = await stripeClient.subscriptions.retrieve(subscriptionId)
+  const subscriptionItemId = currentSubscription.items.data[0]?.id
+
+  if (!subscriptionItemId) {
+    throw new Error("Subscription has no items")
+  }
+
+  // Preview the change
+  const upcomingInvoice = await stripeClient.invoices.createPreview({
+    subscription: subscriptionId,
+    subscription_details: {
+      items: [
+        {
+          id: subscriptionItemId,
+          price: newPriceId,
+        },
+      ],
+      proration_behavior: "create_prorations",
+    },
+  })
+
+  // Use the total amount due as the proration amount
+  const prorationAmount = upcomingInvoice.amount_due
+
+  return {
+    prorationAmount,
+    prorationDate: upcomingInvoice.period_start,
+    nextBillingDate: upcomingInvoice.period_end,
+    immediateCharge: prorationAmount > 0,
+  }
+}
+
+// =============================================================================
+// STRIPE CONNECT HELPERS
+// =============================================================================
+
+/**
+ * Extract Stripe Connect account ID from partner settings
+ * Handles both snake_case and camelCase keys for backwards compatibility
+ */
+export function getConnectAccountId(
+  settings: Record<string, unknown> | null | undefined
+): string | undefined {
+  if (!settings) return undefined
+  // Check both snake_case (canonical) and camelCase (legacy reads)
+  return (
+    (settings.stripe_connect_account_id as string | undefined) ||
+    (settings.stripeConnectAccountId as string | undefined)
+  )
+}
+
+// =============================================================================
 // WEBHOOK SIGNATURE VERIFICATION
 // =============================================================================
 

@@ -114,6 +114,11 @@ export function WorkspaceAgentForm({
   const [outboundNumber, setOutboundNumber] = useState("")
   const [isCallingOutbound, setIsCallingOutbound] = useState(false)
   const [isLoadingPhoneNumber, setIsLoadingPhoneNumber] = useState(false)
+  
+  // SIP number assignment state
+  const [sipNumberInput, setSipNumberInput] = useState("")
+  const [isAssigningSipNumber, setIsAssigningSipNumber] = useState(false)
+  const [sipDialUri, setSipDialUri] = useState<string | null>(null)
 
   // Fetch phone number details on mount if we have an ID but no number
   useEffect(() => {
@@ -837,6 +842,7 @@ export function WorkspaceAgentForm({
                           }
                           setPhoneNumber(null)
                           setPhoneNumberId(null)
+                          setSipDialUri(null)
                           toast.success("Phone number released")
                         } catch (error: any) {
                           toast.error(error.message || "Failed to release phone number")
@@ -855,6 +861,64 @@ export function WorkspaceAgentForm({
                       <span className="ml-1">Release</span>
                     </Button>
                   </div>
+                </div>
+
+                {/* SIP Dial Info */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>SIP Dial URI</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(
+                            `/api/w/${workspaceSlug}/agents/${initialData.id}/sip-info`
+                          )
+                          const result = await res.json()
+                          if (!res.ok) {
+                            throw new Error(result.error || "Failed to get SIP info")
+                          }
+                          const uri = result.data?.inbound?.sipUri
+                          if (uri) {
+                            setSipDialUri(uri)
+                            toast.success("SIP info loaded")
+                          } else {
+                            toast.info(result.data?.inbound?.instructions || "SIP trunk not configured")
+                          }
+                        } catch (error: any) {
+                          toast.error(error.message || "Failed to get SIP info")
+                        }
+                      }}
+                    >
+                      Get SIP Info
+                    </Button>
+                  </div>
+                  {sipDialUri ? (
+                    <div className="flex gap-2">
+                      <Input
+                        value={sipDialUri}
+                        readOnly
+                        className="font-mono text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(sipDialUri)
+                          toast.success("SIP URI copied!")
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Click "Get SIP Info" to get the dial URI for your webphone
+                    </p>
+                  )}
                 </div>
 
                 {/* Outbound Call Section */}
@@ -968,77 +1032,144 @@ export function WorkspaceAgentForm({
                     </p>
                   </div>
                 ) : (
-                  <div className="text-center py-6 border-2 border-dashed rounded-lg bg-muted/30 dark:bg-muted/10">
-                    <Phone className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-                    <p className="text-sm text-muted-foreground mb-4">
-                      No phone number assigned. Get a free US phone number to enable calling.
-                    </p>
-                    <Button
-                      type="button"
-                      onClick={async () => {
-                        setIsProvisioningPhone(true)
-                        try {
-                          const res = await fetch(
-                            `/api/w/${workspaceSlug}/agents/${initialData.id}/phone-number`,
-                            { method: "POST" }
-                          )
-                          const result = await res.json()
-                          console.log("[PhoneNumber] Provision response:", result)
-                          if (!res.ok) {
-                            throw new Error(result.error || "Failed to provision phone number")
-                          }
-                          
-                          // New response format: displayNumber (best available), sipUri, phoneNumber (PSTN)
-                          const data = result.data
-                          const newPhoneNumberId = data?.phoneNumberId
-                          // Use displayNumber (which prefers PSTN, falls back to SIP URI)
-                          const newPhoneNumber = data?.displayNumber || data?.sipUri || data?.phoneNumber
-                          
-                          console.log("[PhoneNumber] Setting state:", { 
-                            newPhoneNumber, 
-                            newPhoneNumberId,
-                            sipUri: data?.sipUri,
-                            status: data?.status 
-                          })
-                          
-                          if (newPhoneNumberId) {
-                            setPhoneNumberId(newPhoneNumberId)
-                            if (newPhoneNumber && newPhoneNumber !== "Activating...") {
-                              setPhoneNumber(newPhoneNumber)
-                              // Show appropriate message based on number type
-                              if (data?.sipUri && !data?.phoneNumber) {
+                  <div className="space-y-6">
+                    {/* Option 1: Assign SIP Number (BYO) */}
+                    <div className="p-4 border rounded-lg bg-muted/30 dark:bg-muted/10">
+                      <h4 className="font-medium mb-2 flex items-center gap-2">
+                        <Phone className="h-4 w-4" />
+                        Assign SIP Number (Recommended)
+                      </h4>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Enter a phone number to assign to this agent for inbound SIP calls.
+                      </p>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="+15551234567"
+                          value={sipNumberInput}
+                          onChange={(e) => setSipNumberInput(e.target.value)}
+                          disabled={isAssigningSipNumber}
+                        />
+                        <Button
+                          type="button"
+                          onClick={async () => {
+                            if (!sipNumberInput.trim()) {
+                              toast.error("Please enter a phone number")
+                              return
+                            }
+                            setIsAssigningSipNumber(true)
+                            try {
+                              const res = await fetch(
+                                `/api/w/${workspaceSlug}/agents/${initialData.id}/assign-sip-number`,
+                                {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ phoneNumber: sipNumberInput.trim() }),
+                                }
+                              )
+                              const result = await res.json()
+                              console.log("[SipNumber] Assign response:", result)
+                              if (!res.ok) {
+                                throw new Error(result.error || "Failed to assign SIP number")
+                              }
+                              
+                              const data = result.data
+                              setPhoneNumber(data.phoneNumber)
+                              setPhoneNumberId(data.phoneNumberId)
+                              setSipDialUri(data.sipUri)
+                              setSipNumberInput("")
+                              toast.success(
+                                <div>
+                                  <p>SIP number assigned!</p>
+                                  <p className="text-xs mt-1 font-mono">{data.sipUri}</p>
+                                </div>
+                              )
+                            } catch (error: any) {
+                              toast.error(error.message || "Failed to assign SIP number")
+                            } finally {
+                              setIsAssigningSipNumber(false)
+                            }
+                          }}
+                          disabled={isAssigningSipNumber || !sipNumberInput.trim()}
+                        >
+                          {isAssigningSipNumber ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Assign"
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Requires SIP trunk configured in integration settings.
+                      </p>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-background px-2 text-muted-foreground">Or</span>
+                      </div>
+                    </div>
+
+                    {/* Option 2: Get Free Vapi Number */}
+                    <div className="text-center py-4 border-2 border-dashed rounded-lg bg-muted/30 dark:bg-muted/10">
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Get a free Vapi SIP number (limited to web calls)
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={async () => {
+                          setIsProvisioningPhone(true)
+                          try {
+                            const res = await fetch(
+                              `/api/w/${workspaceSlug}/agents/${initialData.id}/phone-number`,
+                              { method: "POST" }
+                            )
+                            const result = await res.json()
+                            console.log("[PhoneNumber] Provision response:", result)
+                            if (!res.ok) {
+                              throw new Error(result.error || "Failed to provision phone number")
+                            }
+                            
+                            const data = result.data
+                            const newPhoneNumberId = data?.phoneNumberId
+                            const newPhoneNumber = data?.displayNumber || data?.sipUri || data?.phoneNumber
+                            
+                            if (newPhoneNumberId) {
+                              setPhoneNumberId(newPhoneNumberId)
+                              if (newPhoneNumber && newPhoneNumber !== "Activating...") {
+                                setPhoneNumber(newPhoneNumber)
                                 toast.success(`SIP number provisioned: ${newPhoneNumber}`)
                               } else {
-                                toast.success(`Phone number ${newPhoneNumber} provisioned successfully!`)
+                                toast.success("Phone number provisioned! Activating...")
                               }
                             } else {
-                              // Number is activating - will show "activating" UI
-                              toast.success("Phone number provisioned! Activating...")
+                              toast.error("Phone number provisioned but data not returned correctly")
                             }
-                          } else {
-                            console.error("[PhoneNumber] Missing phoneNumberId in response:", result)
-                            toast.error("Phone number provisioned but data not returned correctly")
+                          } catch (error: any) {
+                            toast.error(error.message || "Failed to provision phone number")
+                          } finally {
+                            setIsProvisioningPhone(false)
                           }
-                        } catch (error: any) {
-                          toast.error(error.message || "Failed to provision phone number")
-                        } finally {
-                          setIsProvisioningPhone(false)
-                        }
-                      }}
-                      disabled={isProvisioningPhone}
-                    >
-                      {isProvisioningPhone ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          Provisioning...
-                        </>
-                      ) : (
-                        <>
-                          <Phone className="h-4 w-4 mr-2" />
-                          Get Free US Number
-                        </>
-                      )}
-                    </Button>
+                        }}
+                        disabled={isProvisioningPhone}
+                      >
+                        {isProvisioningPhone ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Provisioning...
+                          </>
+                        ) : (
+                          <>
+                            <Phone className="h-4 w-4 mr-2" />
+                            Get Free Vapi Number
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>

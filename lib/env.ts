@@ -27,6 +27,7 @@ export const env = {
   stripeSecretKey: getEnvVar("STRIPE_SECRET_KEY", false),
   stripePublishableKey: getEnvVar("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", false),
   stripeWebhookSecret: getEnvVar("STRIPE_WEBHOOK_SECRET", false),
+  stripeConnectWebhookSecret: getEnvVar("STRIPE_CONNECT_WEBHOOK_SECRET", false),
   // Stripe Price IDs (create in Stripe Dashboard first)
   stripePriceStarter: getEnvVar("STRIPE_PRICE_STARTER", false),
   stripePriceProfessional: getEnvVar("STRIPE_PRICE_PROFESSIONAL", false),

@@ -16,7 +16,7 @@ const VAPI_BASE_URL = "https://api.vapi.ai"
 export interface VapiPhoneNumber {
   id: string
   orgId: string
-  provider: "vapi" | "twilio" | "vonage" | "telnyx" | "byo"
+  provider: "vapi" | "twilio" | "vonage" | "telnyx" | "byo-phone-number"
   number?: string
   sipUri?: string
   name?: string
@@ -24,8 +24,22 @@ export interface VapiPhoneNumber {
   assistantId?: string | null
   squadId?: string | null
   workflowId?: string | null
+  credentialId?: string  // For BYO phone numbers linked to SIP trunk
   createdAt: string
   updatedAt: string
+}
+
+export interface ByoPhoneNumberParams {
+  /** Vapi API key */
+  apiKey: string
+  /** E.164 phone number (e.g., +15551234567) */
+  number: string
+  /** SIP trunk credential ID */
+  credentialId: string
+  /** Optional name/label for the phone number */
+  name?: string
+  /** Whether to validate E164 format (default: true) */
+  numberE164CheckEnabled?: boolean
 }
 
 export interface VapiPhoneNumberResponse {
@@ -326,5 +340,156 @@ export async function deletePhoneNumber(params: {
       error: error instanceof Error ? error.message : "Unknown error deleting phone number",
     }
   }
+}
+
+// ============================================================================
+// CREATE BYO PHONE NUMBER (linked to SIP trunk)
+// ============================================================================
+
+/**
+ * Create a BYO (Bring Your Own) phone number linked to a SIP trunk credential.
+ * This is used when you have your own SIP provider and want to use their DIDs with Vapi.
+ * 
+ * @see https://docs.vapi.ai/advanced/sip/sip-trunk
+ */
+export async function createByoPhoneNumber(
+  params: ByoPhoneNumberParams
+): Promise<VapiPhoneNumberResponse> {
+  const { apiKey, number, credentialId, name, numberE164CheckEnabled = false } = params
+
+  try {
+    console.log("[VapiPhoneNumbers] Creating BYO phone number:", number, "with credential:", credentialId)
+
+    const payload: Record<string, unknown> = {
+      provider: "byo-phone-number",
+      number,
+      credentialId,
+      numberE164CheckEnabled,
+    }
+
+    if (name) {
+      payload.name = name
+    }
+
+    const response = await fetch(`${VAPI_BASE_URL}/phone-number`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error("[VapiPhoneNumbers] Create BYO error:", errorData)
+      return {
+        success: false,
+        error:
+          errorData.message ||
+          `VAPI API error: ${response.status} ${response.statusText}`,
+      }
+    }
+
+    const data = await response.json()
+    console.log("[VapiPhoneNumbers] BYO phone number created:", JSON.stringify(data, null, 2))
+
+    return {
+      success: true,
+      data: {
+        id: data.id,
+        orgId: data.orgId,
+        provider: data.provider,
+        number: data.number,
+        sipUri: data.sipUri,
+        name: data.name,
+        status: data.status,
+        assistantId: data.assistantId,
+        squadId: data.squadId,
+        workflowId: data.workflowId,
+        credentialId: data.credentialId,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+      } as VapiPhoneNumber,
+    }
+  } catch (error) {
+    console.error("[VapiPhoneNumbers] Create BYO exception:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error creating BYO phone number",
+    }
+  }
+}
+
+// ============================================================================
+// LIST BYO PHONE NUMBERS (filtered by credential)
+// ============================================================================
+
+/**
+ * List phone numbers, optionally filtered by SIP trunk credential ID.
+ * Use this to find all DIDs linked to a specific SIP trunk.
+ */
+export async function listByoPhoneNumbers(params: {
+  apiKey: string
+  credentialId?: string
+  limit?: number
+}): Promise<VapiPhoneNumberListResponse> {
+  const { apiKey, credentialId, limit = 100 } = params
+
+  try {
+    const url = new URL(`${VAPI_BASE_URL}/phone-number`)
+    url.searchParams.set("limit", limit.toString())
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error("[VapiPhoneNumbers] List BYO error:", errorData)
+      return {
+        success: false,
+        error:
+          errorData.message ||
+          `VAPI API error: ${response.status} ${response.statusText}`,
+      }
+    }
+
+    let data: VapiPhoneNumber[] = await response.json()
+
+    // Filter by credentialId if provided (Vapi API may not support this natively)
+    if (credentialId) {
+      data = data.filter((n) => n.credentialId === credentialId)
+    }
+
+    return {
+      success: true,
+      data,
+    }
+  } catch (error) {
+    console.error("[VapiPhoneNumbers] List BYO exception:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error listing BYO phone numbers",
+    }
+  }
+}
+
+// ============================================================================
+// GET VAPI INTEGRATION CONFIG HELPER
+// ============================================================================
+
+/**
+ * Helper type for getting Vapi integration details including SIP trunk config.
+ * This is used by routes that need to access the shared outbound number.
+ */
+export interface VapiIntegrationDetails {
+  secretKey: string
+  sipTrunkCredentialId?: string
+  sharedOutboundPhoneNumberId?: string
+  sharedOutboundPhoneNumber?: string
 }
 

@@ -283,6 +283,18 @@ export function checkPartnerRequestRateLimit(identifier: string): RateLimitResul
   })
 }
 
+/**
+ * Rate limit for credits top-up requests
+ * 5 attempts per 5 minutes per partner
+ */
+export function checkCreditsTopupRateLimit(identifier: string): RateLimitResult {
+  return checkRateLimit(identifier, {
+    limit: 5,
+    windowSeconds: 5 * 60, // 5 minutes
+    identifier: "credits-topup",
+  })
+}
+
 // ============================================================================
 // HELPER TO GET RATE LIMIT HEADERS
 // ============================================================================

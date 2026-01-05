@@ -9,7 +9,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import Stripe from "stripe"
 import { constructWebhookEvent, getPlanFromPriceId } from "@/lib/stripe"
+import { applyTopup } from "@/lib/stripe/credits"
 import { prisma } from "@/lib/prisma"
+import { sendPaymentFailedEmail } from "@/lib/email/send"
+import { env } from "@/lib/env"
 
 // Disable body parsing - we need the raw body for signature verification
 export const dynamic = "force-dynamic"
@@ -61,6 +64,10 @@ export async function POST(request: NextRequest) {
         await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice)
         break
 
+      case "payment_intent.succeeded":
+        await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent)
+        break
+
       default:
         console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`)
     }
@@ -78,6 +85,7 @@ export async function POST(request: NextRequest) {
 // =============================================================================
 
 async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
+  if (!prisma) return
   console.log(`[Stripe Webhook] Checkout session completed: ${session.id}`)
 
   const partnerId = session.metadata?.partner_id
@@ -103,6 +111,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
 }
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+  if (!prisma) return
   console.log(`[Stripe Webhook] Subscription updated: ${subscription.id}, status: ${subscription.status}`)
 
   const partnerId = subscription.metadata?.partner_id
@@ -133,6 +142,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+  if (!prisma) return
   console.log(`[Stripe Webhook] Subscription deleted: ${subscription.id}`)
 
   const customerId = typeof subscription.customer === "string"
@@ -168,6 +178,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
+  if (!prisma) return
   console.log(`[Stripe Webhook] Invoice paid: ${invoice.id}`)
 
   // For subscription invoices, the subscription update event will handle status
@@ -190,6 +201,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 }
 
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
+  if (!prisma) return
   console.log(`[Stripe Webhook] Invoice payment failed: ${invoice.id}`)
 
   const customerId = typeof invoice.customer === "string"
@@ -200,7 +212,24 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
 
   const partner = await prisma.partner.findUnique({
     where: { stripeCustomerId: customerId },
-    select: { id: true },
+    select: {
+      id: true,
+      name: true,
+      planTier: true,
+      members: {
+        where: {
+          role: { in: ["owner", "admin"] },
+          removedAt: null,
+        },
+        select: {
+          user: {
+            select: {
+              email: true,
+            },
+          },
+        },
+      },
+    },
   })
 
   if (partner) {
@@ -213,7 +242,61 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     })
 
     console.log(`[Stripe Webhook] Partner ${partner.id} marked as past_due due to failed payment`)
+
+    // Send email notification to all partner admins
+    const adminEmails = partner.members.map((m) => m.user.email).filter(Boolean)
+
+    if (adminEmails.length > 0) {
+      try {
+        const planName = partner.planTier.charAt(0).toUpperCase() + partner.planTier.slice(1)
+        const amountDue = invoice.amount_due ? (invoice.amount_due / 100).toFixed(2) : "0.00"
+        const attemptDate = invoice.created ? new Date(invoice.created * 1000).toLocaleDateString() : new Date().toLocaleDateString()
+        const updatePaymentUrl = `${env.appUrl}/org/billing`
+
+        await sendPaymentFailedEmail(adminEmails, {
+          partner_name: partner.name,
+          plan_name: planName,
+          amount_due: amountDue,
+          attempt_date: attemptDate,
+          update_payment_url: updatePaymentUrl,
+        })
+
+        console.log(`[Stripe Webhook] Payment failure notification sent to ${adminEmails.length} admin(s)`)
+      } catch (error) {
+        console.error(`[Stripe Webhook] Failed to send payment failure email:`, error)
+        // Don't fail the webhook if email fails
+      }
+    } else {
+      console.warn(`[Stripe Webhook] No admin emails found for partner ${partner.id}`)
+    }
   }
+}
+
+async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
+  console.log(`[Stripe Webhook] PaymentIntent succeeded: ${paymentIntent.id}`)
+
+  const { type, amount_cents, partner_id } = paymentIntent.metadata || {}
+
+  const amountCents = parseInt(amount_cents || "0", 10)
+  if (isNaN(amountCents) || amountCents <= 0) {
+    console.log(`[Stripe Webhook] PaymentIntent ${paymentIntent.id} has no valid amount_cents, skipping`)
+    return
+  }
+
+  // Handle partner-level credits top-up (platform payments)
+  // Note: Workspace top-ups are handled by the Connect webhook (/api/webhooks/stripe-connect)
+  if (type === "credits_topup" && partner_id) {
+    const result = await applyTopup(partner_id, amountCents, paymentIntent.id)
+
+    if (result.alreadyApplied) {
+      console.log(`[Stripe Webhook] Partner credits top-up already applied for PaymentIntent ${paymentIntent.id}`)
+    } else {
+      console.log(`[Stripe Webhook] Partner credits top-up applied: Partner ${partner_id}, Amount $${(amountCents / 100).toFixed(2)}`)
+    }
+    return
+  }
+
+  console.log(`[Stripe Webhook] PaymentIntent ${paymentIntent.id} type "${type}" not handled by platform webhook`)
 }
 
 // =============================================================================
@@ -221,6 +304,8 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
 // =============================================================================
 
 async function updatePartnerSubscription(partnerId: string, subscription: Stripe.Subscription) {
+  if (!prisma) return
+  
   // Get the price ID from the subscription
   const priceId = subscription.items.data[0]?.price?.id
   const planTier = priceId ? getPlanFromPriceId(priceId) : null

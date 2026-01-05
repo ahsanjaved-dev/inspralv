@@ -32,20 +32,20 @@ const protectedPaths = [
 function buildCSP(): string {
   const policies = [
     "default-src 'self'",
-    // Scripts: permissive for VAPI/Retell/Daily/Krisp/LiveKit worklets
+    // Scripts: permissive for VAPI/Retell/Daily/Krisp/LiveKit worklets + Stripe
     process.env.NODE_ENV === "development"
-      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.daily.co https://*.vapi.ai https://*.krisp.ai https://*.retellai.com https://*.livekit.cloud blob: data:"
-      : "script-src 'self' 'unsafe-inline' https://*.daily.co https://*.vapi.ai https://*.krisp.ai https://*.retellai.com https://*.livekit.cloud blob: data:",
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.daily.co https://*.vapi.ai https://*.krisp.ai https://*.retellai.com https://*.livekit.cloud https://js.stripe.com https://*.stripe.com blob: data:"
+      : "script-src 'self' 'unsafe-inline' https://*.daily.co https://*.vapi.ai https://*.krisp.ai https://*.retellai.com https://*.livekit.cloud https://js.stripe.com https://*.stripe.com blob: data:",
     // Styles
     "style-src 'self' 'unsafe-inline'",
-    // Images
-    "img-src 'self' data: blob: https://*.supabase.co https://*.googleusercontent.com https://avatars.githubusercontent.com",
+    // Images - Added Stripe for card brand icons
+    "img-src 'self' data: blob: https://*.supabase.co https://*.googleusercontent.com https://avatars.githubusercontent.com https://*.stripe.com",
     // Fonts
     "font-src 'self' https://fonts.gstatic.com",
-    // Connect: all voice provider services - ADDED livekit.cloud for Retell WebRTC
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.vapi.ai wss://*.vapi.ai https://*.daily.co wss://*.daily.co https://*.krisp.ai wss://*.krisp.ai https://*.retellai.com wss://*.retellai.com https://*.livekit.cloud wss://*.livekit.cloud https://*.cloudfront.net",
-    // Frame
-    "frame-src 'self' https://*.daily.co https://*.vapi.ai https://*.retellai.com https://*.livekit.cloud",
+    // Connect: all voice provider services + Stripe API
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.vapi.ai wss://*.vapi.ai https://*.daily.co wss://*.daily.co https://*.krisp.ai wss://*.krisp.ai https://*.retellai.com wss://*.retellai.com https://*.livekit.cloud wss://*.livekit.cloud https://*.cloudfront.net https://api.stripe.com https://*.stripe.com",
+    // Frame - Added Stripe for 3D Secure and payment elements
+    "frame-src 'self' https://*.daily.co https://*.vapi.ai https://*.retellai.com https://*.livekit.cloud https://js.stripe.com https://*.stripe.com",
     // Media
     "media-src 'self' blob: data: https://*.daily.co https://*.vapi.ai https://*.retellai.com https://*.livekit.cloud",
     // Workers and Child (for audio worklets)
