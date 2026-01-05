@@ -168,13 +168,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const upcomingInvoice = await stripe.invoices.createPreview(
         {
           subscription: subscription.stripeSubscriptionId,
-          subscription_items: [
+          items: [
             {
               id: subscriptionItemId,
               price: newPlan.stripePriceId,
             },
           ],
-          subscription_proration_behavior: "create_prorations",
         },
         { stripeAccount: connectAccountId }
       )
