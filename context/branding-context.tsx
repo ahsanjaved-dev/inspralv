@@ -25,7 +25,6 @@ interface BrandingProviderProps {
 export function BrandingProvider({ partner, children }: BrandingProviderProps) {
   const branding = partner.branding
 
-  // Apply CSS custom properties for branding colors
   useEffect(() => {
     const root = document.documentElement
 
