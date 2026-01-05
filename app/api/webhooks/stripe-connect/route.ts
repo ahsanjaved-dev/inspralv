@@ -136,6 +136,11 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     return
   }
 
+  if (!plan_id) {
+    console.log(`[Stripe Connect Webhook] Subscription ${subscription.id} has no plan_id metadata, skipping`)
+    return
+  }
+
   // Map Stripe status to our status
   const statusMap: Record<string, string> = {
     active: "active",
