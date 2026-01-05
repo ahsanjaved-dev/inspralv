@@ -184,6 +184,7 @@ model Partner {
   partnerRequest     PartnerRequest?     @relation("ProvisionedPartner")
   originatingRequest PartnerRequest?     @relation("OriginatingRequest", fields: [requestId], references: [id])
   billingCredits     BillingCredits?
+  subscriptionPlans  WorkspaceSubscriptionPlan[]
 
   @@map("partners")
   @@schema("public")
@@ -858,5 +859,97 @@ model WorkspaceCreditTransaction {
   @@index([stripePaymentIntentId])
   @@index([createdAt])
   @@map("workspace_credit_transactions")
+  @@schema("public")
+}
+
+// =============================================================================
+// WORKSPACE SUBSCRIPTION PLANS (Partner-defined plans for workspaces)
+// =============================================================================
+
+enum WorkspaceSubscriptionStatus {
+  active
+  past_due
+  canceled
+  incomplete
+  trialing
+  paused
+
+  @@map("workspace_subscription_status")
+  @@schema("public")
+}
+
+enum BillingType {
+  prepaid
+  postpaid
+
+  @@map("billing_type")
+  @@schema("public")
+}
+
+model WorkspaceSubscriptionPlan {
+  id                       String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId                String      @map("partner_id") @db.Uuid
+  name                     String      @db.VarChar(100)
+  description              String?
+  stripeProductId          String?     @map("stripe_product_id") @db.VarChar(100)
+  stripePriceId            String?     @map("stripe_price_id") @db.VarChar(100)
+  monthlyPriceCents        Int         @default(0) @map("monthly_price_cents")
+  includedMinutes          Int         @default(0) @map("included_minutes")
+  overageRateCents         Int         @default(20) @map("overage_rate_cents") // $0.20/min default
+  features                 Json        @default("[]")
+  maxAgents                Int?        @map("max_agents")
+  maxConversationsPerMonth Int?        @map("max_conversations_per_month")
+  // Billing type configuration
+  billingType              BillingType @default(prepaid) @map("billing_type")
+  postpaidMinutesLimit     Int?        @map("postpaid_minutes_limit") // Max minutes before blocking (postpaid only)
+  isActive                 Boolean     @default(true) @map("is_active")
+  isPublic                 Boolean     @default(true) @map("is_public")
+  sortOrder                Int         @default(0) @map("sort_order")
+  createdAt                DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  partner       Partner                 @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  subscriptions WorkspaceSubscription[]
+
+  @@index([partnerId])
+  @@index([partnerId, isActive])
+  @@map("workspace_subscription_plans")
+  @@schema("public")
+}
+
+// =============================================================================
+// WORKSPACE SUBSCRIPTIONS (Workspace subscribing to a Partner's plan)
+// =============================================================================
+
+model WorkspaceSubscription {
+  id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId               String                      @unique @map("workspace_id") @db.Uuid
+  planId                    String                      @map("plan_id") @db.Uuid
+  stripeSubscriptionId      String?                     @map("stripe_subscription_id") @db.VarChar(100)
+  stripeCustomerId          String?                     @map("stripe_customer_id") @db.VarChar(100)
+  status                    WorkspaceSubscriptionStatus @default(incomplete)
+  currentPeriodStart        DateTime?                   @map("current_period_start") @db.Timestamptz
+  currentPeriodEnd          DateTime?                   @map("current_period_end") @db.Timestamptz
+  minutesUsedThisPeriod     Int                         @default(0) @map("minutes_used_this_period")
+  overageChargesCents       Int                         @default(0) @map("overage_charges_cents")
+  // Postpaid billing fields
+  postpaidMinutesUsed       Int                         @default(0) @map("postpaid_minutes_used") // Usage in current period
+  pendingInvoiceAmountCents Int                         @default(0) @map("pending_invoice_amount_cents") // Accumulated charges
+  cancelAtPeriodEnd         Boolean                     @default(false) @map("cancel_at_period_end")
+  canceledAt                DateTime?                   @map("canceled_at") @db.Timestamptz
+  trialStart                DateTime?                   @map("trial_start") @db.Timestamptz
+  trialEnd                  DateTime?                   @map("trial_end") @db.Timestamptz
+  createdAt                 DateTime                    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                 DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  plan WorkspaceSubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId])
+  @@index([planId])
+  @@index([stripeSubscriptionId])
+  @@index([status])
+  @@map("workspace_subscriptions")
   @@schema("public")
 }

@@ -295,21 +295,213 @@ export async function applyWorkspaceTopup(
 }
 
 // =============================================================================
-// USAGE DEDUCTION
+// USAGE DEDUCTION (WITH SUBSCRIPTION SUPPORT)
 // =============================================================================
 
+export interface UsageDeductionResult {
+  amountDeducted: number
+  newBalanceCents: number
+  deductedFrom: "subscription" | "workspace" | "partner" | "postpaid"
+  isLowBalance: boolean
+  subscriptionMinutesUsed?: number
+  overageMinutes?: number
+  // Postpaid-specific fields
+  postpaidMinutesUsed?: number
+  postpaidMinutesLimit?: number
+  pendingInvoiceAmountCents?: number
+}
+
+// =============================================================================
+// POSTPAID BILLING
+// =============================================================================
+
+export interface PostpaidCheckResult {
+  allowed: boolean
+  remainingMinutes: number
+  currentUsage: number
+  limitMinutes: number
+  message: string
+  billingType: "prepaid" | "postpaid" | "none"
+}
+
 /**
- * Deduct credits for usage (e.g., after a call completes)
- * Uses atomic database operations to prevent race conditions.
- * - Billing-exempt workspaces deduct from partner credits
- * - Normal workspaces deduct from their own credits
+ * Check if a workspace with postpaid subscription can make a call
+ * Returns allowance status and remaining minutes
+ */
+export async function canMakePostpaidCall(workspaceId: string): Promise<PostpaidCheckResult> {
+  if (!prisma) throw new Error("Database not configured")
+
+  // Get workspace subscription with plan details
+  const subscription = await prisma.workspaceSubscription.findUnique({
+    where: { workspaceId },
+    include: {
+      plan: {
+        select: {
+          billingType: true,
+          postpaidMinutesLimit: true,
+          includedMinutes: true,
+        },
+      },
+    },
+  })
+
+  // No active subscription
+  if (!subscription || subscription.status !== "active") {
+    return {
+      allowed: true, // Will be handled by credits check
+      remainingMinutes: 0,
+      currentUsage: 0,
+      limitMinutes: 0,
+      message: "No active subscription - using prepaid credits",
+      billingType: "none",
+    }
+  }
+
+  // Prepaid subscription - always allow (handled by credits)
+  if (subscription.plan.billingType === "prepaid") {
+    const remainingIncluded = Math.max(0, subscription.plan.includedMinutes - subscription.minutesUsedThisPeriod)
+    return {
+      allowed: true,
+      remainingMinutes: remainingIncluded,
+      currentUsage: subscription.minutesUsedThisPeriod,
+      limitMinutes: subscription.plan.includedMinutes,
+      message: "Prepaid plan - use included minutes then credits",
+      billingType: "prepaid",
+    }
+  }
+
+  // Postpaid subscription - check against limit
+  const limit = subscription.plan.postpaidMinutesLimit || 0
+  const used = subscription.postpaidMinutesUsed
+  const remaining = Math.max(0, limit - used)
+
+  if (used >= limit) {
+    return {
+      allowed: false,
+      remainingMinutes: 0,
+      currentUsage: used,
+      limitMinutes: limit,
+      message: "Postpaid minutes limit exceeded. Payment required to continue.",
+      billingType: "postpaid",
+    }
+  }
+
+  return {
+    allowed: true,
+    remainingMinutes: remaining,
+    currentUsage: used,
+    limitMinutes: limit,
+    message: "OK",
+    billingType: "postpaid",
+  }
+}
+
+/**
+ * Record postpaid usage for a subscription
+ * This is an atomic operation that checks the limit before incrementing
+ */
+export async function recordPostpaidUsage(
+  workspaceId: string,
+  durationSeconds: number,
+  conversationId?: string,
+  description?: string
+): Promise<UsageDeductionResult> {
+  if (!prisma) throw new Error("Database not configured")
+
+  const minutes = Math.ceil(durationSeconds / 60)
+
+  // Get subscription with plan details and lock for update
+  const subscription = await prisma.workspaceSubscription.findUnique({
+    where: { workspaceId },
+    include: {
+      plan: {
+        select: {
+          billingType: true,
+          postpaidMinutesLimit: true,
+          overageRateCents: true,
+        },
+      },
+    },
+  })
+
+  if (!subscription || subscription.status !== "active") {
+    throw new Error("No active subscription found")
+  }
+
+  if (subscription.plan.billingType !== "postpaid") {
+    throw new Error("Not a postpaid subscription")
+  }
+
+  const limit = subscription.plan.postpaidMinutesLimit || 0
+  const currentUsage = subscription.postpaidMinutesUsed
+  const newUsage = currentUsage + minutes
+
+  // Check if this would exceed the limit
+  if (newUsage > limit) {
+    throw new Error(
+      `Postpaid limit exceeded. Current: ${currentUsage} min, Requested: ${minutes} min, Limit: ${limit} min`
+    )
+  }
+
+  // Calculate the charge for this usage
+  const chargeCents = minutes * subscription.plan.overageRateCents
+
+  // Atomically update the subscription usage
+  const result = await prisma.$transaction(async (tx) => {
+    // Use updateMany with condition for atomic check
+    const updated = await tx.workspaceSubscription.updateMany({
+      where: {
+        id: subscription.id,
+        postpaidMinutesUsed: { lte: limit - minutes }, // Ensure we don't exceed
+      },
+      data: {
+        postpaidMinutesUsed: { increment: minutes },
+        pendingInvoiceAmountCents: { increment: chargeCents },
+      },
+    })
+
+    if (updated.count === 0) {
+      throw new Error("Postpaid limit would be exceeded")
+    }
+
+    // Get updated subscription
+    const updatedSubscription = await tx.workspaceSubscription.findUnique({
+      where: { id: subscription.id },
+      select: {
+        postpaidMinutesUsed: true,
+        pendingInvoiceAmountCents: true,
+      },
+    })
+
+    return updatedSubscription
+  })
+
+  return {
+    amountDeducted: chargeCents,
+    newBalanceCents: 0, // Not applicable for postpaid
+    deductedFrom: "postpaid",
+    isLowBalance: false,
+    postpaidMinutesUsed: result?.postpaidMinutesUsed || newUsage,
+    postpaidMinutesLimit: limit,
+    pendingInvoiceAmountCents: result?.pendingInvoiceAmountCents || 0,
+  }
+}
+
+/**
+ * Deduct usage for a workspace call
+ * Priority order:
+ * 1. Billing-exempt workspaces → Partner credits
+ * 2. Postpaid subscription → Track usage against limit (invoice at period end)
+ * 3. Prepaid subscription with included minutes → Use subscription minutes first
+ * 4. Overage/extra minutes → Deduct from workspace prepaid credits at overage rate
+ * 5. No subscription → Deduct from workspace prepaid credits
  */
 export async function deductWorkspaceUsage(
   workspaceId: string,
   durationSeconds: number,
   conversationId?: string,
   description?: string
-): Promise<{ amountDeducted: number; newBalanceCents: number; deductedFrom: "workspace" | "partner"; isLowBalance: boolean }> {
+): Promise<UsageDeductionResult> {
   if (!prisma) throw new Error("Database not configured")
 
   const workspace = await prisma.workspace.findUnique({
@@ -340,20 +532,154 @@ export async function deductWorkspaceUsage(
     }
   }
 
-  // Normal workspace - deduct from workspace credits
+  const minutes = Math.ceil(durationSeconds / 60)
+
+  // Check for active subscription
+  const subscription = await prisma.workspaceSubscription.findUnique({
+    where: { workspaceId },
+    include: {
+      plan: {
+        select: {
+          billingType: true,
+          includedMinutes: true,
+          overageRateCents: true,
+          postpaidMinutesLimit: true,
+        },
+      },
+    },
+  })
+
+  // If active subscription, check billing type
+  if (subscription && subscription.status === "active") {
+    // POSTPAID: Track usage against limit (no credits deducted now)
+    if (subscription.plan.billingType === "postpaid") {
+      return await recordPostpaidUsage(
+        workspaceId,
+        durationSeconds,
+        conversationId,
+        description
+      )
+    }
+
+    // PREPAID: Use subscription logic (included minutes + credits for overage)
+    return await deductWithSubscription(
+      workspaceId,
+      workspace.perMinuteRateCents,
+      minutes,
+      subscription,
+      conversationId,
+      description
+    )
+  }
+
+  // No subscription - use prepaid credits only
+  return await deductFromPrepaidCredits(
+    workspaceId,
+    workspace.perMinuteRateCents,
+    minutes,
+    conversationId,
+    description
+  )
+}
+
+/**
+ * Deduct usage using subscription included minutes, with overage from credits
+ */
+async function deductWithSubscription(
+  workspaceId: string,
+  perMinuteRateCents: number,
+  minutes: number,
+  subscription: {
+    id: string
+    minutesUsedThisPeriod: number
+    overageChargesCents: number
+    plan: { includedMinutes: number; overageRateCents: number }
+  },
+  conversationId?: string,
+  description?: string
+): Promise<UsageDeductionResult> {
+  if (!prisma) throw new Error("Database not configured")
+
+  const { includedMinutes, overageRateCents } = subscription.plan
+  const currentUsed = subscription.minutesUsedThisPeriod
+  const remainingIncluded = Math.max(0, includedMinutes - currentUsed)
+
+  // How many minutes can be covered by subscription?
+  const minutesFromSubscription = Math.min(minutes, remainingIncluded)
+  const overageMinutes = minutes - minutesFromSubscription
+
+  // Update subscription usage
+  await prisma.workspaceSubscription.update({
+    where: { id: subscription.id },
+    data: {
+      minutesUsedThisPeriod: { increment: minutesFromSubscription },
+    },
+  })
+
+  // If all minutes covered by subscription, no credits needed
+  if (overageMinutes === 0) {
+    return {
+      amountDeducted: 0,
+      newBalanceCents: 0, // Not relevant for subscription usage
+      deductedFrom: "subscription",
+      isLowBalance: false,
+      subscriptionMinutesUsed: minutesFromSubscription,
+      overageMinutes: 0,
+    }
+  }
+
+  // Overage minutes - deduct from prepaid credits at overage rate
+  const overageAmountCents = overageMinutes * overageRateCents
+  
+  try {
+    const creditsResult = await deductFromPrepaidCreditsAmount(
+      workspaceId,
+      overageAmountCents,
+      conversationId,
+      description || `Overage: ${overageMinutes} min @ $${(overageRateCents / 100).toFixed(2)}/min`
+    )
+
+    // Also track overage on subscription
+    await prisma.workspaceSubscription.update({
+      where: { id: subscription.id },
+      data: {
+        overageChargesCents: { increment: overageAmountCents },
+      },
+    })
+
+    return {
+      amountDeducted: overageAmountCents,
+      newBalanceCents: creditsResult.newBalance,
+      deductedFrom: "workspace",
+      isLowBalance: creditsResult.isLowBalance,
+      subscriptionMinutesUsed: minutesFromSubscription,
+      overageMinutes,
+    }
+  } catch (error) {
+    // If insufficient credits, still log the subscription usage
+    console.error(`[Workspace Credits] Overage deduction failed for workspace ${workspaceId}:`, error)
+    throw error
+  }
+}
+
+/**
+ * Deduct a specific amount from prepaid credits
+ */
+async function deductFromPrepaidCreditsAmount(
+  workspaceId: string,
+  amountCents: number,
+  conversationId?: string,
+  description?: string
+): Promise<{ newBalance: number; isLowBalance: boolean }> {
+  if (!prisma) throw new Error("Database not configured")
+
   const credits = await getOrCreateWorkspaceCredits(workspaceId)
 
-  // Calculate cost: ceil(seconds/60) * perMinuteRate
-  const minutes = Math.ceil(durationSeconds / 60)
-  const amountCents = minutes * workspace.perMinuteRateCents
-
-  // Use interactive transaction for atomic check-and-update
   const result = await prisma.$transaction(async (tx) => {
-    // Atomic update with balance check in WHERE clause
     const updated = await tx.workspaceCredits.updateMany({
       where: {
         id: credits.id,
-        balanceCents: { gte: amountCents }, // Atomic check: only update if sufficient
+        balanceCents: { gte: amountCents },
       },
       data: {
         balanceCents: { decrement: amountCents },
@@ -361,7 +687,6 @@ export async function deductWorkspaceUsage(
     })
 
     if (updated.count === 0) {
-      // Either record doesn't exist or insufficient balance
       const current = await tx.workspaceCredits.findUnique({
         where: { id: credits.id },
         select: { balanceCents: true },
@@ -371,7 +696,6 @@ export async function deductWorkspaceUsage(
       )
     }
 
-    // Get the new balance
     const updatedCredits = await tx.workspaceCredits.findUnique({
       where: { id: credits.id },
       select: { balanceCents: true, lowBalanceThresholdCents: true },
@@ -380,20 +704,41 @@ export async function deductWorkspaceUsage(
     const newBalance = updatedCredits?.balanceCents ?? 0
     const threshold = updatedCredits?.lowBalanceThresholdCents ?? 500
 
-    // Create transaction record
     await tx.workspaceCreditTransaction.create({
       data: {
         workspaceCreditsId: credits.id,
         type: "usage",
-        amountCents: -amountCents, // Negative for debits
+        amountCents: -amountCents,
         balanceAfterCents: newBalance,
-        description: description || `Usage: ${minutes} minute${minutes > 1 ? "s" : ""} @ $${(workspace.perMinuteRateCents / 100).toFixed(2)}/min`,
+        description: description || `Usage charge: $${(amountCents / 100).toFixed(2)}`,
         conversationId,
       },
     })
 
     return { newBalance, isLowBalance: newBalance < threshold }
   })
+
+  return result
+}
+
+/**
+ * Deduct from prepaid credits (no subscription)
+ */
+async function deductFromPrepaidCredits(
+  workspaceId: string,
+  perMinuteRateCents: number,
+  minutes: number,
+  conversationId?: string,
+  description?: string
+): Promise<UsageDeductionResult> {
+  const amountCents = minutes * perMinuteRateCents
+
+  const result = await deductFromPrepaidCreditsAmount(
+    workspaceId,
+    amountCents,
+    conversationId,
+    description || `Usage: ${minutes} minute${minutes > 1 ? "s" : ""} @ $${(perMinuteRateCents / 100).toFixed(2)}/min`
+  )
 
   return {
     amountDeducted: amountCents,
