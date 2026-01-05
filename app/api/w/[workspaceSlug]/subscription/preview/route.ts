@@ -168,12 +168,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const upcomingInvoice = await stripe.invoices.createPreview(
         {
           subscription: subscription.stripeSubscriptionId,
-          subscription_items: [
-            {
-              id: subscriptionItemId,
-              price: newPlan.stripePriceId,
-            },
-          ] as any, // Type assertion needed due to Stripe API type mismatches
+          subscription_details: {
+            items: [
+              {
+                id: subscriptionItemId,
+                price: newPlan.stripePriceId,
+              },
+            ],
+          },
         },
         { stripeAccount: connectAccountId }
       )
