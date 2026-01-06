@@ -21,14 +21,12 @@ import type {
   CreateRecipientInput,
   VariableMapping,
   BusinessHoursConfig,
-  AgentPromptOverrides,
   AIAgent,
 } from "@/types/database.types"
 
 // Step components
 import { StepDetails } from "./steps/step-details"
 import { StepImport } from "./steps/step-import"
-import { StepVariables } from "./steps/step-variables"
 import { StepSchedule } from "./steps/step-schedule"
 import { StepReview } from "./steps/step-review"
 
@@ -56,16 +54,16 @@ export interface WizardFormData {
   csvColumnHeaders: string[]
   importedFileName: string | null
 
-  // Step 3: Variable Mappings
+  // Step 3: Variable Mappings (auto-generated from CSV)
   variableMappings: VariableMapping[]
-  agentPromptOverrides: AgentPromptOverrides | null
 
-  // Step 4: Schedule
+  // Step 3: Schedule
   scheduleType: "immediate" | "scheduled"
   scheduledStartAt: string | null
+  scheduledExpiresAt: string | null
   businessHoursConfig: BusinessHoursConfig
 
-  // Step 5: Advanced Settings
+  // Step 4: Advanced Settings
   concurrencyLimit: number
   maxAttempts: number
   retryDelayMinutes: number
@@ -97,18 +95,12 @@ const WIZARD_STEPS: WizardStep[] = [
   },
   {
     id: 3,
-    title: "Variable Mapping",
-    description: "Map CSV columns to prompts",
-    icon: Variable,
-  },
-  {
-    id: 4,
     title: "Schedule",
     description: "Business hours & timing",
     icon: Clock,
   },
   {
-    id: 5,
+    id: 4,
     title: "Review & Launch",
     description: "Confirm settings",
     icon: CheckCircle2,
@@ -153,14 +145,14 @@ export function CampaignWizard({
     recipients: [],
     csvColumnHeaders: [],
     importedFileName: null,
-    // Step 3
+    // Step 3 (auto-generated)
     variableMappings: [],
-    agentPromptOverrides: null,
-    // Step 4
+    // Step 3
     scheduleType: "immediate",
     scheduledStartAt: null,
+    scheduledExpiresAt: null,
     businessHoursConfig: DEFAULT_BUSINESS_HOURS_CONFIG,
-    // Step 5
+    // Step 4
     concurrencyLimit: 1,
     maxAttempts: 3,
     retryDelayMinutes: 30,
@@ -185,9 +177,8 @@ export function CampaignWizard({
     }
 
     // Step 2 is optional - can have 0 recipients and add later
-    // Step 3 is optional - variable mappings are not required
-    // Step 4 validation if scheduled
-    if (step === 4) {
+    // Step 3 validation if scheduled
+    if (step === 3) {
       if (formData.scheduleType === "scheduled" && !formData.scheduledStartAt) {
         newErrors.scheduledStartAt = "Please select a start date/time"
       }
@@ -263,9 +254,15 @@ export function CampaignWizard({
     // Convert datetime-local format to ISO 8601 format
     // datetime-local gives "2026-01-15T09:00" but Zod expects "2026-01-15T09:00:00.000Z"
     let scheduledStartAt: string | null = null
+    let scheduledExpiresAt: string | null = null
+    
     if (formData.scheduleType === "scheduled" && formData.scheduledStartAt) {
       // Append seconds and Z for UTC timezone
       scheduledStartAt = new Date(formData.scheduledStartAt).toISOString()
+    }
+    
+    if (formData.scheduleType === "scheduled" && formData.scheduledExpiresAt) {
+      scheduledExpiresAt = new Date(formData.scheduledExpiresAt).toISOString()
     }
 
     const wizardData: CreateCampaignWizardInput = {
@@ -275,9 +272,10 @@ export function CampaignWizard({
       recipients: formData.recipients,
       csv_column_headers: formData.csvColumnHeaders,
       variable_mappings: validVariableMappings,
-      agent_prompt_overrides: formData.agentPromptOverrides,
+      agent_prompt_overrides: null, // Removed: users should configure greeting at agent level
       schedule_type: formData.scheduleType,
       scheduled_start_at: scheduledStartAt,
+      scheduled_expires_at: scheduledExpiresAt,
       business_hours_config: formData.businessHoursConfig,
       business_hours_only: formData.businessHoursConfig.enabled,
       timezone: formData.businessHoursConfig.timezone,
@@ -399,20 +397,13 @@ export function CampaignWizard({
             />
           )}
           {currentStep === 3 && (
-            <StepVariables
-              formData={formData}
-              updateFormData={updateFormData}
-              errors={errors}
-            />
-          )}
-          {currentStep === 4 && (
             <StepSchedule
               formData={formData}
               updateFormData={updateFormData}
               errors={errors}
             />
           )}
-          {currentStep === 5 && (
+          {currentStep === 4 && (
             <StepReview
               formData={formData}
               updateFormData={updateFormData}

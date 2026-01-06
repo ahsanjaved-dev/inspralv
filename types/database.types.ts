@@ -2303,6 +2303,7 @@ export interface CallCampaign {
   status: CampaignStatus
   schedule_type: CampaignScheduleType
   scheduled_start_at: string | null
+  scheduled_expires_at: string | null
   business_hours_only: boolean
   business_hours_start: string | null
   business_hours_end: string | null
@@ -2463,6 +2464,7 @@ export const createCampaignSchema = z.object({
   agent_id: z.string().uuid("Please select an agent"),
   schedule_type: campaignScheduleTypeSchema.default("immediate"),
   scheduled_start_at: z.string().datetime().optional().nullable(),
+  scheduled_expires_at: z.string().datetime().optional().nullable(),
   business_hours_only: z.boolean().default(false),
   business_hours_start: z.string().optional().nullable(),
   business_hours_end: z.string().optional().nullable(),
@@ -2483,16 +2485,17 @@ export const createCampaignWizardSchema = z.object({
   recipients: z.array(createRecipientSchema).optional().default([]),
   csv_column_headers: z.array(z.string()).optional().default([]),
   
-  // Step 3: Variable Mappings
+  // Step 3: Variable Mappings (auto-generated from CSV)
   variable_mappings: z.array(variableMappingSchema).optional().default([]),
   agent_prompt_overrides: agentPromptOverridesSchema.optional().nullable(),
   
-  // Step 4: Schedule & Business Hours
+  // Step 3: Schedule & Business Hours
   schedule_type: campaignScheduleTypeSchema.default("immediate"),
   scheduled_start_at: z.string().datetime().optional().nullable(),
+  scheduled_expires_at: z.string().datetime().optional().nullable(),
   business_hours_config: businessHoursConfigSchema.optional(),
   
-  // Step 5: Advanced Settings (legacy fields still supported)
+  // Step 4: Advanced Settings (legacy fields still supported)
   business_hours_only: z.boolean().default(false),
   business_hours_start: z.string().optional().nullable(),
   business_hours_end: z.string().optional().nullable(),
@@ -2504,6 +2507,23 @@ export const createCampaignWizardSchema = z.object({
   // Wizard metadata
   wizard_completed: z.boolean().default(true),
 })
+.refine(
+  (data) => {
+    // If scheduled, start date is required
+    if (data.schedule_type === "scheduled" && !data.scheduled_start_at) {
+      return false
+    }
+    // If expiry is set, it must be after start date
+    if (data.scheduled_expires_at && data.scheduled_start_at) {
+      return new Date(data.scheduled_expires_at) > new Date(data.scheduled_start_at)
+    }
+    return true
+  },
+  {
+    message: "Expiry date must be after start date",
+    path: ["scheduled_expires_at"],
+  }
+)
 
 export const updateCampaignSchema = createCampaignSchema.partial().extend({
   status: campaignStatusSchema.optional(),
@@ -2512,6 +2532,7 @@ export const updateCampaignSchema = createCampaignSchema.partial().extend({
   variable_mappings: z.array(variableMappingSchema).optional(),
   agent_prompt_overrides: agentPromptOverridesSchema.optional(),
   csv_column_headers: z.array(z.string()).optional(),
+  scheduled_expires_at: z.string().datetime().optional().nullable(),
 })
 
 // Input types for form handling

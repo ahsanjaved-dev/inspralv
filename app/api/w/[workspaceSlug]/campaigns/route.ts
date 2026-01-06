@@ -115,6 +115,7 @@ export async function POST(
       description: rest.description || null,
       schedule_type: rest.schedule_type,
       scheduled_start_at: rest.scheduled_start_at || null,
+      scheduled_expires_at: rest.scheduled_expires_at || null,
       business_hours_only: rest.business_hours_only || false,
       business_hours_start: rest.business_hours_start || null,
       business_hours_end: rest.business_hours_end || null,

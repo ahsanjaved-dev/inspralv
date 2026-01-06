@@ -1,6 +1,5 @@
 "use client"
 
-import { useMemo } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -121,25 +120,6 @@ export function StepSchedule({
     }
   }
 
-  // Calculate total hours
-  const totalHoursPerWeek = useMemo(() => {
-    let total = 0
-    for (const day of DAYS_OF_WEEK) {
-      for (const slot of config.schedule[day.key]) {
-        const startParts = slot.start.split(":")
-        const endParts = slot.end.split(":")
-        const startH = startParts[0] ? Number(startParts[0]) : 0
-        const startM = startParts[1] ? Number(startParts[1]) : 0
-        const endH = endParts[0] ? Number(endParts[0]) : 0
-        const endM = endParts[1] ? Number(endParts[1]) : 0
-        const hours = (endH + endM / 60) - (startH + startM / 60)
-        if (hours > 0) total += hours
-      }
-    }
-    return total.toFixed(1)
-  }, [config.schedule])
-
-  const activeDays = DAYS_OF_WEEK.filter((d) => config.schedule[d.key].length > 0)
 
   return (
     <div className="space-y-8">
@@ -202,21 +182,51 @@ export function StepSchedule({
         </div>
 
         {formData.scheduleType === "scheduled" && (
-          <div className="mt-4 p-4 bg-muted/50 rounded-lg">
-            <Label htmlFor="scheduled-start">Start Date & Time</Label>
-            <Input
-              id="scheduled-start"
-              type="datetime-local"
-              value={formData.scheduledStartAt || ""}
-              onChange={(e) => updateFormData("scheduledStartAt", e.target.value)}
-              className={`mt-2 max-w-xs ${errors.scheduledStartAt ? "border-destructive" : ""}`}
-            />
-            {errors.scheduledStartAt && (
-              <p className="text-sm text-destructive flex items-center gap-1 mt-1">
-                <AlertCircle className="h-4 w-4" />
-                {errors.scheduledStartAt}
+          <div className="mt-4 p-4 bg-muted/50 rounded-lg space-y-4">
+            <div>
+              <Label htmlFor="scheduled-start">Start Date & Time</Label>
+              <Input
+                id="scheduled-start"
+                type="datetime-local"
+                value={formData.scheduledStartAt || ""}
+                onChange={(e) => updateFormData("scheduledStartAt", e.target.value)}
+                className={`mt-2 max-w-xs ${errors.scheduledStartAt ? "border-destructive" : ""}`}
+              />
+              {errors.scheduledStartAt && (
+                <p className="text-sm text-destructive flex items-center gap-1 mt-1">
+                  <AlertCircle className="h-4 w-4" />
+                  {errors.scheduledStartAt}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="scheduled-expires">
+                Expiry Date & Time <span className="text-muted-foreground">(Optional)</span>
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1 mb-2">
+                Campaign will auto-cancel if not started by this time
               </p>
-            )}
+              <Input
+                id="scheduled-expires"
+                type="datetime-local"
+                value={formData.scheduledExpiresAt || ""}
+                onChange={(e) => updateFormData("scheduledExpiresAt", e.target.value)}
+                className={`max-w-xs ${errors.scheduledExpiresAt ? "border-destructive" : ""}`}
+              />
+              {errors.scheduledExpiresAt && (
+                <p className="text-sm text-destructive flex items-center gap-1 mt-1">
+                  <AlertCircle className="h-4 w-4" />
+                  {errors.scheduledExpiresAt}
+                </p>
+              )}
+              {!errors.scheduledExpiresAt && formData.scheduledExpiresAt && (
+                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Campaign will expire if not started by this time
+                </p>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -342,59 +352,6 @@ export function StepSchedule({
               })}
             </div>
 
-            {/* Weekly Summary */}
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Weekly Summary</p>
-                    <p className="text-sm text-muted-foreground">
-                      Calls will be made during these hours
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold">{totalHoursPerWeek}</p>
-                    <p className="text-sm text-muted-foreground">hours/week</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-1 mt-4">
-                  {DAYS_OF_WEEK.map((day) => {
-                    const slots = config.schedule[day.key]
-                    const isActive = slots.length > 0
-                    const hours = slots.reduce((acc: number, slot) => {
-                      const startParts = slot.start.split(":")
-                      const endParts = slot.end.split(":")
-                      const startH = startParts[0] ? Number(startParts[0]) : 0
-                      const startM = startParts[1] ? Number(startParts[1]) : 0
-                      const endH = endParts[0] ? Number(endParts[0]) : 0
-                      const endM = endParts[1] ? Number(endParts[1]) : 0
-                      return acc + ((endH + endM / 60) - (startH + startM / 60))
-                    }, 0)
-
-                    return (
-                      <div
-                        key={day.key}
-                        className="flex-1 text-center"
-                        title={isActive ? `${hours.toFixed(1)} hours` : "Off"}
-                      >
-                        <div
-                          className={`h-12 rounded-md flex items-end justify-center pb-1 ${
-                            isActive ? "bg-primary" : "bg-muted"
-                          }`}
-                          style={{
-                            height: isActive ? `${Math.max(20, hours * 5)}px` : "20px",
-                          }}
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {day.shortLabel}
-                        </p>
-                      </div>
-                    )
-                  })}
-                </div>
-              </CardContent>
-            </Card>
           </div>
         )}
       </div>
