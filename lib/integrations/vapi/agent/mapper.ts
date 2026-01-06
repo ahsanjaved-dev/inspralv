@@ -3,9 +3,12 @@
  * Transforms internal AIAgent schema to/from VAPI format
  */
 
-import type { AIAgent, AgentConfig, FunctionTool, FunctionToolParameters } from "@/types/database.types"
-import { mapFunctionToolsToVapi, DEFAULT_END_CALL_TOOL } from "@/lib/integrations/function_tools/vapi"
-import type { VapiTool as FunctionToolsVapiTool } from "@/lib/integrations/function_tools/vapi/types"
+import type {
+  AIAgent,
+  AgentConfig,
+  FunctionTool,
+  FunctionToolParameters,
+} from "@/types/database.types"
 
 // ============================================================================
 // DEFAULT VOICE ID
@@ -32,7 +35,7 @@ function isValidElevenLabsVoiceId(voiceId: string | undefined): boolean {
  * @deprecated Use VapiToolMessage from function_tools instead
  */
 export interface VapiToolMessage {
-  type: 'request-start' | 'request-response-delayed' | 'request-complete' | 'request-failed'
+  type: "request-start" | "request-response-delayed" | "request-complete" | "request-failed"
   content?: string
   /** Whether to block/wait for this message before proceeding */
   blocking?: boolean
@@ -45,7 +48,9 @@ export interface VapiToolMessage {
 export interface VapiFunctionDefinition {
   name: string
   description: string
-  parameters: FunctionToolParameters | { type: 'object'; properties: Record<string, never>; required?: string[] }
+  parameters:
+    | FunctionToolParameters
+    | { type: "object"; properties: Record<string, never>; required?: string[] }
 }
 
 /**
@@ -62,7 +67,7 @@ export interface VapiToolServer {
  * VAPI Built-in Tool Types
  * @deprecated Use VapiToolType from function_tools instead
  */
-export type VapiToolType = 'function' | 'endCall' | 'transferCall' | 'dtmf'
+export type VapiToolType = "function" | "endCall" | "transferCall" | "dtmf"
 
 /**
  * VAPI Tool - Supports both custom functions and built-in tools
@@ -216,7 +221,7 @@ function mapTranscriberProviderFromVapi(provider: string | null | undefined): st
 // ============================================================================
 
 // Re-export for backward compatibility
-export { 
+export {
   mapFunctionToolsToVapi as mapToolsToVapi,
   mapFunctionToolToVapi as mapToolToVapi,
   createEndCallTool,
@@ -245,9 +250,7 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
 
   // Voice configuration - ALWAYS include with validated voice ID
   // Use the provided voice_id only if it looks like a valid ElevenLabs ID
-  const voiceId = isValidElevenLabsVoiceId(config.voice_id)
-    ? config.voice_id!
-    : DEFAULT_VOICE_ID
+  const voiceId = isValidElevenLabsVoiceId(config.voice_id) ? config.voice_id! : DEFAULT_VOICE_ID
 
   payload.voice = {
     provider: mapVoiceProviderToVapi(agent.voice_provider),
@@ -263,7 +266,12 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
   // Model configuration
   // NOTE: We create a model block if any model-related settings OR tools are present,
   // because toolIds/tools live under `model`.
-  if (agent.model_provider || config.model_settings || config.system_prompt || (config.tools && config.tools.length > 0)) {
+  if (
+    agent.model_provider ||
+    config.model_settings ||
+    config.system_prompt ||
+    (config.tools && config.tools.length > 0)
+  ) {
     payload.model = {
       provider: agent.model_provider || "openai",
       model: config.model_settings?.model || "gpt-4",
@@ -309,10 +317,11 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
     }
   }
 
-  // Set server URL for tool calls (used as fallback)
-  if (config.tools_server_url) {
-    payload.serverUrl = config.tools_server_url
-  }
+  // Set server URL for webhooks and tool calls
+  // Priority: 1. Custom tools_server_url from config, 2. App URL from env, 3. Hardcoded fallback
+  const baseUrl = env.appUrl || "https://genius365.vercel.app"
+  const defaultWebhookUrl = `${baseUrl}/api/webhooks/vapi`
+  payload.serverUrl = config.tools_server_url || defaultWebhookUrl
 
   // Transcriber configuration
   if (agent.transcriber_provider || config.transcriber_settings) {
