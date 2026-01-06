@@ -42,8 +42,8 @@ function buildCSP(): string {
     "img-src 'self' data: blob: https://*.supabase.co https://*.googleusercontent.com https://avatars.githubusercontent.com https://*.stripe.com",
     // Fonts
     "font-src 'self' https://fonts.gstatic.com",
-    // Connect: all voice provider services + Stripe API
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.vapi.ai wss://*.vapi.ai https://*.daily.co wss://*.daily.co https://*.krisp.ai wss://*.krisp.ai https://*.retellai.com wss://*.retellai.com https://*.livekit.cloud wss://*.livekit.cloud https://*.cloudfront.net https://api.stripe.com https://*.stripe.com",
+    // Connect: all voice provider services + Stripe API + Sentry
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.vapi.ai wss://*.vapi.ai https://*.daily.co wss://*.daily.co https://*.krisp.ai wss://*.krisp.ai https://*.retellai.com wss://*.retellai.com https://*.livekit.cloud wss://*.livekit.cloud https://*.cloudfront.net https://api.stripe.com https://*.stripe.com https://*.sentry.io",
     // Frame - Added Stripe for 3D Secure and payment elements
     "frame-src 'self' https://*.daily.co https://*.vapi.ai https://*.retellai.com https://*.livekit.cloud https://js.stripe.com https://*.stripe.com",
     // Media
