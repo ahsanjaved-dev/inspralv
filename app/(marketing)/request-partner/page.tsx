@@ -1,9 +1,11 @@
 import { PartnerRequestForm } from "@/components/marketing/partner-request-form"
 import { getPartnerFromHost } from "@/lib/api/partner"
+import { env } from "@/lib/env"
 
 export default async function RequestPartnerPage() {
   const partner = await getPartnerFromHost()
   const primaryColor = partner.branding.primary_color || "#7c3aed"
+  const platformDomain = env.platformDomain
 
   return (
     <div className="py-20 px-4">
@@ -18,7 +20,7 @@ export default async function RequestPartnerPage() {
         </div>
 
         {/* Form */}
-        <PartnerRequestForm primaryColor={primaryColor} />
+        <PartnerRequestForm primaryColor={primaryColor} platformDomain={platformDomain} />
 
         {/* Benefits Section */}
         <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">

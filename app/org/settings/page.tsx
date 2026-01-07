@@ -5,7 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useAuthContext } from "@/lib/hooks/use-auth"
-import { Building2, Shield, Settings, CreditCard, ArrowRight } from "lucide-react"
+import { Building2, Shield, Settings, CreditCard, ArrowRight, Globe, ExternalLink, CheckCircle2, Clock } from "lucide-react"
+
+// Platform domain from environment
+const PLATFORM_DOMAIN = process.env.NEXT_PUBLIC_PLATFORM_DOMAIN || "genius365.app"
 
 export default function OrgSettingsPage() {
   const { data: authContext } = useAuthContext()
@@ -126,6 +129,78 @@ export default function OrgSettingsPage() {
         </CardContent>
       </Card>
 
+      {/* Domain Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Globe className="h-5 w-5" />
+            Domain Settings
+          </CardTitle>
+          <CardDescription>
+            Manage your platform URL and custom domain
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Platform Subdomain */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-sm font-medium">Platform URL</p>
+              <Badge variant="secondary" className="text-xs">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Active
+              </Badge>
+            </div>
+            <div className="flex items-center gap-3 bg-muted/50 rounded-lg p-3">
+              <code className="font-mono text-sm">{partner?.slug}.{PLATFORM_DOMAIN}</code>
+              <Button variant="ghost" size="sm" className="h-7" asChild>
+                <a href={`https://${partner?.slug}.${PLATFORM_DOMAIN}`} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              This is your primary platform URL that is always available.
+            </p>
+          </div>
+
+          {/* Custom Domain Section */}
+          <div className="border-t pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-sm font-medium">Custom Domain</p>
+                <p className="text-xs text-muted-foreground">
+                  Connect your own domain for a fully branded experience
+                </p>
+              </div>
+              {partner?.features?.custom_domain ? (
+                <Badge variant="outline">
+                  <Clock className="h-3 w-3 mr-1" />
+                  Coming Soon
+                </Badge>
+              ) : (
+                <Badge variant="secondary">Enterprise</Badge>
+              )}
+            </div>
+            
+            <div className="bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20 rounded-lg p-4">
+              <p className="text-sm text-muted-foreground mb-3">
+                Custom domain setup will be available soon. This feature allows you to use your own domain 
+                (e.g., <code className="text-xs bg-muted px-1 rounded">app.yourcompany.com</code>) 
+                instead of the platform subdomain.
+              </p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground">Example setup:</p>
+                  <p className="text-sm font-mono mt-1">
+                    app.yourcompany.com → CNAME → {partner?.slug}.{PLATFORM_DOMAIN}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Coming Soon */}
       <Card className="border-dashed">
         <CardHeader>
@@ -140,7 +215,6 @@ export default function OrgSettingsPage() {
         <CardContent>
           <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
             <li>Custom branding editor</li>
-            <li>Domain management</li>
             <li>Security settings (SSO, 2FA requirements)</li>
             <li>API access configuration</li>
           </ul>

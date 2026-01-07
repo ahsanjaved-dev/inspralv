@@ -41,7 +41,17 @@ export const env = {
   // Supabase Storage
   supabaseStorageBucket: getEnvVar("NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET", false),
 
+  // Platform Configuration
+  // The base domain for partner subdomains (e.g., genius365.app)
+  // Partners get subdomains like: acme-corp.genius365.app
+  platformDomain: getEnvVar("NEXT_PUBLIC_PLATFORM_DOMAIN", false) || "genius365.app",
+
   // Environment
   isDev: process.env.NODE_ENV === "development",
   isProd: process.env.NODE_ENV === "production",
+
+  // Development helpers
+  // Set this to a partner slug to bypass hostname resolution in development
+  // Example: DEV_PARTNER_SLUG=acme-corp will resolve to that partner regardless of hostname
+  devPartnerSlug: getEnvVar("DEV_PARTNER_SLUG", false),
 }

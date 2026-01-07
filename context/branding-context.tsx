@@ -22,18 +22,90 @@ interface BrandingProviderProps {
   children: React.ReactNode
 }
 
+/**
+ * Convert HEX color to HSL string for CSS variables
+ */
+function hexToHsl(hex: string): string {
+  // Remove # if present
+  hex = hex.replace(/^#/, "")
+
+  // Parse hex values
+  const r = parseInt(hex.substring(0, 2), 16) / 255
+  const g = parseInt(hex.substring(2, 4), 16) / 255
+  const b = parseInt(hex.substring(4, 6), 16) / 255
+
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  let h = 0
+  let s = 0
+  const l = (max + min) / 2
+
+  if (max !== min) {
+    const d = max - min
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+
+    switch (max) {
+      case r:
+        h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+        break
+      case g:
+        h = ((b - r) / d + 2) / 6
+        break
+      case b:
+        h = ((r - g) / d + 4) / 6
+        break
+    }
+  }
+
+  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`
+}
+
 export function BrandingProvider({ partner, children }: BrandingProviderProps) {
   const branding = partner.branding
 
   useEffect(() => {
     const root = document.documentElement
 
+    // Set brand-specific CSS variables on :root (legacy support)
     if (branding.primary_color) {
       root.style.setProperty("--brand-primary", branding.primary_color)
       root.style.setProperty("--brand-primary-hover", adjustColor(branding.primary_color, -10))
     }
+
     if (branding.secondary_color) {
       root.style.setProperty("--brand-secondary", branding.secondary_color)
+    }
+
+    // Find and update the workspace-theme element directly
+    // This is necessary because .workspace-theme has its own CSS variable definitions
+    // that would otherwise override the :root values
+    const workspaceTheme = document.querySelector(".workspace-theme") as HTMLElement | null
+
+    if (workspaceTheme) {
+      if (branding.primary_color) {
+        const primaryHsl = hexToHsl(branding.primary_color)
+        workspaceTheme.style.setProperty("--primary", `hsl(${primaryHsl})`)
+        workspaceTheme.style.setProperty("--sidebar-primary", `hsl(${primaryHsl})`)
+        workspaceTheme.style.setProperty("--ring", `hsl(${primaryHsl})`)
+      }
+
+      if (branding.secondary_color) {
+        const secondaryHsl = hexToHsl(branding.secondary_color)
+        workspaceTheme.style.setProperty("--secondary", `hsl(${secondaryHsl})`)
+      }
+    }
+
+    // Also set on :root for components outside workspace-theme
+    if (branding.primary_color) {
+      const primaryHsl = hexToHsl(branding.primary_color)
+      root.style.setProperty("--primary", `hsl(${primaryHsl})`)
+      root.style.setProperty("--sidebar-primary", `hsl(${primaryHsl})`)
+      root.style.setProperty("--ring", `hsl(${primaryHsl})`)
+    }
+
+    if (branding.secondary_color) {
+      const secondaryHsl = hexToHsl(branding.secondary_color)
+      root.style.setProperty("--secondary", `hsl(${secondaryHsl})`)
     }
 
     if (branding.company_name) {
@@ -53,9 +125,19 @@ export function BrandingProvider({ partner, children }: BrandingProviderProps) {
     }
 
     return () => {
+      // Clean up brand-specific variables
       root.style.removeProperty("--brand-primary")
       root.style.removeProperty("--brand-primary-hover")
       root.style.removeProperty("--brand-secondary")
+      
+      // Clean up workspace-theme overrides
+      const wsTheme = document.querySelector(".workspace-theme") as HTMLElement | null
+      if (wsTheme) {
+        wsTheme.style.removeProperty("--primary")
+        wsTheme.style.removeProperty("--sidebar-primary")
+        wsTheme.style.removeProperty("--ring")
+        wsTheme.style.removeProperty("--secondary")
+      }
     }
   }, [branding])
 

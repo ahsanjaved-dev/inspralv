@@ -1,13 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, CheckCircle2, ArrowRight, ArrowLeft, AlertCircle, Upload, X } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Loader2, CheckCircle2, ArrowRight, ArrowLeft, AlertCircle, Upload, X, Globe } from "lucide-react"
 import { HexColorPicker } from "react-colorful"
 import { toast } from "sonner"
 import { createPartnerRequestSchema } from "@/types/database.types"
@@ -15,15 +16,20 @@ import { z } from "zod"
 
 interface PartnerRequestFormProps {
   primaryColor?: string
+  platformDomain?: string
 }
 
-export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestFormProps) {
+export function PartnerRequestForm({
+  primaryColor = "#7c3aed",
+  platformDomain = "genius365.app",
+}: PartnerRequestFormProps) {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
-  const [checkingDomain, setCheckingDomain] = useState(false)
-  const [domainAvailable, setDomainAvailable] = useState<boolean | null>(null)
+  const [checkingSubdomain, setCheckingSubdomain] = useState(false)
+  const [subdomainAvailable, setSubdomainAvailable] = useState<boolean | null>(null)
+  const [subdomainMessage, setSubdomainMessage] = useState<string | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
 
@@ -40,8 +46,7 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
     expected_users: "",
     use_case: "",
 
-    // Step 3: Branding & Technical
-    custom_domain: "",
+    // Step 3: Branding (simplified - no custom domain)
     desired_subdomain: "", // Auto-generated from company name
     logo_url: "",
     primary_color: primaryColor,
@@ -60,48 +65,70 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
       .substring(0, 50)
   }
 
-  // Debounced domain check
-  const checkDomainAvailability = async (domain: string) => {
-    if (domain.length < 4) {
-      setDomainAvailable(null)
+  // Auto-generate subdomain when company name changes
+  useEffect(() => {
+    if (formData.company_name && !formData.desired_subdomain) {
+      const slug = generateSlug(formData.company_name)
+      if (slug.length >= 3) {
+        setFormData((prev) => ({ ...prev, desired_subdomain: slug }))
+      }
+    }
+  }, [formData.company_name])
+
+  // Debounced subdomain check
+  const checkSubdomainAvailability = async (subdomain: string) => {
+    if (subdomain.length < 3) {
+      setSubdomainAvailable(null)
+      setSubdomainMessage(null)
       return
     }
 
-    setCheckingDomain(true)
+    setCheckingSubdomain(true)
     try {
       const res = await fetch(
-        `/api/partner-requests/check-domain?domain=${encodeURIComponent(domain)}`
+        `/api/partner-requests/check-subdomain?subdomain=${encodeURIComponent(subdomain)}`
       )
       const data = await res.json()
-      setDomainAvailable(data.available)
+      setSubdomainAvailable(data.available)
+      setSubdomainMessage(data.message || null)
 
       if (!data.available && data.message) {
-        setErrors({ ...errors, custom_domain: data.message })
+        setErrors({ ...errors, desired_subdomain: data.message })
       } else {
         const newErrors = { ...errors }
-        delete newErrors.custom_domain
+        delete newErrors.desired_subdomain
         setErrors(newErrors)
       }
     } catch (error) {
-      console.error("Domain check error:", error)
-      setDomainAvailable(null)
+      console.error("Subdomain check error:", error)
+      setSubdomainAvailable(null)
     } finally {
-      setCheckingDomain(false)
+      setCheckingSubdomain(false)
     }
   }
 
-  const handleDomainChange = (value: string) => {
-    const sanitized = value.toLowerCase().trim()
-    setFormData({ ...formData, custom_domain: sanitized })
+  // Check subdomain when it changes (with debounce via useEffect)
+  useEffect(() => {
+    if (formData.desired_subdomain.length >= 3) {
+      const timer = setTimeout(() => {
+        checkSubdomainAvailability(formData.desired_subdomain)
+      }, 500)
+      return () => clearTimeout(timer)
+    } else {
+      setSubdomainAvailable(null)
+      setSubdomainMessage(null)
+    }
+  }, [formData.desired_subdomain])
 
-    // Debounce check
-    const timer = setTimeout(() => {
-      if (sanitized) {
-        checkDomainAvailability(sanitized)
-      }
-    }, 800)
-
-    return () => clearTimeout(timer)
+  const handleSubdomainChange = (value: string) => {
+    // Only allow valid subdomain characters
+    const sanitized = value
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/^-+/, "") // No leading hyphens
+      .replace(/-+/g, "-") // No consecutive hyphens
+      .substring(0, 50)
+    setFormData({ ...formData, desired_subdomain: sanitized })
   }
 
   // Logo upload handler
@@ -194,10 +221,11 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
     }
 
     if (stepNumber === 3) {
-      if (!formData.custom_domain) {
-        newErrors.custom_domain = "Custom domain is required"
-      } else if (domainAvailable === false) {
-        newErrors.custom_domain = "This domain is not available"
+      // Validate subdomain
+      if (!formData.desired_subdomain || formData.desired_subdomain.length < 3) {
+        newErrors.desired_subdomain = "Subdomain must be at least 3 characters"
+      } else if (subdomainAvailable === false) {
+        newErrors.desired_subdomain = subdomainMessage || "This subdomain is not available"
       }
     }
 
@@ -207,13 +235,6 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
 
   const handleNext = () => {
     if (validateStep(step)) {
-      // Auto-generate slug when moving from step 1 to 2
-      if (step === 1 && !formData.desired_subdomain) {
-        setFormData({
-          ...formData,
-          desired_subdomain: generateSlug(formData.company_name),
-        })
-      }
       setStep(step + 1)
     }
   }
@@ -227,7 +248,7 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
 
     setLoading(true)
     try {
-      // Prepare submission data
+      // Prepare submission data (no custom_domain - will be set during onboarding)
       const submissionData = {
         company_name: formData.company_name,
         contact_name: formData.contact_name,
@@ -236,8 +257,8 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
         business_description: formData.business_description,
         expected_users: formData.expected_users ? parseInt(formData.expected_users) : undefined,
         use_case: formData.use_case,
-        custom_domain: formData.custom_domain,
         desired_subdomain: formData.desired_subdomain || generateSlug(formData.company_name),
+        // custom_domain is now optional - not included in initial request
         branding_data: {
           logo_url: formData.logo_url || undefined,
           primary_color: formData.primary_color,
@@ -284,6 +305,7 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
   }
 
   if (success) {
+    const fullUrl = `${formData.desired_subdomain}.${platformDomain}`
     return (
       <Card className="max-w-2xl mx-auto">
         <CardContent className="pt-12 pb-12 text-center">
@@ -295,12 +317,20 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
             Thank you for your interest in our white-label solution. Our team will review your
             request and get back to you within 24-48 hours.
           </p>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               We've sent a confirmation email to <strong>{formData.contact_email}</strong>
             </p>
-            <p className="text-sm text-muted-foreground">
-              Your platform will be accessible at: <strong>{formData.custom_domain}</strong>
+            <div className="bg-muted rounded-lg p-4 inline-block">
+              <p className="text-sm text-muted-foreground mb-1">After approval, your platform will be at:</p>
+              <Badge variant="outline" className="font-mono text-base px-3 py-1">
+                <Globe className="h-4 w-4 mr-2" />
+                {fullUrl}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              You'll be able to add a custom domain (like app.yourcompany.com) from your dashboard
+              after approval.
             </p>
             <Button onClick={() => router.push("/")} style={{ backgroundColor: primaryColor }}>
               Back to Home
@@ -429,46 +459,46 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
           </div>
         )}
 
-        {/* Step 3: Domain & Branding */}
+        {/* Step 3: Branding (simplified - no custom domain) */}
         {step === 3 && (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="custom_domain">Custom Domain *</Label>
-              <Input
-                id="custom_domain"
-                value={formData.custom_domain}
-                onChange={(e) => handleDomainChange(e.target.value)}
-                placeholder="app.yourdomain.com"
-                className="font-mono"
-              />
-              {checkingDomain && (
-                <p className="text-sm text-muted-foreground flex items-center gap-2">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Checking domain availability...
-                </p>
-              )}
-              {domainAvailable === true && (
-                <p className="text-sm text-green-600 flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Domain is available!
-                </p>
-              )}
-              {domainAvailable === false && (
-                <p className="text-sm text-red-600 flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4" />
-                  {errors.custom_domain || "Domain is not available"}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Enter the domain where you want your white-label platform to be accessible (e.g.,
-                app.yourdomain.com, platform.yourcompany.com)
-              </p>
-            </div>
+          <div className="space-y-6">
+            {/* Platform URL Preview */}
+            <div className="bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20 rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Globe className="h-5 w-5 text-primary" />
+                <Label className="text-base font-semibold">Your Platform URL</Label>
+              </div>
 
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <p className="text-sm text-blue-900 dark:text-blue-100">
-                <strong>DNS Setup Required:</strong> After approval, you'll need to point your
-                domain's DNS to our servers. We'll provide detailed instructions.
+              <div className="flex items-center gap-2 mb-3">
+                <Input
+                  value={formData.desired_subdomain}
+                  onChange={(e) => handleSubdomainChange(e.target.value)}
+                  placeholder="your-company"
+                  className="font-mono max-w-[200px]"
+                />
+                <span className="text-lg font-mono text-muted-foreground">.{platformDomain}</span>
+                {checkingSubdomain && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                {subdomainAvailable === true && !checkingSubdomain && (
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                )}
+                {subdomainAvailable === false && !checkingSubdomain && (
+                  <AlertCircle className="h-5 w-5 text-red-500" />
+                )}
+              </div>
+
+              {errors.desired_subdomain && (
+                <p className="text-sm text-red-600 mb-2">{errors.desired_subdomain}</p>
+              )}
+              {subdomainAvailable === true && !checkingSubdomain && (
+                <p className="text-sm text-green-600 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  This subdomain is available!
+                </p>
+              )}
+
+              <p className="text-xs text-muted-foreground mt-3">
+                This will be your platform's address. You can add a custom domain (like
+                app.yourcompany.com) from your dashboard after approval.
               </p>
             </div>
 
@@ -592,7 +622,13 @@ export function PartnerRequestForm({ primaryColor = "#7c3aed" }: PartnerRequestF
             ) : (
               <Button
                 onClick={handleSubmit}
-                disabled={loading || domainAvailable === false || !formData.custom_domain}
+                disabled={
+                  loading ||
+                  subdomainAvailable === false ||
+                  checkingSubdomain ||
+                  !formData.desired_subdomain ||
+                  formData.desired_subdomain.length < 3
+                }
                 style={{ backgroundColor: primaryColor }}
               >
                 {loading ? (

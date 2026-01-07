@@ -3,6 +3,8 @@ import { getSuperAdminContext } from "@/lib/api/super-admin-auth"
 import { apiResponse, apiError, unauthorized, serverError } from "@/lib/api/helpers"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sendPartnerApprovalEmail } from "@/lib/email/send"
+import { getFullSubdomainUrl, getLoginUrl } from "@/lib/utils/subdomain"
+import { env } from "@/lib/env"
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -45,14 +47,19 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       return apiError("Partner has already been provisioned", 400)
     }
 
+    // Get the platform subdomain (this is the primary access URL now)
+    const platformSubdomain = partnerRequest.desired_subdomain
+    const fullPlatformHostname = getFullSubdomainUrl(platformSubdomain)
+    const loginUrl = getLoginUrl(platformSubdomain)
+
     // Step 1: Create partner record
     const { data: partner, error: partnerError } = await adminClient
       .from("partners")
       .insert({
         name: partnerRequest.company_name,
-        slug: partnerRequest.desired_subdomain,
+        slug: platformSubdomain,
         branding: partnerRequest.branding_data || {},
-        plan_tier: "enterprise",
+        plan_tier: partnerRequest.selected_plan || "enterprise",
         features: {
           white_label: true,
           custom_domain: true,
@@ -75,21 +82,22 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     if (partnerError) {
       console.error("Create partner error:", partnerError)
-      return apiError("Failed to create partner", 500)
+      return apiError("Failed to create partner: " + partnerError.message, 500)
     }
 
-    // Step 2: Create partner domain
+    // Step 2: Create partner domain using platform subdomain
+    // Platform subdomains are pre-verified (no DNS setup needed)
     const { error: domainError } = await adminClient.from("partner_domains").insert({
       partner_id: partner.id,
-      hostname: partnerRequest.custom_domain,
+      hostname: fullPlatformHostname,
       is_primary: true,
-      verified_at: null,
+      verified_at: new Date().toISOString(), // Pre-verified for platform subdomain
     })
 
     if (domainError) {
       console.error("Create domain error:", domainError)
       await adminClient.from("partners").delete().eq("id", partner.id)
-      return apiError("Failed to create partner domain", 500)
+      return apiError("Failed to create partner domain: " + domainError.message, 500)
     }
 
     // Step 3: Create or get owner user account
@@ -251,15 +259,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     // Step 8: Update partner onboarding status
     await adminClient.from("partners").update({ onboarding_status: "active" }).eq("id", partner.id)
 
-    // Step 9: Send welcome email
-    // For local testing, use http; for production use https
-    const protocol = partnerRequest.custom_domain.includes("localhost") ? "http" : "https"
-    const loginUrl = `${protocol}://${partnerRequest.custom_domain}${partnerRequest.custom_domain.includes("localhost") ? ":3000" : ""}/login`
-
+    // Step 9: Send welcome email with platform subdomain URL
     try {
       await sendPartnerApprovalEmail(partnerRequest.contact_email, {
         company_name: partnerRequest.company_name,
-        subdomain: partnerRequest.custom_domain,
+        subdomain: fullPlatformHostname,
         login_url: loginUrl,
         temporary_password: temporaryPassword,
         contact_email: partnerRequest.contact_email,
@@ -277,7 +281,8 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         id: partner.id,
         name: partner.name,
         slug: partner.slug,
-        domain: partnerRequest.custom_domain,
+        platform_subdomain: platformSubdomain,
+        domain: fullPlatformHostname,
       },
       owner: {
         email: partnerRequest.contact_email,

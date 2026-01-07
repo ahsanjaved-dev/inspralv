@@ -15,6 +15,9 @@ import { Loader2, CheckCircle2, Rocket, AlertCircle } from "lucide-react"
 import { toast } from "sonner"
 import type { PartnerRequest } from "@/types/database.types"
 
+// Platform domain from environment (available in client via NEXT_PUBLIC_ prefix)
+const PLATFORM_DOMAIN = process.env.NEXT_PUBLIC_PLATFORM_DOMAIN || "genius365.app"
+
 interface ApprovePartnerDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -86,9 +89,9 @@ export function ApprovePartnerDialog({
                   <span className="text-sm font-medium">{request.company_name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Domain</span>
-                  <code className="text-sm bg-background px-2 py-0.5 rounded">
-                    {request.custom_domain}
+                  <span className="text-sm text-muted-foreground">Platform URL</span>
+                  <code className="text-sm bg-primary/10 text-primary px-2 py-0.5 rounded">
+                    {request.desired_subdomain}.{PLATFORM_DOMAIN}
                   </code>
                 </div>
                 <div className="flex justify-between">
@@ -104,7 +107,7 @@ export function ApprovePartnerDialog({
                 <ul className="text-sm text-blue-800 dark:text-blue-200 mt-2 space-y-1 list-disc list-inside">
                   <li>Partner account will be created</li>
                   <li>Owner user account will be provisioned</li>
-                  <li>Domain will be registered</li>
+                  <li>Platform subdomain will be activated</li>
                   <li>Welcome email with credentials will be sent</li>
                 </ul>
               </div>

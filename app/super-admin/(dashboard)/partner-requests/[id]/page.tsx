@@ -31,6 +31,9 @@ import {
 } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 
+// Platform domain from environment
+const PLATFORM_DOMAIN = process.env.NEXT_PUBLIC_PLATFORM_DOMAIN || "genius365.app"
+
 const statusConfig = {
   pending: {
     label: "Pending Review",
@@ -244,24 +247,29 @@ export default function PartnerRequestDetailPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
                 <Globe className="h-4 w-4" />
-                Domain & Technical
+                Platform Access
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Platform Subdomain</p>
+                <div className="flex items-center gap-2">
+                  <code className="text-sm bg-primary/10 text-primary px-3 py-1.5 rounded font-mono">
+                    {request.desired_subdomain}.{PLATFORM_DOMAIN}
+                  </code>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  This will be the partner's primary access URL after approval.
+                </p>
+              </div>
+              {request.custom_domain && (
                 <div>
-                  <p className="text-sm text-muted-foreground">Custom Domain</p>
+                  <p className="text-sm text-muted-foreground mb-1">Custom Domain (optional)</p>
                   <code className="text-sm bg-muted px-2 py-1 rounded">
                     {request.custom_domain}
                   </code>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Subdomain Slug</p>
-                  <code className="text-sm bg-muted px-2 py-1 rounded">
-                    {request.desired_subdomain}
-                  </code>
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 

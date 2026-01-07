@@ -1,6 +1,6 @@
 # Genius365 Codebase Reference
 
-> **Last Updated**: December 29, 2025  
+> **Last Updated**: January 7, 2026  
 > **Purpose**: Complete codebase analysis for AI assistants and developers
 
 ---
@@ -16,19 +16,21 @@
 7. [API Layer](#api-layer)
 8. [Frontend Architecture](#frontend-architecture)
 9. [Voice Agent Integrations](#voice-agent-integrations)
-10. [Key Files Reference](#key-files-reference)
-11. [Development Patterns](#development-patterns)
-12. [State Management](#state-management)
-13. [Security Architecture](#security-architecture)
-14. [Email System](#email-system)
-15. [Caching Strategy](#caching-strategy)
-16. [Environment Configuration](#environment-configuration)
+10. [Key Features & Modules](#key-features--modules)
+11. [Key Files Reference](#key-files-reference)
+12. [Development Patterns](#development-patterns)
+13. [State Management](#state-management)
+14. [Security Architecture](#security-architecture)
+15. [Email System](#email-system)
+16. [Caching Strategy](#caching-strategy)
+17. [Prisma ORM](#prisma-orm)
+18. [Environment Configuration](#environment-configuration)
 
 ---
 
 ## Executive Summary
 
-**Genius365** is a Next.js 16 white-label AI Voice Agent Management Platform. It enables agencies (Partners) to manage AI voice agents across multiple providers (VAPI, Retell, Synthflow) with full multi-tenancy support, white-labeling, and workspace isolation.
+**Genius365** is a Next.js 16 white-label AI Voice Agent Management Platform. It enables agencies (Partners) to manage AI voice agents across multiple providers (VAPI, Retell, Synthflow) with full multi-tenancy support, white-labeling, workspace isolation, and subscription billing.
 
 ### Core Technologies
 
@@ -36,16 +38,20 @@
 | ------------------- | ------------------------------------------- | ---------------------------------------------------------- |
 | **Framework**       | Next.js (App Router)                        | 16.0.8                                                     |
 | **Language**        | TypeScript                                  | 5.x                                                        |
-| **UI**              | React, Tailwind CSS 4, Radix UI (shadcn/ui) | React 19.2.1                                               |
-| **Backend**         | Supabase (PostgreSQL + Auth + Storage)      | SSR 0.8.0                                                  |
+| **UI**              | React, Tailwind CSS 4, Radix UI (shadcn/ui) | React 19.2.1, Tailwind 4                                   |
+| **Database/Auth**   | Supabase (PostgreSQL + Auth + Storage)      | SSR 0.8.0                                                  |
+| **ORM**             | Prisma                                      | 6.19.1                                                     |
 | **State**           | React Query (TanStack Query 5), Zustand     | Query 5.90.12, Zustand 5.0.9                               |
 | **Payments**        | Stripe                                      | 20.0.0                                                     |
 | **Email**           | Resend                                      | 6.6.0                                                      |
 | **Voice Providers** | VAPI, Retell AI, Synthflow                  | VAPI Web 2.5.2, Retell SDK 4.66.0, Retell Client SDK 2.0.7 |
-| **Validation**      | Zod                                         | 4.1.13                                                     |
+| **Search**          | Algolia                                     | (optional, per-workspace)                                  |
+| **Validation**      | Zod                                         | 4.2.1                                                      |
 | **Forms**           | React Hook Form                             | 7.68.0                                                     |
 | **Charts**          | Recharts                                    | 3.5.1                                                      |
 | **Date Utils**      | date-fns                                    | 4.1.0                                                      |
+| **CSV Parsing**     | PapaParse                                   | 5.5.3                                                      |
+| **Notifications**   | Sonner                                      | 2.0.7                                                      |
 
 ### Key Capabilities
 
@@ -53,8 +59,13 @@
 - **Multi-Tenant Architecture**: Partner → Workspace → User hierarchy
 - **AI Voice Agent Management**: Create, sync, and manage agents across VAPI, Retell, Synthflow
 - **Role-Based Access Control**: Comprehensive RBAC for partners and workspaces
-- **Super Admin Console**: Platform-wide management for partner requests, partner CRUD, and billing overview (Total Organizations + agencies table)
+- **Super Admin Console**: Platform-wide management for partner requests, partner CRUD, and billing overview
 - **Organization Management**: Partner-level team and settings management
+- **Subscription Billing**: Stripe integration for plan management and usage-based billing
+- **Campaign Management**: Multi-step campaign wizard for managing outbound call campaigns
+- **Call Tracking**: Ingestion of call logs from VAPI and Retell providers
+- **Knowledge Base**: Document management for agent context
+- **Algolia Search**: Full-text search for calls and agents (optional per-workspace)
 
 ---
 
@@ -73,6 +84,7 @@
 │  - Subscription management     - Partner members                    │
 │  - Resource limits             - Plan tier                          │
 │  - Organization settings       - Team invitations                   │
+│  - Stripe billing             - Subscription plans                  │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
               ┌────────────────────┼────────────────────┐
@@ -82,11 +94,13 @@
 │   (Client Project)  │ │   (Client Project)  │ │   (Client Project)  │
 ├─────────────────────┤ ├─────────────────────┤ ├─────────────────────┤
 │ • AI Agents         │ │ • AI Agents         │ │ • AI Agents         │
-│ • Conversations     │ │ • Conversations     │ │ • Conversations     │
+│ • Calls/Analytics   │ │ • Calls/Analytics   │ │ • Calls/Analytics   │
+│ • Campaigns         │ │ • Campaigns         │ │ • Campaigns         │
 │ • Leads             │ │ • Leads             │ │ • Leads             │
 │ • Members           │ │ • Members           │ │ • Members           │
 │ • Integrations      │ │ • Integrations      │ │ • Integrations      │
 │ • Knowledge Base    │ │ • Knowledge Base    │ │ • Knowledge Base    │
+│ • Credits/Billing   │ │ • Credits/Billing   │ │ • Credits/Billing   │
 └─────────────────────┘ └─────────────────────┘ └─────────────────────┘
 ```
 
@@ -101,9 +115,9 @@ Client Request → Middleware (proxy.ts)
                       │
                       └─► Route Handler
                               │
-                              ├─► API Route: getWorkspaceContext() (helper `withWorkspace()` is available but not widely used)
+                              ├─► API Route: getWorkspaceContext() or getPartnerAuthContext()
                               │
-                              └─► Page: getPartnerAuthContext()
+                              └─► Page: getPartnerAuthCached() for server components
 ```
 
 ---
@@ -119,10 +133,13 @@ interface Partner {
   name: string
   slug: string // e.g., "acme-agency"
   branding: PartnerBranding // Logo, colors, company name
-  plan_tier: string // "free" | "starter" | "pro" | "enterprise"
+  plan_tier: string // "free" | "starter" | "professional" | "enterprise"
   features: PartnerFeatures // Feature flags
   resource_limits: ResourceLimits // Max workspaces, users, agents
   is_platform_partner: boolean // True for the main platform
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  subscription_status: string // "active" | "canceled" | etc.
 }
 
 // 2. WORKSPACE (Middle Level - Client Project)
@@ -134,6 +151,8 @@ interface Workspace {
   resource_limits: ResourceLimits // Inherited/overridden from partner
   current_month_minutes: number // Usage tracking
   current_month_cost: number // Cost tracking
+  per_minute_rate_cents: number // Billing rate
+  is_billing_exempt: boolean
   status: string
 }
 
@@ -189,8 +208,7 @@ interface User {
 ```
 Genius365/
 ├── prisma/                       # Prisma ORM
-│   ├── schema.prisma             # Database schema definition
-│   └── (no migrations folder committed)
+│   └── schema.prisma             # Database schema definition
 ├── app/                          # Next.js App Router
 │   ├── (auth)/                   # Auth pages (login, signup, etc.)
 │   │   ├── login/page.tsx
@@ -206,7 +224,10 @@ Genius365/
 │   │   ├── layout.tsx
 │   │   ├── settings/page.tsx     # Partner settings
 │   │   ├── team/page.tsx         # Partner team management
-│   │   └── invitations/page.tsx  # Partner invitations
+│   │   ├── invitations/page.tsx  # Partner invitations
+│   │   ├── billing/page.tsx      # Partner billing & subscription
+│   │   ├── plans/page.tsx        # Subscription plans
+│   │   └── credits/page.tsx      # Credits management (future)
 │   ├── w/[workspaceSlug]/        # Workspace-scoped pages
 │   │   ├── layout.tsx            # Workspace layout with auth
 │   │   ├── dashboard/page.tsx
@@ -214,16 +235,21 @@ Genius365/
 │   │   │   ├── page.tsx          # Agent list
 │   │   │   ├── new/page.tsx      # Create agent (wizard)
 │   │   │   └── [id]/page.tsx     # Agent detail
-│   │   ├── leads/page.tsx
-│   │   ├── calls/page.tsx
+│   │   ├── campaigns/
+│   │   │   ├── page.tsx          # Campaign list
+│   │   │   ├── new/page.tsx      # Create campaign (wizard)
+│   │   │   └── [id]/page.tsx     # Campaign detail
+│   │   ├── calls/page.tsx        # Call logs with search
 │   │   ├── conversations/page.tsx
 │   │   ├── analytics/page.tsx
 │   │   ├── members/page.tsx
 │   │   ├── settings/page.tsx
-│   │   ├── billing/page.tsx
+│   │   ├── billing/page.tsx      # Workspace billing
 │   │   ├── integrations/page.tsx
 │   │   ├── knowledge-base/page.tsx
-│   │   └── telephony/page.tsx
+│   │   ├── telephony/page.tsx
+│   │   ├── subscription/page.tsx # Workspace subscription
+│   │   └── credits/page.tsx      # Credit management
 │   ├── super-admin/              # Platform admin console
 │   │   ├── login/page.tsx
 │   │   └── (dashboard)/
@@ -235,61 +261,8 @@ Genius365/
 │   │       ├── partner-requests/
 │   │       │   ├── page.tsx      # Request list
 │   │       │   └── [id]/page.tsx # Request detail
-│   │       └── billing/page.tsx
-│   ├── api/                      # API routes
-│   │   ├── auth/                 # Auth APIs
-│   │   │   ├── context/route.ts
-│   │   │   ├── signup/route.ts
-│   │   │   └── signout/route.ts
-│   │   ├── w/[workspaceSlug]/    # Workspace-scoped APIs
-│   │   │   ├── agents/
-│   │   │   │   ├── route.ts
-│   │   │   │   └── [id]/route.ts
-│   │   │   ├── members/
-│   │   │   │   ├── route.ts
-│   │   │   │   └── [memberId]/route.ts
-│   │   │   ├── invitations/
-│   │   │   │   ├── route.ts
-│   │   │   │   └── [id]/route.ts
-│   │   │   ├── conversations/route.ts
-│   │   │   ├── analytics/route.ts
-│   │   │   ├── settings/route.ts
-│   │   │   └── dashboard/stats/route.ts
-│   │   ├── partner/              # Partner-level APIs
-│   │   │   ├── route.ts
-│   │   │   ├── dashboard/stats/route.ts
-│   │   │   ├── team/
-│   │   │   │   ├── route.ts
-│   │   │   │   └── [memberId]/route.ts
-│   │   │   └── invitations/
-│   │   │       ├── route.ts
-│   │   │       └── [invitationId]/route.ts
-│   │   ├── partner-requests/     # Partner request APIs
-│   │   │   ├── route.ts
-│   │   │   ├── check-domain/route.ts
-│   │   │   └── [id]/
-│   │   │       ├── route.ts
-│   │   │       └── provision/route.ts
-│   │   ├── partner-invitations/
-│   │   │   └── accept/route.ts
-│   │   ├── workspace-invitations/
-│   │   │   └── accept/route.ts
-│   │   ├── super-admin/          # Super admin APIs
-│   │   │   ├── partners/
-│   │   │   │   ├── route.ts
-│   │   │   │   └── [id]/
-│   │   │   │       ├── route.ts
-│   │   │   │       ├── domains/route.ts
-│   │   │   │       └── workspaces/route.ts
-│   │   │   └── partner-requests/
-│   │   │       ├── route.ts
-│   │   │       └── [id]/
-│   │   │           ├── route.ts
-│   │   │           └── provision/route.ts
-│   │   ├── upload/logo/route.ts  # Logo upload
-│   │   ├── workspaces/route.ts   # Workspace creation
-│   │   ├── dev/reset-password/route.ts  # Dev utilities
-│   │   └── health/route.ts       # Health check
+│   │       └── billing/page.tsx  # Super admin billing (Total Orgs + table)
+│   ├── api/                      # API routes (see API Layer section)
 │   ├── accept-workspace-invitation/page.tsx
 │   ├── accept-partner-invitation/page.tsx
 │   ├── select-workspace/page.tsx
@@ -300,30 +273,8 @@ Genius365/
 │   ├── global-error.tsx          # Global error handler
 │   ├── layout.tsx                # Root layout
 │   └── globals.css
-│
 ├── components/                   # React components
 │   ├── ui/                       # shadcn/ui primitives
-│   │   ├── alert-dialog.tsx
-│   │   ├── alert.tsx
-│   │   ├── avatar.tsx
-│   │   ├── badge.tsx
-│   │   ├── button.tsx
-│   │   ├── card.tsx
-│   │   ├── collapsible.tsx
-│   │   ├── dialog.tsx
-│   │   ├── dropdown-menu.tsx
-│   │   ├── input.tsx
-│   │   ├── label.tsx
-│   │   ├── progress.tsx
-│   │   ├── scroll-area.tsx
-│   │   ├── select.tsx
-│   │   ├── separator.tsx
-│   │   ├── sheet.tsx
-│   │   ├── skeleton.tsx
-│   │   ├── switch.tsx
-│   │   ├── table.tsx
-│   │   ├── tabs.tsx
-│   │   └── textarea.tsx
 │   ├── workspace/                # Workspace components
 │   │   ├── workspace-dashboard-layout.tsx
 │   │   ├── workspace-sidebar.tsx
@@ -331,28 +282,48 @@ Genius365/
 │   │   ├── workspace-selector.tsx
 │   │   ├── create-workspace-form.tsx
 │   │   ├── integrations/
-│   │   │   └── connect-integartion-dialog.tsx
+│   │   │   ├── connect-integartion-dialog.tsx
+│   │   │   └── connect-algolia-dialog.tsx
 │   │   ├── agents/
 │   │   │   ├── workspace-agent-card.tsx
 │   │   │   ├── workspace-agent-form.tsx
 │   │   │   ├── agent-wizard.tsx
 │   │   │   ├── agent-wizard-dynamic.tsx
 │   │   │   └── function-tool-editor.tsx
+│   │   ├── campaigns/
+│   │   │   ├── campaign-wizard.tsx
+│   │   │   ├── campaign-wizard-dynamic.tsx
+│   │   │   ├── campaign-card.tsx
+│   │   │   ├── campaign-status-badge.tsx
+│   │   │   ├── import-recipients-dialog.tsx
+│   │   │   ├── add-recipient-dialog.tsx
+│   │   │   └── steps/
+│   │   │       ├── step-details.tsx
+│   │   │       ├── step-import.tsx
+│   │   │       ├── step-variables.tsx
+│   │   │       ├── step-schedule.tsx
+│   │   │       └── step-review.tsx
 │   │   ├── conversations/
 │   │   │   ├── conversation-detail-modal.tsx
 │   │   │   └── conversation-detail-dynamic.tsx
-│   │   └── members/
-│   │       └── invite-member-dialog.tsx
-│   ├── agents/                   # Agent components
+│   │   ├── members/
+│   │   │   └── invite-member-dialog.tsx
+│   │   └── billing/
+│   │       └── workspace-credits-card.tsx
+│   ├── agents/
 │   │   ├── agent-card.tsx
 │   │   ├── delete-agent-dialog.tsx
 │   │   ├── test-call-button.tsx
 │   │   └── test-call-modal.tsx
-│   ├── org/                      # Organization components
+│   ├── billing/
+│   │   ├── change-plan-dialog.tsx
+│   │   └── credits-card.tsx
+│   ├── org/
 │   │   └── org-dashboard-layout.tsx
-│   ├── super-admin/              # Super admin components
+│   ├── super-admin/
 │   │   ├── sidebar.tsx
 │   │   ├── header.tsx
+│   │   ├── super-admin-header.tsx
 │   │   ├── super-admin-layout-client.tsx
 │   │   ├── partner-card.tsx
 │   │   ├── approve-partner-dialog.tsx
@@ -361,31 +332,22 @@ Genius365/
 │   │   ├── edit-partner-request-dialog.tsx
 │   │   └── delete-partner-request-dialog.tsx
 │   ├── auth/
-│   │   ├── auth-layout-client.tsx
-│   │   └── password-strength.tsx
 │   ├── marketing/
-│   │   ├── partner-request-form.tsx
-│   │   └── pricing-card.tsx
-│   ├── shared/                   # Shared/common components
-│   │   ├── error-boundary.tsx
-│   │   ├── loading-spinner.tsx
-│   │   └── loading.tsx
-│   └── billing/                  # Billing components (placeholder)
-│
+│   └── shared/
 ├── lib/                          # Core libraries
 │   ├── api/                      # API utilities
 │   │   ├── auth.ts               # getPartnerAuthContext()
-│   │   ├── workspace-auth.ts     # withWorkspace(), getWorkspaceContext()
+│   │   ├── workspace-auth.ts     # getWorkspaceContext()
 │   │   ├── partner.ts            # getPartnerFromHost()
 │   │   ├── super-admin-auth.ts   # getSuperAdminContext()
 │   │   ├── helpers.ts            # apiResponse(), unauthorized(), etc.
-│   │   ├── get-auth-cached.ts    # Cached auth context
+│   │   ├── get-auth-cached.ts    # Cached auth context for server components
 │   │   ├── get-partner-server.ts # Server-side partner context
 │   │   ├── error-handler.ts      # Error handling utilities
 │   │   ├── fetcher.ts            # Fetch utilities
 │   │   ├── etag.ts               # ETag/caching headers
 │   │   └── pagination.ts         # Pagination helpers
-│   ├── auth/                     # Auth utilities
+│   ├── auth/
 │   │   ├── index.ts              # Auth exports
 │   │   └── password.ts           # Password utilities
 │   ├── supabase/                 # Supabase clients
@@ -402,42 +364,58 @@ Genius365/
 │   │   ├── index.ts              # Integration exports
 │   │   ├── vapi/
 │   │   │   ├── agent/
-│   │   │   │   ├── config.ts     # API calls
+│   │   │   │   ├── config.ts     # VAPI API calls
 │   │   │   │   ├── mapper.ts     # Data mapping
 │   │   │   │   ├── sync.ts       # Sync orchestration
 │   │   │   │   └── response.ts   # Response processing
-│   │   │   └── web-call.ts       # Browser calling
+│   │   │   ├── web-call.ts       # Browser calling
+│   │   │   ├── calls.ts          # Call retrieval
+│   │   │   └── phone-numbers.ts  # Phone number management
 │   │   ├── retell/
 │   │   │   ├── agent/
 │   │   │   │   ├── config.ts
 │   │   │   │   ├── mapper.ts
 │   │   │   │   ├── sync.ts
 │   │   │   │   └── response.ts
-│   │   │   └── web-call.ts
+│   │   │   ├── web-call.ts
+│   │   │   └── calls.ts
+│   │   ├── function_tools/       # Custom function tools
+│   │   │   ├── vapi/
+│   │   │   │   ├── api/sync.ts
+│   │   │   │   ├── mapper.ts
+│   │   │   │   ├── registry.ts
+│   │   │   │   └── tools/        # Tool definitions
+│   │   │   └── retell/
 │   │   ├── circuit-breaker.ts    # Circuit breaker pattern
 │   │   ├── retry.ts              # Retry logic
 │   │   └── webhook.ts            # Webhook handling
-│   ├── hooks/                    # React Query hooks
-│   │   ├── use-auth.ts           # Auth actions (logout)
-│   │   ├── use-branding.ts       # Partner branding
-│   │   ├── use-keyboard-shortcuts.ts
-│   │   ├── use-optimistic.ts     # Optimistic updates
-│   │   ├── use-partner.ts        # Partner data
-│   │   ├── use-partner-auth.ts   # Partner auth context
+│   ├── hooks/                    # React Query hooks (25+ files)
+│   │   ├── use-workspace-agents.ts
+│   │   ├── use-workspace-members.ts
+│   │   ├── use-workspace-conversations.ts
+│   │   ├── use-workspace-calls.ts
+│   │   ├── use-workspace-settings.ts
+│   │   ├── use-workspace-stats.ts
+│   │   ├── use-workspace-subscription.ts
+│   │   ├── use-workspace-credits.ts
+│   │   ├── use-workspace-knowledge-base.ts
+│   │   ├── use-campaigns.ts
+│   │   ├── use-billing.ts
+│   │   ├── use-subscription-plans.ts
+│   │   ├── use-auth.ts
+│   │   ├── use-partner.ts
+│   │   ├── use-partner-auth.ts
+│   │   ├── use-partner-team.ts
 │   │   ├── use-partner-dashboard-stats.ts
 │   │   ├── use-partner-requests.ts
-│   │   ├── use-partner-team.ts   # Partner team management
-│   │   ├── use-prefetch.ts       # Data prefetching
 │   │   ├── use-super-admin-partners.ts
-│   │   ├── use-test-call-validations.tsx
-│   │   ├── use-toast.ts          # Toast notifications
-│   │   ├── use-web-calls.ts      # Voice calling
-│   │   ├── use-workspace-agents.ts
-│   │   ├── use-workspace-conversations.ts
-│   │   ├── use-workspace-integrations.tsx
-│   │   ├── use-workspace-members.ts
-│   │   ├── use-workspace-settings.ts
-│   │   └── use-workspace-stats.ts
+│   │   ├── use-branding.ts
+│   │   ├── use-optimistic.ts
+│   │   ├── use-prefetch.ts
+│   │   ├── use-toast.ts
+│   │   ├── use-keyboard-shortcuts.ts
+│   │   ├── use-algolia-search.ts
+│   │   └── more...
 │   ├── rbac/                     # Role-Based Access Control
 │   │   ├── index.ts              # RBAC exports
 │   │   ├── permissions.ts        # Permission matrix
@@ -452,13 +430,24 @@ Genius365/
 │   │       ├── partner-request-notification.tsx
 │   │       ├── partner-request-approved.tsx
 │   │       └── partner-request-rejected.tsx
-│   ├── errors/                   # Error handling
+│   ├── stripe/                   # Stripe integration
+│   │   ├── client.ts
+│   │   ├── webhooks.ts
+│   │   ├── checkout.ts
+│   │   └── connect.ts
+│   ├── billing/                  # Billing utilities
+│   │   └── usage.ts              # Usage tracking
+│   ├── algolia/                  # Algolia search
+│   │   ├── client.ts
+│   │   └── call-logs.ts
+│   ├── campaigns/                # Campaign utilities
+│   │   └── cleanup-expired.ts
+│   ├── errors/
 │   │   └── index.ts
-│   ├── providers/                # React providers
+│   ├── providers/
 │   │   └── query-provider.tsx    # React Query provider
-│   ├── utils/                    # Utility functions
+│   ├── utils/
 │   │   └── format.ts             # Formatting utilities
-│   ├── stripe/                   # Stripe integration (placeholder)
 │   ├── audit.ts                  # Audit logging
 │   ├── constrants.ts             # App constants
 │   ├── env.ts                    # Environment validation
@@ -466,30 +455,36 @@ Genius365/
 │   ├── metadata.ts               # Page metadata helpers
 │   ├── rate-limit.ts             # Rate limiting
 │   └── utils.ts                  # cn() utility
-│
-├── context/                      # React contexts
+├── context/
 │   ├── branding-context.tsx      # Partner branding
 │   └── theme-context.tsx         # Dark/light theme
-│
-├── config/                       # Configuration
+├── config/
 │   ├── plans.ts                  # Plan tiers & features
 │   └── site.ts                   # Site metadata
-│
-├── types/                        # TypeScript types
-│   ├── database.types.ts         # Supabase + Zod schemas
-│   └── api.types.ts              # API-specific types
-│
+├── types/
+│   ├── database.types.ts         # Supabase types + Zod schemas
+│   ├── api.types.ts              # API-specific types
+│   └── papaparse.d.ts            # CSV parsing types
+├── scripts/
+│   ├── sql/
+│   │   └── (SQL migration files)
+│   └── test-billing.ts
+├── docs/
+│   ├── CAMPAIGN_WIZARD_TESTING_PLAN.md
+│   ├── CAMPAIGNS_TESTING_GUIDE.md
+│   ├── STRIPE_BILLING_GUIDE.md
+│   └── test-recipients.csv
 ├── proxy.ts                      # Next.js middleware
 ├── CODEBASE_REFERENCE.md         # This file
-├── OPTIMIZATION_PLAN.md          # Performance optimization plan
+├── OPTIMIZATION_PLAN.md
 ├── README.md
 ├── next.config.ts
 ├── postcss.config.mjs
 ├── eslint.config.mjs
 ├── components.json
 ├── package.json
-├── package-lock.json
-└── pnpm-lock.yaml
+├── tsconfig.json
+└── vercel.json
 ```
 
 ---
@@ -504,26 +499,40 @@ The authoritative schema for this project is `prisma/schema.prisma` (it maps to 
 
 - **Partners & White-labeling**
   - `partners`: `branding` (JSON), `plan_tier`, `features` (JSON), `resource_limits` (JSON), Stripe fields, `is_platform_partner`, `onboarding_status`, `request_id`
-  - `partner_domains`: hostname mapping
+  - `partner_domains`: hostname mapping for white-label domains
   - `partner_members`: partner-level membership
   - `partner_invitations`: tokenized partner invites
-  - `partner_requests`: onboarding pipeline (in Prisma these include required `desired_subdomain` + `custom_domain`)
+  - `partner_requests`: onboarding pipeline (includes `desired_subdomain` + `custom_domain`)
 
-- **Workspaces**
-  - `workspaces`: `resource_limits` (JSON), `current_month_minutes` + `current_month_cost` (numeric/decimal), soft delete via `deleted_at`
+- **Workspaces & Subscriptions**
+  - `workspaces`: `resource_limits` (JSON), `current_month_minutes` + `current_month_cost` (numeric/decimal), `per_minute_rate_cents` for billing, `is_billing_exempt`, soft delete via `deleted_at`
   - `workspace_members`: workspace-level membership
   - `workspace_invitations`: tokenized workspace invites
   - `workspace_integrations`: provider integrations with `api_keys` (JSON) and per-workspace activation
+  - `workspace_subscription_plan`: workspace subscription settings
+  - `workspace_credits`: credit balance tracking
+  - `billing_credits`: partner-level credit balance
 
 - **Voice Agents & Calls**
   - `ai_agents`: provider enums, external IDs, sync fields (`needs_resync`, `sync_status`, `last_synced_at`, `last_sync_error`), metrics (`total_minutes`, `total_cost`, `total_conversations`), tags, versioning
-  - `conversations`: `call_status` enum is richer than the old doc (e.g. `initiated`, `ringing`, `in_progress`, `completed`, `failed`, `no_answer`, `busy`, `canceled`), plus follow-up fields and `transcript_search` (tsvector)
+  - `conversations`: `call_status` enum (e.g. `initiated`, `ringing`, `in_progress`, `completed`, `failed`, `no_answer`, `busy`, `canceled`), plus follow-up fields and `transcript_search` (tsvector)
   - `usage_tracking`: normalized per-resource usage rows (minutes, tokens, etc.) tied to conversations/workspaces
+  - `calls`: call log storage (if separate from conversations)
+
+- **Campaigns & Leads**
+  - `campaigns`: multi-step outbound call campaigns with execution details
+  - `campaign_recipients`: recipient management for campaigns (CSV import support)
+  - `leads`: lead capture from agents and manual import
+  - `lead_notes`: lead follow-up notes
+
+- **Knowledge Base**
+  - `knowledge_documents`: document storage for agent context
+  - `agent_knowledge_documents`: junction table linking agents to knowledge docs
 
 - **Users & Admin**
   - `users`: public profile linked to `auth.users`
   - `super_admin`: whitelist table for super admins
-  - `audit_log`: tracks `user_id`, `partner_id`, `workspace_id`, `action`, `entity_type`, JSON old/new values (note: `types/database.types.ts` may lag behind DB schema changes and should be regenerated when schema changes)
+  - `audit_log`: tracks `user_id`, `partner_id`, `workspace_id`, `action`, `entity_type`, JSON old/new values
 
 ---
 
@@ -546,7 +555,7 @@ The authoritative schema for this project is `prisma/schema.prisma` (it maps to 
    │     └─► Redirect to /login if no session
    │
    ├─► Layout/Page
-   │     ├─► getPartnerAuthContext()
+   │     ├─► getPartnerAuthContext() or getPartnerAuthCached()
    │     │     ├─► Get auth user from Supabase
    │     │     ├─► Resolve partner from hostname
    │     │     ├─► Get partner membership
@@ -628,9 +637,6 @@ export async function GET(request, { params }) {
     .eq("workspace_id", ctx.workspace.id)
   return apiResponse({ data })
 }
-
-// Note: `withWorkspace()` exists in `lib/api/workspace-auth.ts`, but current route handlers primarily call
-// `getWorkspaceContext()` directly inside each handler.
 ```
 
 #### API Response Helpers
@@ -660,24 +666,63 @@ getValidationError(zodError) // Get first Zod error message
 │   ├── agents/
 │   │   ├── route.ts          # GET (list), POST (create)
 │   │   └── [id]/route.ts     # GET, PATCH, DELETE
-│   │       └── test-call/route.ts  # POST (initiate provider test call)
+│   │       ├── test-call/route.ts     # POST (initiate provider test call)
+│   │       ├── phone-number/route.ts  # GET/PATCH phone assignment
+│   │       ├── sip-info/route.ts      # GET SIP info
+│   │       ├── outbound-call/route.ts # POST initiate outbound
+│   │       ├── assign-sip-number/route.ts # POST assign SIP
+│   │       └── [...path]/route.ts     # Catch-all for nested routes
 │   ├── members/
 │   │   ├── route.ts          # GET (list), POST
 │   │   └── [memberId]/route.ts # PATCH, DELETE
 │   ├── invitations/
 │   │   ├── route.ts          # GET (list), POST (send)
 │   │   └── [id]/route.ts     # DELETE (revoke)
+│   ├── calls/
+│   │   ├── route.ts          # GET (list with Algolia search)
+│   │   ├── ingest/route.ts   # POST (ingest call logs from VAPI/Retell)
+│   │   └── stats/route.ts    # GET call statistics
+│   ├── campaigns/
+│   │   ├── route.ts          # GET, POST
+│   │   └── [id]/
+│   │       ├── route.ts      # GET, PATCH, DELETE
+│   │       └── recipients/route.ts # GET, POST (manage recipients)
 │   ├── conversations/route.ts
 │   ├── analytics/route.ts
 │   ├── integrations/
 │   │   ├── route.ts               # GET (list), POST (connect)
+│   │   ├── algolia-search-config/route.ts
 │   │   └── [provider]/route.ts    # PATCH/DELETE (provider-specific ops)
 │   ├── settings/route.ts     # GET, PATCH
+│   ├── knowledge-base/
+│   │   ├── route.ts          # GET, POST
+│   │   └── [id]/route.ts     # PATCH, DELETE
+│   ├── subscription/
+│   │   ├── route.ts          # GET/PATCH subscription
+│   │   ├── plans/route.ts    # GET available plans
+│   │   └── preview/route.ts  # POST get preview
+│   ├── credits/
+│   │   ├── route.ts          # GET credits
+│   │   └── topup/route.ts    # POST topup credits
 │   └── dashboard/stats/route.ts
 │
 ├── partner/                  # Partner-level APIs
 │   ├── route.ts              # GET partner info
 │   ├── dashboard/stats/route.ts
+│   ├── billing/
+│   │   ├── route.ts          # GET billing info
+│   │   ├── checkout/route.ts # POST start checkout
+│   │   ├── change-plan/route.ts
+│   │   ├── portal/route.ts   # POST get customer portal
+│   │   └── [planId]/route.ts
+│   ├── credits/
+│   │   ├── route.ts          # GET credits
+│   │   └── topup/route.ts    # POST topup
+│   ├── subscription-plans/
+│   │   ├── route.ts          # GET plans
+│   │   └── [planId]/route.ts # GET plan details
+│   ├── stripe/
+│   │   └── connect/route.ts  # POST start Stripe Connect onboarding
 │   ├── team/
 │   │   ├── route.ts          # GET, POST
 │   │   └── [memberId]/route.ts
@@ -713,6 +758,16 @@ getValidationError(zodError) // Get first Zod error message
 │           ├── route.ts      # GET, PATCH
 │           └── provision/route.ts
 │
+├── cron/                     # Cron job handlers
+│   ├── master/route.ts       # Trigger cron jobs
+│   └── cleanup-expired-campaigns/route.ts
+│
+├── webhooks/                 # External webhooks
+│   ├── stripe/route.ts       # Stripe webhook
+│   ├── stripe-connect/route.ts
+│   ├── vapi/route.ts         # VAPI webhooks
+│   └── retell/route.ts       # Retell webhooks
+│
 ├── upload/logo/route.ts      # Logo upload
 ├── dev/reset-password/route.ts # Development utilities
 └── health/route.ts           # Health check
@@ -731,11 +786,10 @@ RootLayout (app/layout.tsx)
 └── Toaster
     │
     ├── AuthLayout (app/(auth)/layout.tsx)
-    │   └── BrandingProvider
-    │       └── Auth Pages (login, signup, etc.)
+    │   └── Auth Pages
     │
     ├── MarketingLayout (app/(marketing)/layout.tsx)
-    │   └── Marketing Pages (pricing, request-partner)
+    │   └── Marketing Pages
     │
     ├── OrgLayout (app/org/layout.tsx)
     │   └── OrgDashboardLayout
@@ -762,11 +816,11 @@ RootLayout (app/layout.tsx)
 Primitives from shadcn/ui (Radix UI + Tailwind):
 
 - `button.tsx`, `card.tsx`, `dialog.tsx`, `dropdown-menu.tsx`
-- `input.tsx`, `select.tsx`, `table.tsx`, `tabs.tsx`
-- `avatar.tsx`, `badge.tsx`, `skeleton.tsx`
+- `input.tsx`, `select.tsx`, `table.tsx`, `tabs.tsx`, `pagination.tsx`
+- `avatar.tsx`, `badge.tsx`, `skeleton.tsx`, `checkbox.tsx`
 - `alert.tsx`, `alert-dialog.tsx`, `progress.tsx`
 - `scroll-area.tsx`, `separator.tsx`, `sheet.tsx`
-- `switch.tsx`, `textarea.tsx`, `label.tsx`
+- `switch.tsx`, `textarea.tsx`, `label.tsx`, `collapsible.tsx`
 
 #### Workspace Components (`components/workspace/`)
 
@@ -776,176 +830,73 @@ Primitives from shadcn/ui (Radix UI + Tailwind):
 - `workspace-selector.tsx` - Workspace picker component
 - `create-workspace-form.tsx` - Workspace creation flow UI
 - `integrations/`
-  - `connect-integartion-dialog.tsx` - Connect provider integration dialog
+  - `connect-integartion-dialog.tsx` - Connect provider integration
+  - `connect-algolia-dialog.tsx` - Algolia configuration
 - `agents/` - Agent-related components
-  - `workspace-agent-card.tsx` - Agent display card
-  - `workspace-agent-form.tsx` - Agent form component
-  - `agent-wizard.tsx` - Multi-step agent creation wizard
-  - `agent-wizard-dynamic.tsx` - Dynamic import wrapper
+- `campaigns/` - Campaign management components
+  - `campaign-wizard.tsx` - Multi-step campaign creation
+  - `campaign-card.tsx`, `campaign-status-badge.tsx`
+  - `import-recipients-dialog.tsx` - CSV import
+  - `add-recipient-dialog.tsx` - Manual recipient addition
+  - `steps/` - Step components for wizard
 - `conversations/` - Conversation components
-  - `conversation-detail-modal.tsx` - Conversation detail view
-  - `conversation-detail-dynamic.tsx` - Dynamic import wrapper
 - `members/` - Member management
-  - `invite-member-dialog.tsx` - Member invitation dialog
-
-#### Agent Components (`components/agents/`)
-
-- `agent-card.tsx` - Generic agent card
-- `delete-agent-dialog.tsx` - Deletion confirmation
-- `test-call-button.tsx` - Initiate test call
-- `test-call-modal.tsx` - Test call interface
-
-#### Super Admin Components (`components/super-admin/`)
-
-- `sidebar.tsx` - Admin navigation
-- `header.tsx` - Admin header
-- `super-admin-layout-client.tsx` - Admin layout wrapper
-- `partner-card.tsx` - Partner display card
-- `approve-partner-dialog.tsx` - Approve partner request
-- `reject-partner-dialog.tsx` - Reject partner request
-- `create-partner-dialog.tsx` - Create new partner
-- `edit-partner-request-dialog.tsx` - Edit partner request
-- `delete-partner-request-dialog.tsx` - Delete partner request
-
-#### Shared Components (`components/shared/`)
-
-- `error-boundary.tsx` - Error boundary component
-- `loading-spinner.tsx` - Loading spinner
-- `loading.tsx` - Loading state component
-
-#### Marketing Components (`components/marketing/`)
-
-- `partner-request-form.tsx` - Partner request form
-- `pricing-card.tsx` - Pricing plan cards
-
-### Path Aliases (configured in `components.json`)
-
-```typescript
-import { Button } from "@/components/ui/button"
-import { useWorkspaceAgents } from "@/lib/hooks/use-workspace-agents"
-import type { AIAgent } from "@/types/database.types"
-```
+- `billing/` - Billing components
+  - `workspace-credits-card.tsx` - Credits display/topup
 
 ---
 
-## Voice Agent Integrations
+## Key Features & Modules
 
-### Integration Architecture
+### 1. **Subscription Billing System**
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      AI AGENT (Database)                        │
-│  provider: "vapi" | "retell" | "synthflow"                     │
-│  config: { system_prompt, voice_id, model_settings... }        │
-│  agent_secret_api_key: [{ provider, key, is_active }]          │
-│  external_agent_id: "provider-assigned-id"                     │
-└─────────────────────────────────────────────────────────────────┘
-                             │
-                             ▼
-         ┌───────────────────┼───────────────────┐
-         │                   │                   │
-         ▼                   ▼                   ▼
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│      VAPI       │ │     RETELL      │ │   SYNTHFLOW     │
-│   Integration   │ │   Integration   │ │   Integration   │
-├─────────────────┤ ├─────────────────┤ ├─────────────────┤
-│ mapper.ts       │ │ mapper.ts       │ │ (future)        │
-│ config.ts       │ │ config.ts       │ │                 │
-│ sync.ts         │ │ sync.ts         │ │                 │
-│ response.ts     │ │ response.ts     │ │                 │
-│ web-call.ts     │ │ web-call.ts     │ │                 │
-└─────────────────┘ └─────────────────┘ └─────────────────┘
-```
+- **Stripe Integration**: Payment processing, subscription management
+- **Partner-Level Subscriptions**: Stripe managed at partner level
+- **Workspace-Level Billing**: Per-workspace usage tracking and billing
+- **Credit System**: Partner and workspace credit balances
+- **Usage Tracking**: Minutes, API calls, storage, etc.
+- **Files**: `lib/billing/`, `lib/stripe/`, `lib/hooks/use-billing.ts`
 
-### Sync Flow
+### 2. **Campaign Management**
 
-```typescript
-// lib/integrations/vapi/agent/sync.ts
+- **Campaign Wizard**: Multi-step form for creating outbound call campaigns
+- **CSV Import**: Bulk recipient management via CSV
+- **Campaign Scheduling**: Schedule campaigns for future execution
+- **Recipient Management**: Add, edit, delete recipients
+- **Campaign Status**: Track execution status and results
+- **Cleanup**: Automatic cleanup of expired campaigns via cron
+- **Files**: `components/workspace/campaigns/`, `lib/hooks/use-campaigns.ts`, `lib/campaigns/`
 
-// 1. Check if sync is needed
-shouldSyncToVapi(agent) → boolean
+### 3. **Call Ingestion & Logging**
 
-// 2. Map internal agent to provider format
-mapToVapi(agent) → VapiAgentPayload
+- **VAPI Ingestion**: Fetch call logs from VAPI's API
+- **Retell Ingestion**: Fetch call logs from Retell's API
+- **Algolia Integration**: Full-text search on calls
+- **Call Analytics**: Call statistics and aggregation
+- **Webhook Support**: Real-time call updates via webhooks
+- **Files**: `app/api/w/[workspaceSlug]/calls/`, `lib/algolia/`, `lib/integrations/`
 
-// 3. Call provider API
-createVapiAgent(payload, apiKeys) → response
+### 4. **Knowledge Base**
 
-// 4. Process response & update database
-processVapiResponse(response, agentId) → { success, agent }
+- **Document Management**: Upload and manage knowledge documents
+- **Agent Linking**: Link documents to agents for context
+- **Search**: Full-text search within knowledge base
+- **Files**: `app/api/w/[workspaceSlug]/knowledge-base/`, `lib/hooks/use-workspace-knowledge-base.ts`
 
-// 5. Safe wrapper (catches errors)
-safeVapiSync(agent, "create" | "update" | "delete") → VapiSyncResult
-```
+### 5. **Function Tools (VAPI)**
 
-### Vapi Custom Tools (API Alternative: Tool API + `model.toolIds`)
+- **Custom Tools**: Create custom function-based tools for agents
+- **Tool Registry**: Manage tool definitions and endpoints
+- **Sync Management**: Sync tools to VAPI provider
+- **Webhook Integration**: Tools call external webhooks during calls
+- **Files**: `lib/integrations/function_tools/`
 
-Inspralv supports Vapi **custom function tools** via Vapi’s Tool API (`/tool`) and attaches them to assistants using `model.toolIds`.
+### 6. **Telephony Management**
 
-- **Where tools are stored**: `ai_agents.config.tools` (array of `FunctionTool` in `types/database.types.ts`)
-- **Webhook URL sources**:
-  - per-tool: `tool.server_url`
-  - fallback default: `ai_agents.config.tools_server_url`
-- **Tool sync** (creates/updates tools in Vapi and persists tool IDs back to our DB):
-  - `lib/integrations/function_tools/vapi/api/sync.ts` → `syncVapiFunctionTools()`
-  - Persists Vapi tool id into `tool.external_tool_id`
-- **Assistant sync** (attaches tool IDs to the assistant and keeps native tools inline):
-  - `lib/integrations/vapi/agent/sync.ts` calls `syncVapiFunctionTools()` before pushing the assistant payload
-  - `lib/integrations/vapi/agent/mapper.ts`:
-    - sends Vapi-managed tools via `payload.model.toolIds`
-    - sends other tools via `payload.model.tools` (endCall / transferCall / dtmf / etc.)
-
-**Why webhook matters**: Vapi built-in tools run inside Vapi, but custom **function** tools call your configured `server.url` (webhook) during a call to execute business logic and return results.
-
-### Retell Special Case
-
-Retell requires creating an LLM first, then an Agent:
-
-```typescript
-// lib/integrations/retell/agent/sync.ts
-
-// Create flow:
-// 1. createRetellLLM() → llm_id
-// 2. createRetellAgent({ response_engine: { llm_id } })
-// 3. Store llm_id in agent.config.retell_llm_id
-
-// Delete flow:
-// 1. deleteRetellAgent()
-// 2. deleteRetellLLM()
-```
-
-### Retell Call Logs (No Webhooks)
-
-Retell call logs are ingested **without webhooks**: when a web test call ends, the frontend sends the `call_id` to `POST /api/w/[workspaceSlug]/calls/ingest`, which polls Retell’s `GET /v2/get-call/{call_id}` until the call is ended (and data is ready), maps the response into a row in `public.conversations` (duration, total_cost, transcript, status, timestamps, metadata including `call_type`), and then indexes the saved record into Algolia for fast search. The Calls page reads from `GET /api/w/[workspaceSlug]/calls`, which uses Algolia when a `search` query is present (falling back to Postgres substring search if Algolia isn’t configured or has no hits yet). Algolia configuration is stored **per workspace** in `workspace_integrations` (provider=`algolia`), and Retell API keys are stored per workspace in `workspace_integrations` (provider=`retell`).
-
-Note: web test call client logic is implemented per-provider (isolated) in `lib/hooks/use-web-call/retell.ts` and `lib/hooks/use-web-call/vapi.ts` (there is intentionally no shared `use-web-calls.ts` router hook), so provider-specific event handling and call-id validation do not impact each other.
-
-### Vapi Call Logs (No Webhooks)
-
-Vapi call logs are also ingested **without webhooks**: when a Vapi web test call ends, the frontend captures the **real** Vapi `call_id` from the Vapi Web SDK (the test-call API returns a placeholder ID for UI only) and sends it to `POST /api/w/[workspaceSlug]/calls/ingest`. The backend polls Vapi’s call API (`GET /call/{id}`) until the call is ended and artifacts (duration/transcript/cost) are available, maps the response into `public.conversations`, and indexes the saved record into Algolia for fast search. The Calls page uses the same `GET /api/w/[workspaceSlug]/calls` endpoint with Algolia-first search and Postgres fallback. Vapi API keys are stored per workspace in `workspace_integrations` (provider=`vapi`), and Vapi web calling/ingestion trigger logic lives in `lib/hooks/use-web-call/vapi.ts`.
-
-### Resilience Patterns
-
-```typescript
-// lib/integrations/circuit-breaker.ts
-// Circuit breaker pattern for external API calls
-
-// lib/integrations/retry.ts
-// Retry logic with exponential backoff
-```
-
-### Web Calling
-
-Both VAPI and Retell support browser-based test calls:
-
-```typescript
-// components/agents/test-call-button.tsx
-// components/agents/test-call-modal.tsx
-
-// Uses:
-// - @vapi-ai/web for VAPI
-// - retell-client-js-sdk for Retell
-```
+- **Phone Numbers**: Assign and manage phone numbers per agent
+- **SIP Configuration**: SIP/DID management
+- **Outbound Calls**: Initiate outbound calls from agents
+- **Files**: `lib/integrations/vapi/phone-numbers.ts`, agent routes
 
 ---
 
@@ -953,18 +904,18 @@ Both VAPI and Retell support browser-based test calls:
 
 ### Authentication & Authorization
 
-| File                            | Purpose                                                                                                          |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `lib/api/auth.ts`               | `getPartnerAuthContext()` - Main auth context                                                                    |
-| `lib/api/workspace-auth.ts`     | `getWorkspaceContext()` + `withWorkspace()` helper (most routes currently call `getWorkspaceContext()` directly) |
-| `lib/api/partner.ts`            | `getPartnerFromHost()` - Partner resolution                                                                      |
-| `lib/api/super-admin-auth.ts`   | `getSuperAdminContext()`                                                                                         |
-| `lib/api/get-auth-cached.ts`    | Cached auth context for server components                                                                        |
-| `lib/api/get-partner-server.ts` | Server-side partner context                                                                                      |
-| `lib/rbac/permissions.ts`       | RBAC permission matrix                                                                                           |
-| `lib/rbac/middleware.ts`        | RBAC middleware                                                                                                  |
-| `lib/auth/password.ts`          | Password utilities                                                                                               |
-| `proxy.ts`                      | Middleware - session, redirects, CSP                                                                             |
+| File                            | Purpose                                            |
+| ------------------------------- | -------------------------------------------------- |
+| `lib/api/auth.ts`               | `getPartnerAuthContext()` - Main auth context      |
+| `lib/api/workspace-auth.ts`     | `getWorkspaceContext()` + `withWorkspace()` helper |
+| `lib/api/partner.ts`            | `getPartnerFromHost()` - Partner resolution        |
+| `lib/api/super-admin-auth.ts`   | `getSuperAdminContext()`                           |
+| `lib/api/get-auth-cached.ts`    | Cached auth context for server components          |
+| `lib/api/get-partner-server.ts` | Server-side partner context                        |
+| `lib/rbac/permissions.ts`       | RBAC permission matrix                             |
+| `lib/rbac/middleware.ts`        | RBAC middleware                                    |
+| `lib/auth/password.ts`          | Password utilities                                 |
+| `proxy.ts`                      | Middleware - session, redirects, CSP               |
 
 ### Supabase
 
@@ -996,45 +947,75 @@ Both VAPI and Retell support browser-based test calls:
 | `lib/audit.ts`             | Audit logging        |
 | `lib/rate-limit.ts`        | Rate limiting        |
 
-### State Management
+### State Management & Hooks
 
-| File                                       | Purpose                     |
-| ------------------------------------------ | --------------------------- |
-| `lib/hooks/use-workspace-agents.ts`        | Agent CRUD with React Query |
-| `lib/hooks/use-workspace-members.ts`       | Member management           |
-| `lib/hooks/use-workspace-conversations.ts` | Conversation data           |
-| `lib/hooks/use-workspace-settings.ts`      | Workspace settings          |
-| `lib/hooks/use-workspace-stats.ts`         | Dashboard statistics        |
-| `lib/hooks/use-auth.ts`                    | Auth actions (logout)       |
-| `lib/hooks/use-partner.ts`                 | Partner data                |
-| `lib/hooks/use-partner-auth.ts`            | Partner auth context        |
-| `lib/hooks/use-partner-team.ts`            | Partner team management     |
-| `lib/hooks/use-partner-dashboard-stats.ts` | Partner dashboard data      |
-| `lib/hooks/use-partner-requests.ts`        | Partner request management  |
-| `lib/hooks/use-super-admin-partners.ts`    | Super admin partner data    |
-| `lib/hooks/use-branding.ts`                | Partner branding            |
-| `lib/hooks/use-web-calls.ts`               | Voice calling               |
-| `lib/hooks/use-optimistic.ts`              | Optimistic updates          |
-| `lib/hooks/use-prefetch.ts`                | Data prefetching            |
-| `lib/hooks/use-toast.ts`                   | Toast notifications         |
-| `lib/providers/query-provider.tsx`         | React Query provider        |
+| File                                       | Purpose                             |
+| ------------------------------------------ | ----------------------------------- |
+| `lib/hooks/use-workspace-agents.ts`        | Agent CRUD with React Query         |
+| `lib/hooks/use-workspace-members.ts`       | Member management                   |
+| `lib/hooks/use-workspace-conversations.ts` | Conversation data                   |
+| `lib/hooks/use-workspace-calls.ts`         | Call logs with Algolia search       |
+| `lib/hooks/use-workspace-settings.ts`      | Workspace settings                  |
+| `lib/hooks/use-workspace-stats.ts`         | Dashboard statistics                |
+| `lib/hooks/use-workspace-subscription.ts`  | Workspace subscription management   |
+| `lib/hooks/use-workspace-credits.ts`       | Workspace credit balance            |
+| `lib/hooks/use-campaigns.ts`               | Campaign CRUD                       |
+| `lib/hooks/use-billing.ts`                 | Partner billing & Stripe operations |
+| `lib/hooks/use-subscription-plans.ts`      | Subscription plan management        |
+| `lib/hooks/use-auth.ts`                    | Auth actions (logout)               |
+| `lib/hooks/use-partner.ts`                 | Partner data                        |
+| `lib/hooks/use-partner-auth.ts`            | Partner auth context                |
+| `lib/hooks/use-partner-team.ts`            | Partner team management             |
+| `lib/hooks/use-partner-dashboard-stats.ts` | Partner dashboard data              |
+| `lib/hooks/use-partner-requests.ts`        | Partner request management          |
+| `lib/hooks/use-super-admin-partners.ts`    | Super admin partner data            |
+| `lib/hooks/use-branding.ts`                | Partner branding                    |
+| `lib/hooks/use-optimistic.ts`              | Optimistic updates                  |
+| `lib/hooks/use-prefetch.ts`                | Data prefetching                    |
+| `lib/hooks/use-toast.ts`                   | Toast notifications                 |
+| `lib/hooks/use-algolia-search.ts`          | Algolia search integration          |
+| `lib/providers/query-provider.tsx`         | React Query provider                |
 
-### Types
+### Types & Config
 
-| File                      | Purpose                  |
-| ------------------------- | ------------------------ |
-| `types/database.types.ts` | Core types + Zod schemas |
-| `types/api.types.ts`      | API-specific types       |
+| File                      | Purpose                      |
+| ------------------------- | ---------------------------- |
+| `types/database.types.ts` | Supabase-generated types     |
+| `types/api.types.ts`      | API-specific types & schemas |
+| `types/papaparse.d.ts`    | CSV parsing type definitions |
+| `config/plans.ts`         | Subscription plan tiers      |
+| `config/site.ts`          | Site metadata                |
+| `lib/env.ts`              | Environment validation       |
+| `lib/constrants.ts`       | App constants                |
+| `lib/metadata.ts`         | Page metadata helpers        |
 
-### Configuration
+### Integrations
 
-| File                | Purpose                |
-| ------------------- | ---------------------- |
-| `config/plans.ts`   | Plan tiers & features  |
-| `config/site.ts`    | Site metadata          |
-| `lib/env.ts`        | Environment validation |
-| `lib/constrants.ts` | App constants          |
-| `lib/metadata.ts`   | Page metadata helpers  |
+| File                                     | Purpose                              |
+| ---------------------------------------- | ------------------------------------ |
+| `lib/integrations/vapi/agent/`           | VAPI agent sync & config             |
+| `lib/integrations/vapi/web-call.ts`      | VAPI browser-based test calls        |
+| `lib/integrations/vapi/calls.ts`         | VAPI call log retrieval              |
+| `lib/integrations/vapi/phone-numbers.ts` | VAPI phone number management         |
+| `lib/integrations/retell/agent/`         | Retell agent sync & config           |
+| `lib/integrations/retell/web-call.ts`    | Retell browser-based test calls      |
+| `lib/integrations/retell/calls.ts`       | Retell call log retrieval            |
+| `lib/integrations/function_tools/`       | Custom function tool management      |
+| `lib/integrations/circuit-breaker.ts`    | Circuit breaker for external APIs    |
+| `lib/integrations/retry.ts`              | Retry logic with exponential backoff |
+| `lib/integrations/webhook.ts`            | Webhook handling utilities           |
+
+### Billing & Payments
+
+| File                       | Purpose                           |
+| -------------------------- | --------------------------------- |
+| `lib/stripe/client.ts`     | Stripe client initialization      |
+| `lib/stripe/checkout.ts`   | Stripe checkout session creation  |
+| `lib/stripe/connect.ts`    | Stripe Connect express onboarding |
+| `lib/stripe/webhooks.ts`   | Stripe webhook event handlers     |
+| `lib/billing/usage.ts`     | Usage tracking and calculations   |
+| `lib/algolia/client.ts`    | Algolia client initialization     |
+| `lib/algolia/call-logs.ts` | Call log indexing for search      |
 
 ---
 
@@ -1043,10 +1024,10 @@ Both VAPI and Retell support browser-based test calls:
 ### Server Component (Default)
 
 ```typescript
-// app/w/[workspaceSlug]/page.tsx
+// app/w/[workspaceSlug]/dashboard/page.tsx
 import { getPartnerAuthCached } from "@/lib/api/get-auth-cached"
 
-export default async function Page({ params }) {
+export default async function DashboardPage({ params }) {
   const { workspaceSlug } = await params
   const auth = await getPartnerAuthCached()
 
@@ -1056,7 +1037,7 @@ export default async function Page({ params }) {
 }
 ```
 
-### Client Component
+### Client Component with React Query
 
 ```typescript
 "use client"
@@ -1122,7 +1103,6 @@ await createAuditLog({
 ```typescript
 // lib/hooks/use-workspace-agents.ts
 
-// List agents with caching
 export function useWorkspaceAgents(options) {
   return useQuery({
     queryKey: ["workspace-agents", workspaceSlug, options],
@@ -1153,7 +1133,6 @@ export function useDeleteWorkspaceAgent() {
     onMutate: async (agentId) => {
       await queryClient.cancelQueries({ queryKey })
       const previous = queryClient.getQueryData(queryKey)
-      // Optimistically remove
       queryClient.setQueryData(queryKey, updatedData)
       return { previous }
     },
@@ -1208,8 +1187,6 @@ response.headers.set(
 // Content Security Policy:
 response.headers.set("Content-Security-Policy", buildCSP())
 ```
-
-> **Note**: `next.config.ts` also sets baseline security headers for all routes and applies `Cache-Control: no-store` to `/api/*`. `proxy.ts` is where the CSP (and other per-request headers) are enforced.
 
 ### Route Protection
 
@@ -1294,7 +1271,7 @@ await sendPartnerRejectionEmail(email, { company_name, reason, ... })
 
 ### Cache Layer
 
-**Current implementation note**: `lib/cache/index.ts` is an in-memory `Map` cache (per Node process). There is no Redis/Upstash adapter in the repo yet.
+**Note**: `lib/cache/index.ts` is an in-memory `Map` cache (per Node process). For production, consider Redis/Upstash integration.
 
 ```typescript
 // lib/cache/index.ts
@@ -1379,15 +1356,6 @@ The codebase uses Prisma ORM alongside Supabase for type-safe database operation
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Prisma Files
-
-| File                    | Purpose                                  |
-| ----------------------- | ---------------------------------------- |
-| `prisma/schema.prisma`  | Database schema definition               |
-| `lib/prisma/client.ts`  | Prisma client singleton                  |
-| `lib/prisma/index.ts`   | Prisma module exports                    |
-| `lib/generated/prisma/` | Generated Prisma client (auto-generated) |
-
 ### Basic Usage
 
 ```typescript
@@ -1421,30 +1389,6 @@ const partner = await prisma.partner.create({
   },
 })
 ```
-
-### Transactions
-
-```typescript
-import { withTransaction } from "@/lib/prisma"
-
-// Execute multiple operations atomically
-const [user, membership] = await withTransaction(async (tx) => {
-  const user = await tx.user.create({ data: { ... } })
-  const membership = await tx.workspaceMember.create({
-    data: { userId: user.id, workspaceId, role: "member" }
-  })
-  return [user, membership]
-})
-```
-
-### Prisma vs Supabase Client
-
-| Use Prisma For                 | Use Supabase Client For |
-| ------------------------------ | ----------------------- |
-| Complex queries with relations | Real-time subscriptions |
-| Transactions                   | Authentication          |
-| Type-safe CRUD operations      | Storage (file uploads)  |
-| Aggregations                   | RLS-dependent queries   |
 
 ### Prisma Commands
 
@@ -1507,6 +1451,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 # Stripe
 STRIPE_SECRET_KEY=sk_xxx
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
 
 # Email
 RESEND_API_KEY=re_xxx
@@ -1515,30 +1460,10 @@ SUPER_ADMIN_EMAIL=admin@example.com
 
 # Storage
 NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET=uploads
-```
 
-### Environment Validation
-
-```typescript
-// lib/env.ts
-
-export const env = {
-  // Supabase
-  supabaseUrl: getEnvVar("NEXT_PUBLIC_SUPABASE_URL"),
-  supabaseAnonKey: getEnvVar("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
-  supabaseServiceRoleKey: getEnvVar("SUPABASE_SERVICE_ROLE_KEY"),
-
-  // Prisma Database
-  databaseUrl: getEnvVar("DATABASE_URL", false),
-  directUrl: getEnvVar("DIRECT_URL", false),
-
-  // App
-  appUrl: getEnvVar("NEXT_PUBLIC_APP_URL", false) || "http://localhost:3000",
-
-  // Optional services...
-  isDev: process.env.NODE_ENV === "development",
-  isProd: process.env.NODE_ENV === "production",
-}
+# Algolia (optional, per-workspace)
+NEXT_PUBLIC_ALGOLIA_APP_ID=xxx
+NEXT_PUBLIC_ALGOLIA_SEARCH_API_KEY=xxx
 ```
 
 ---
@@ -1607,6 +1532,14 @@ npm run db:studio       # Open database GUI
 3. Use `getPartnerAuthContext()` for auth
 4. Check partner role with `isPartnerAdmin()` or `hasPartnerRole()`
 
+### Add Workspace-Level Subscription Feature
+
+1. Create page in `app/w/[workspaceSlug]/subscription/page.tsx`
+2. Add API routes under `app/api/w/[workspaceSlug]/subscription/`
+3. Use `useWorkspaceSubscription()` hook for data
+4. Integrate with Stripe billing (partner-level)
+5. Track usage via `lib/billing/usage.ts`
+
 ---
 
 ## Conventions
@@ -1619,8 +1552,10 @@ npm run db:studio       # Open database GUI
 - **State**: React Query for server state, minimal client state
 - **Optimistic Updates**: Implement for delete/update operations
 - **Dynamic Imports**: Use for heavy components (wizards, modals)
+- **Async Components**: Leverage server-side rendering for data fetching
+- **Error Handling**: Use boundary components and try-catch in API routes
 - **Never commit**: `.env*` files
 
 ---
 
-_This reference file is maintained for AI assistant understanding and developer onboarding._
+_This reference file is maintained for AI assistant understanding and developer onboarding. Last updated: January 7, 2026._

@@ -2098,8 +2098,17 @@ export const createPartnerRequestSchema = z.object({
   phone: z.string().optional(),
   business_description: z.string().min(10, "Please provide a business description"),
   use_case: z.string().min(10, "Please describe your use case"),
-  desired_subdomain: z.string().min(3, "Subdomain must be at least 3 characters").max(50),
-  custom_domain: z.string().optional().default(""),
+  // Subdomain for the platform (e.g., "acme-corp" → acme-corp.genius365.app)
+  desired_subdomain: z
+    .string()
+    .min(3, "Subdomain must be at least 3 characters")
+    .max(50, "Subdomain must be 50 characters or less")
+    .regex(
+      /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]{1,2}$/,
+      "Subdomain must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)"
+    ),
+  // Custom domain is now OPTIONAL - configured during onboarding after approval
+  custom_domain: z.string().optional().nullable(),
   selected_plan: z.enum(["starter", "professional", "enterprise"]).default("starter"),
   expected_users: z.number().optional(),
   branding_data: z

@@ -10,6 +10,9 @@ import {
   Text,
 } from "@react-email/components"
 
+// Platform domain for email templates
+const PLATFORM_DOMAIN = process.env.NEXT_PUBLIC_PLATFORM_DOMAIN || "genius365.app"
+
 interface PartnerRequestNotificationEmailProps {
   companyName: string
   contactName: string
@@ -49,12 +52,12 @@ export function PartnerRequestNotificationEmail({
             <Text style={infoLabel}>Email:</Text>
             <Text style={infoValue}>{contactEmail}</Text>
 
-            <Text style={infoLabel}>Desired Subdomain:</Text>
-            <Text style={infoValue}>{desiredSubdomain}</Text>
+            <Text style={infoLabel}>Platform URL:</Text>
+            <Text style={infoValueHighlight}>{desiredSubdomain}.{PLATFORM_DOMAIN}</Text>
 
             {customDomain && (
               <>
-                <Text style={infoLabel}>Custom Domain:</Text>
+                <Text style={infoLabel}>Custom Domain (optional):</Text>
                 <Text style={infoValue}>{customDomain}</Text>
               </>
             )}
@@ -121,6 +124,15 @@ const infoValue = {
   fontSize: "16px",
   marginTop: "0",
   marginBottom: "0",
+}
+
+const infoValueHighlight = {
+  color: "#7c3aed",
+  fontSize: "16px",
+  fontWeight: "600" as const,
+  marginTop: "0",
+  marginBottom: "0",
+  fontFamily: "monospace",
 }
 
 const buttonContainer = {
