@@ -113,6 +113,9 @@ export async function exportCallsToPDF(options: ExportCallsOptions): Promise<voi
     // Prepare table data
     const tableData = options.calls.map((call) => {
       const callType = getCallTypeLabel(call)
+      const sentiment = call.sentiment
+        ? call.sentiment.charAt(0).toUpperCase() + call.sentiment.slice(1)
+        : "N/A"
       return [
         call.caller_name || "Unknown",
         call.phone_number || "N/A",
@@ -121,6 +124,7 @@ export async function exportCallsToPDF(options: ExportCallsOptions): Promise<voi
         call.status.replace(/_/g, " ").toUpperCase(),
         formatDuration(call.duration_seconds),
         `$${(call.total_cost || 0).toFixed(2)}`,
+        sentiment,
         formatDate(call.started_at || call.created_at),
         call.transcript ? "Yes" : "No",
       ]
@@ -137,6 +141,7 @@ export async function exportCallsToPDF(options: ExportCallsOptions): Promise<voi
           "Status",
           "Duration",
           "Cost",
+          "Sentiment",
           "Date/Time",
           "Transcript",
         ],
@@ -167,8 +172,9 @@ export async function exportCallsToPDF(options: ExportCallsOptions): Promise<voi
         4: { maxWidth: 18 }, // Status
         5: { maxWidth: 15 }, // Duration
         6: { maxWidth: 12 }, // Cost
-        7: { maxWidth: 25 }, // Date/Time
-        8: { maxWidth: 12 }, // Transcript
+        7: { maxWidth: 15 }, // Sentiment
+        8: { maxWidth: 25 }, // Date/Time
+        9: { maxWidth: 12 }, // Transcript
       },
       didDrawPage: (data: any) => {
         // Footer
@@ -202,9 +208,12 @@ export function exportCallsToCSV(options: ExportCallsOptions): void {
     throw new Error("No calls to export")
   }
 
-  const headers = ["Caller", "Phone", "Agent", "Type", "Status", "Duration", "Cost", "Date/Time", "Transcript"]
+  const headers = ["Caller", "Phone", "Agent", "Type", "Status", "Duration", "Cost", "Sentiment", "Date/Time", "Transcript"]
   const rows = options.calls.map((call) => {
     const callType = getCallTypeLabel(call)
+    const sentiment = call.sentiment
+      ? call.sentiment.charAt(0).toUpperCase() + call.sentiment.slice(1)
+      : "N/A"
     return [
       call.caller_name || "Unknown",
       call.phone_number || "N/A",
@@ -213,6 +222,7 @@ export function exportCallsToCSV(options: ExportCallsOptions): void {
       call.status.replace(/_/g, " "),
       formatDuration(call.duration_seconds),
       `$${(call.total_cost || 0).toFixed(2)}`,
+      sentiment,
       formatDate(call.started_at || call.created_at),
       call.transcript ? "Yes" : "No",
     ]

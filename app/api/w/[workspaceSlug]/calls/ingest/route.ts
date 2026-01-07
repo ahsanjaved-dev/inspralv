@@ -11,6 +11,7 @@ import {
   pollVapiCallUntilReady,
   mapVapiCallToConversation,
 } from "@/lib/integrations/vapi/calls"
+import { fetchCallSentiment } from "@/lib/integrations/sentiment"
 import { indexCallLogToAlgolia } from "@/lib/algolia/call-logs"
 import type { AIAgent, IntegrationApiKeys } from "@/types/database.types"
 
@@ -137,6 +138,31 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         ctx.workspace.id,
         agent_id
       )
+    }
+
+    // Fetch sentiment analysis from provider (async, don't block response)
+    const sentimentResult = await fetchCallSentiment(call_id, provider as "retell" | "vapi", apiKey).catch(
+      (err) => {
+        console.error("[CallIngest] Failed to fetch sentiment:", err)
+        return null
+      }
+    )
+
+    if (sentimentResult) {
+      conversationData.sentiment = sentimentResult.sentiment
+      // Store raw sentiment and score for analytics
+      conversationData.metadata = {
+        ...(conversationData.metadata || {}),
+        sentiment_score: sentimentResult.score,
+        raw_sentiment: sentimentResult.raw_sentiment,
+        sentiment_summary: sentimentResult.summary,
+      }
+
+      console.log("[CallIngest] Sentiment extracted:", {
+        call_id,
+        sentiment: sentimentResult.sentiment,
+        score: sentimentResult.score,
+      })
     }
 
     // If a conversation already exists but transcript is missing, update it (idempotent backfill).
