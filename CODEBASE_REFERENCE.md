@@ -914,6 +914,16 @@ Retell requires creating an LLM first, then an Agent:
 // 2. deleteRetellLLM()
 ```
 
+### Retell Call Logs (No Webhooks)
+
+Retell call logs are ingested **without webhooks**: when a web test call ends, the frontend sends the `call_id` to `POST /api/w/[workspaceSlug]/calls/ingest`, which polls Retell’s `GET /v2/get-call/{call_id}` until the call is ended (and data is ready), maps the response into a row in `public.conversations` (duration, total_cost, transcript, status, timestamps, metadata including `call_type`), and then indexes the saved record into Algolia for fast search. The Calls page reads from `GET /api/w/[workspaceSlug]/calls`, which uses Algolia when a `search` query is present (falling back to Postgres substring search if Algolia isn’t configured or has no hits yet). Algolia configuration is stored **per workspace** in `workspace_integrations` (provider=`algolia`), and Retell API keys are stored per workspace in `workspace_integrations` (provider=`retell`).
+
+Note: web test call client logic is implemented per-provider (isolated) in `lib/hooks/use-web-call/retell.ts` and `lib/hooks/use-web-call/vapi.ts` (there is intentionally no shared `use-web-calls.ts` router hook), so provider-specific event handling and call-id validation do not impact each other.
+
+### Vapi Call Logs (No Webhooks)
+
+Vapi call logs are also ingested **without webhooks**: when a Vapi web test call ends, the frontend captures the **real** Vapi `call_id` from the Vapi Web SDK (the test-call API returns a placeholder ID for UI only) and sends it to `POST /api/w/[workspaceSlug]/calls/ingest`. The backend polls Vapi’s call API (`GET /call/{id}`) until the call is ended and artifacts (duration/transcript/cost) are available, maps the response into `public.conversations`, and indexes the saved record into Algolia for fast search. The Calls page uses the same `GET /api/w/[workspaceSlug]/calls` endpoint with Algolia-first search and Postgres fallback. Vapi API keys are stored per workspace in `workspace_integrations` (provider=`vapi`), and Vapi web calling/ingestion trigger logic lives in `lib/hooks/use-web-call/vapi.ts`.
+
 ### Resilience Patterns
 
 ```typescript

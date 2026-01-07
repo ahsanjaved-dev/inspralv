@@ -3,6 +3,7 @@ import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, forbidden, notFound, serverError } from "@/lib/api/helpers"
 import { updateWorkspaceIntegrationSchema } from "@/types/database.types"
 import { createAuditLog, getRequestMetadata } from "@/lib/audit"
+import { clearAlgoliaCache } from "@/lib/algolia/client"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string; provider: string }>
@@ -96,7 +97,18 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       (key: any) => isValidKeyValue(key.secret_key)
     )
 
-    // Return safe version with masked keys for display
+    // Return safe version with masked keys for display.
+    // IMPORTANT: do not leak secrets via config (Algolia stores keys in config).
+    const safeConfig =
+      provider === "algolia"
+        ? {
+            app_id: (integration.config as any)?.app_id,
+            call_logs_index: (integration.config as any)?.call_logs_index,
+            has_admin_api_key: !!(integration.config as any)?.admin_api_key,
+            has_search_api_key: !!(integration.config as any)?.search_api_key,
+          }
+        : integration.config
+
     const safeIntegration = {
       id: integration.id,
       workspace_id: integration.workspace_id,
@@ -111,7 +123,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
         has_public_key: isValidKeyValue(key.public_key),
       })),
       is_active: integration.is_active,
-      config: integration.config,
+      config: safeConfig,
       created_at: integration.created_at,
       updated_at: integration.updated_at,
     }
@@ -217,6 +229,11 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       return apiError("Failed to update integration")
     }
 
+    // Clear Algolia cache if this was the Algolia integration (config may have changed)
+    if (provider === "algolia" && validation.data.config) {
+      clearAlgoliaCache(ctx.workspace.id)
+    }
+
     // Audit log
     const { ipAddress, userAgent } = getRequestMetadata(request)
     await createAuditLog({
@@ -282,6 +299,11 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     if (error) {
       console.error("Delete integration error:", error)
       return apiError("Failed to disconnect integration")
+    }
+
+    // Clear Algolia cache if this was the Algolia integration
+    if (provider === "algolia") {
+      clearAlgoliaCache(ctx.workspace.id)
     }
 
     // Audit log

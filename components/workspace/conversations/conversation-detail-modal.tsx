@@ -17,7 +17,6 @@ import {
   Bot,
   User,
   DollarSign,
-  PlayCircle,
   FileText,
   ThumbsUp,
   ThumbsDown,
@@ -116,22 +115,6 @@ export function ConversationDetailModal({ conversation, open, onClose }: Props) 
                 <p className="text-xs text-muted-foreground">Sentiment</p>
               </div>
             </div>
-
-            {/* Recording */}
-            {conversation.recording_url && (
-              <>
-                <Separator />
-                <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <PlayCircle className="h-4 w-4" />
-                    Recording
-                  </h4>
-                  <audio controls className="w-full" src={conversation.recording_url}>
-                    Your browser does not support audio playback.
-                  </audio>
-                </div>
-              </>
-            )}
 
             {/* Summary */}
             {conversation.summary && (

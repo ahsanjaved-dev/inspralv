@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useWorkspaceIntegrations } from "@/lib/hooks/use-workspace-integrations"
 import { ConnectIntegrationDialog } from "@/components/workspace/integrations/connect-integartion-dialog"
+import { ConnectAlgoliaDialog } from "@/components/workspace/integrations/connect-algolia-dialog"
 import { Plug, Loader2, Check, Plus } from "lucide-react"
 
 interface AvailableIntegration {
@@ -32,6 +33,13 @@ const availableIntegrations: AvailableIntegration[] = [
     icon: "🤖",
     category: "Voice AI",
   },
+  {
+    id: "algolia",
+    name: "Algolia",
+    description: "Fast, reliable search for your call logs and transcripts",
+    icon: "🔍",
+    category: "Search",
+  },
 ]
 
 export default function WorkspaceIntegrationsPage() {
@@ -48,11 +56,28 @@ export default function WorkspaceIntegrationsPage() {
     isManageMode: false,
   })
 
+  const [algoliaDialogState, setAlgoliaDialogState] = useState<{
+    open: boolean
+    isManageMode: boolean
+  }>({
+    open: false,
+    isManageMode: false,
+  })
+
   const { data: connectedIntegrations, isLoading, error } = useWorkspaceIntegrations()
 
   const connectedProviders = new Set(connectedIntegrations?.map((i) => i.provider) || [])
 
   const handleOpenDialog = (integration: AvailableIntegration, isManageMode: boolean) => {
+    // Use special dialog for Algolia
+    if (integration.id === "algolia") {
+      setAlgoliaDialogState({
+        open: true,
+        isManageMode,
+      })
+      return
+    }
+
     setDialogState({
       open: true,
       integration,
@@ -182,6 +207,17 @@ export default function WorkspaceIntegrationsPage() {
         }}
         integration={dialogState.integration}
         isManageMode={dialogState.isManageMode}
+      />
+
+      {/* Algolia Connect/Manage Dialog */}
+      <ConnectAlgoliaDialog
+        open={algoliaDialogState.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAlgoliaDialogState({ open: false, isManageMode: false })
+          }
+        }}
+        isManageMode={algoliaDialogState.isManageMode}
       />
     </div>
   )

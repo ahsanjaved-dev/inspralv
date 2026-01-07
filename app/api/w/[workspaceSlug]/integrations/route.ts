@@ -30,8 +30,19 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       return apiError("Failed to fetch integrations")
     }
 
-    // Return safe version without exposing full API keys
-    const safeIntegrations = (integrations || []).map((integration: any) => ({
+    // Return safe version without exposing full API keys or secrets in config
+    const safeIntegrations = (integrations || []).map((integration: any) => {
+      const isAlgolia = integration.provider === "algolia"
+      const safeConfig = isAlgolia
+        ? {
+            app_id: integration.config?.app_id,
+            call_logs_index: integration.config?.call_logs_index,
+            has_admin_api_key: !!integration.config?.admin_api_key,
+            has_search_api_key: !!integration.config?.search_api_key,
+          }
+        : integration.config
+
+      return {
       id: integration.id,
       workspace_id: integration.workspace_id,
       provider: integration.provider,
@@ -39,10 +50,11 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       has_public_key: !!integration.api_keys?.default_public_key,
       additional_keys_count: integration.api_keys?.additional_keys?.length || 0,
       is_active: integration.is_active,
-      config: integration.config,
+      config: safeConfig,
       created_at: integration.created_at,
       updated_at: integration.updated_at,
-    }))
+      }
+    })
 
     return apiResponse({ data: safeIntegrations })
   } catch (error) {

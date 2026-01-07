@@ -2143,12 +2143,39 @@ export const createWorkspaceIntegrationSchema = z.object({
     "salesforce",
     "zapier",
     "slack",
+    "algolia",
   ] as const),
   name: z.string().min(1, "Connection name is required").max(255),
   default_secret_key: z.string().min(1, "Default secret API key is required"),
   default_public_key: z.string().optional(),
   additional_keys: z.array(additionalApiKeySchema).optional().default([]),
   config: z.record(z.string(), z.unknown()).optional(),
+})
+
+// ============================================================================
+// ALGOLIA INTEGRATION CONFIG
+// ============================================================================
+
+/**
+ * Configuration for Algolia workspace integration
+ * Stored in workspace_integrations.config for provider="algolia"
+ */
+export interface AlgoliaIntegrationConfig {
+  /** Algolia Application ID */
+  app_id: string
+  /** Algolia Admin API Key (for indexing - server-side only) */
+  admin_api_key: string
+  /** Algolia Search API Key (for querying - can be exposed to client) */
+  search_api_key: string
+  /** Index name for call logs */
+  call_logs_index?: string
+}
+
+export const algoliaIntegrationConfigSchema = z.object({
+  app_id: z.string().min(1, "Algolia App ID is required"),
+  admin_api_key: z.string().min(1, "Algolia Admin API Key is required"),
+  search_api_key: z.string().min(1, "Algolia Search API Key is required"),
+  call_logs_index: z.string().optional(),
 })
 
 export const updateWorkspaceIntegrationSchema = z.object({

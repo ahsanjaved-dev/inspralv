@@ -1,0 +1,77 @@
+import { NextRequest } from "next/server"
+import { apiError } from "@/lib/api/helpers"
+
+// NOTE:
+// Some Next.js builds (observed in this repo) are not registering nested static
+// route handler segments under a dynamic `[id]` API segment (e.g. `/agents/:id/test-call`).
+// This catch-all route explicitly dispatches to the existing handler modules so
+// the endpoints remain available.
+
+import { POST as testCallPOST } from "../test-call/route"
+import { POST as outboundCallPOST } from "../outbound-call/route"
+import { GET as sipInfoGET } from "../sip-info/route"
+import {
+  GET as phoneNumberGET,
+  POST as phoneNumberPOST,
+  DELETE as phoneNumberDELETE,
+} from "../phone-number/route"
+import { POST as assignSipNumberPOST } from "../assign-sip-number/route"
+
+interface RouteContext {
+  params: Promise<{ workspaceSlug: string; id: string; path: string[] }>
+}
+
+function makeCtx(workspaceSlug: string, id: string) {
+  return { params: Promise.resolve({ workspaceSlug, id }) } as any
+}
+
+export async function GET(request: NextRequest, { params }: RouteContext) {
+  const { workspaceSlug, id, path } = await params
+  const segment = path?.[0]
+
+  if (segment === "sip-info") {
+    return sipInfoGET(request, makeCtx(workspaceSlug, id))
+  }
+
+  if (segment === "phone-number") {
+    return phoneNumberGET(request, makeCtx(workspaceSlug, id))
+  }
+
+  return apiError("Not found", 404)
+}
+
+export async function POST(request: NextRequest, { params }: RouteContext) {
+  const { workspaceSlug, id, path } = await params
+  const segment = path?.[0]
+
+  if (segment === "test-call") {
+    return testCallPOST(request, makeCtx(workspaceSlug, id))
+  }
+
+  if (segment === "outbound-call") {
+    return outboundCallPOST(request, makeCtx(workspaceSlug, id))
+  }
+
+  if (segment === "phone-number") {
+    return phoneNumberPOST(request, makeCtx(workspaceSlug, id))
+  }
+
+  if (segment === "assign-sip-number") {
+    return assignSipNumberPOST(request, makeCtx(workspaceSlug, id))
+  }
+
+  return apiError("Not found", 404)
+}
+
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
+  const { workspaceSlug, id, path } = await params
+  const segment = path?.[0]
+
+  if (segment === "phone-number") {
+    return phoneNumberDELETE(request, makeCtx(workspaceSlug, id))
+  }
+
+  return apiError("Not found", 404)
+}
+
+

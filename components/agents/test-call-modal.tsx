@@ -18,7 +18,8 @@ import {
   CheckCircle2,
   PhoneCall
 } from "lucide-react"
-import { useWebCall, type CallStatus } from "@/lib/hooks/use-web-calls"
+import { useVapiWebCall } from "@/lib/hooks/use-web-call/vapi"
+import { useRetellWebCall } from "@/lib/hooks/use-web-call/retell"
 import type { AIAgent } from "@/types/database.types"
 
 interface TestCallModalProps {
@@ -33,6 +34,8 @@ function formatDuration(seconds: number): string {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
 }
 
+type CallStatus = "idle" | "connecting" | "connected" | "ended" | "ingesting" | "error"
+
 function getStatusInfo(status: CallStatus) {
   switch (status) {
     case "idle":
@@ -41,6 +44,8 @@ function getStatusInfo(status: CallStatus) {
       return { icon: Loader2, text: "Connecting...", color: "text-yellow-500", animate: true }
     case "connected":
       return { icon: PhoneCall, text: "Connected", color: "text-green-500" }
+    case "ingesting":
+      return { icon: Loader2, text: "Saving call data...", color: "text-blue-500", animate: true }
     case "ended":
       return { icon: CheckCircle2, text: "Call ended", color: "text-blue-500" }
     case "error":
@@ -51,15 +56,116 @@ function getStatusInfo(status: CallStatus) {
 }
 
 export function TestCallModal({ agent, open, onOpenChange }: TestCallModalProps) {
+  if (agent.provider === "retell") {
+    return <RetellTestCallModal agent={agent} open={open} onOpenChange={onOpenChange} />
+  }
+  if (agent.provider === "vapi") {
+    return <VapiTestCallModal agent={agent} open={open} onOpenChange={onOpenChange} />
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Phone className="w-5 h-5" />
+            Test Call
+          </DialogTitle>
+          <DialogDescription>
+            Provider <span className="font-medium">{agent.provider}</span> is not supported for test calls.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function VapiTestCallModal({ agent, open, onOpenChange }: TestCallModalProps) {
   const { 
     status, 
     error, 
     duration, 
     provider,
+    ingestionStatus,
     startCall, 
     endCall, 
     reset,
-  } = useWebCall()
+  } = useVapiWebCall()
+
+  return (
+    <TestCallModalView
+      agent={agent}
+      open={open}
+      onOpenChange={onOpenChange}
+      status={status}
+      error={error}
+      duration={duration}
+      provider={provider}
+      ingestionStatus={ingestionStatus}
+      startCall={startCall}
+      endCall={endCall}
+      reset={reset}
+    />
+  )
+}
+
+function RetellTestCallModal({ agent, open, onOpenChange }: TestCallModalProps) {
+  const {
+    status,
+    error,
+    duration,
+    provider,
+    ingestionStatus,
+    startCall,
+    endCall,
+    reset,
+  } = useRetellWebCall()
+
+  return (
+    <TestCallModalView
+      agent={agent}
+      open={open}
+      onOpenChange={onOpenChange}
+      status={status}
+      error={error}
+      duration={duration}
+      provider={provider}
+      ingestionStatus={ingestionStatus}
+      startCall={startCall}
+      endCall={endCall}
+      reset={reset}
+    />
+  )
+}
+
+function TestCallModalView(params: TestCallModalProps & {
+  status: CallStatus
+  error: string | null
+  duration: number
+  provider: string | null
+  ingestionStatus: "pending" | "success" | "failed" | null
+  startCall: (agentId: string) => void | Promise<void>
+  endCall: () => void
+  reset: () => void
+}) {
+  const {
+    agent,
+    open,
+    onOpenChange,
+    status,
+    error,
+    duration,
+    provider,
+    ingestionStatus,
+    startCall,
+    endCall,
+    reset,
+  } = params
 
   // Track if we've already initiated a call for this modal open
   const hasInitiatedRef = useRef(false)
@@ -163,6 +269,21 @@ export function TestCallModal({ agent, open, onOpenChange }: TestCallModalProps)
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Mic className="w-4 h-4 text-green-500" />
               <span>Microphone active - Speak to test the agent</span>
+            </div>
+          )}
+
+          {/* Ingestion Status */}
+          {status === "ended" && ingestionStatus && (
+            <div className={`text-sm ${
+              ingestionStatus === "success" 
+                ? "text-green-600" 
+                : ingestionStatus === "failed" 
+                ? "text-amber-600"
+                : "text-muted-foreground"
+            }`}>
+              {ingestionStatus === "success" && "✓ Call data saved successfully"}
+              {ingestionStatus === "failed" && "⚠ Call data could not be saved"}
+              {ingestionStatus === "pending" && "Saving call data..."}
             </div>
           )}
         </div>
