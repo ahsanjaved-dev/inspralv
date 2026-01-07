@@ -27,19 +27,14 @@ interface StepReviewProps {
   goToStep: (step: number) => void
 }
 
-export function StepReview({
-  formData,
-  updateFormData,
-  errors,
-  goToStep,
-}: StepReviewProps) {
+export function StepReview({ formData, updateFormData, errors, goToStep }: StepReviewProps) {
   const warnings: string[] = []
 
   // Check for potential issues
   if (formData.recipients.length === 0) {
     warnings.push("No recipients imported - you'll need to add them after creation")
   }
-  
+
   if (!formData.selectedAgent?.external_phone_number) {
     warnings.push("Selected agent doesn't have a phone number assigned")
   }
@@ -65,7 +60,7 @@ export function StepReview({
           const startM = startParts[1] ? Number(startParts[1]) : 0
           const endH = endParts[0] ? Number(endParts[0]) : 0
           const endM = endParts[1] ? Number(endParts[1]) : 0
-          return acc + ((endH + endM / 60) - (startH + startM / 60))
+          return acc + (endH + endM / 60 - (startH + startM / 60))
         }, 0)
       )
     },
@@ -185,7 +180,7 @@ export function StepReview({
               </div>
             )}
           </div>
-          
+
           {formData.variableMappings.length > 0 && (
             <div className="mt-4 pt-4 border-t">
               <p className="text-sm text-muted-foreground mb-2">Custom Variables:</p>
@@ -201,33 +196,7 @@ export function StepReview({
         </CardContent>
       </Card>
 
-      {/* Variable Mapping / Greeting */}
-      {formData.agentPromptOverrides && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Variable className="h-4 w-4" />
-              Custom Greeting
-            </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => goToStep(3)}>
-              <Edit2 className="h-4 w-4 mr-1" />
-              Edit
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="p-3 bg-muted/50 rounded-lg border">
-              <p className="text-sm italic">
-                "{formData.agentPromptOverrides.greeting_override}"
-              </p>
-            </div>
-            {formData.agentPromptOverrides.system_prompt_additions && (
-              <p className="text-xs text-muted-foreground mt-2">
-                + Additional context configured
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* Variable Mapping / Greeting - Removed as it's configured at agent level */}
 
       {/* Schedule */}
       <Card>
@@ -282,58 +251,6 @@ export function StepReview({
         </CardContent>
       </Card>
 
-      {/* Advanced Settings */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Settings2 className="h-4 w-4" />
-            Advanced Settings
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <Label className="text-xs text-muted-foreground">Concurrent Calls</Label>
-              <Input
-                type="number"
-                min={1}
-                max={10}
-                value={formData.concurrencyLimit}
-                onChange={(e) =>
-                  updateFormData("concurrencyLimit", parseInt(e.target.value) || 1)
-                }
-                className="h-9 mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Max Retry Attempts</Label>
-              <Input
-                type="number"
-                min={1}
-                max={5}
-                value={formData.maxAttempts}
-                onChange={(e) =>
-                  updateFormData("maxAttempts", parseInt(e.target.value) || 3)
-                }
-                className="h-9 mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Retry Delay (min)</Label>
-              <Input
-                type="number"
-                min={5}
-                value={formData.retryDelayMinutes}
-                onChange={(e) =>
-                  updateFormData("retryDelayMinutes", parseInt(e.target.value) || 30)
-                }
-                className="h-9 mt-1"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Ready to Create */}
       <div className="flex items-center justify-center p-6 bg-green-50 dark:bg-green-950 rounded-lg">
         <div className="text-center">
@@ -351,4 +268,3 @@ export function StepReview({
     </div>
   )
 }
-

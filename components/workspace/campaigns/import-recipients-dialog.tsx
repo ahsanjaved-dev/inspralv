@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import {
   Dialog,
   DialogContent,
@@ -10,8 +10,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { useImportRecipients } from "@/lib/hooks/use-campaigns"
-import { Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, Download } from "lucide-react"
+import {
+  Upload,
+  FileSpreadsheet,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  Download,
+  AlertTriangle,
+  Info,
+} from "lucide-react"
 import { toast } from "sonner"
 import type { CreateRecipientInput } from "@/types/database.types"
 
@@ -26,6 +36,22 @@ interface ParsedRecipient extends CreateRecipientInput {
   _error?: string
 }
 
+interface FieldStats {
+  fieldName: string
+  displayName: string
+  total: number
+  filled: number
+  missing: number
+  completeness: number
+}
+
+interface DataQualityReport {
+  totalRecords: number
+  fieldStats: FieldStats[]
+  recordsWithMissingData: number
+  overallCompleteness: number
+}
+
 export function ImportRecipientsDialog({
   campaignId,
   open,
@@ -35,7 +61,9 @@ export function ImportRecipientsDialog({
   const [parsedData, setParsedData] = useState<ParsedRecipient[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
   const [step, setStep] = useState<"upload" | "preview" | "importing" | "complete">("upload")
-  const [importResult, setImportResult] = useState<{ imported: number; duplicates: number } | null>(null)
+  const [importResult, setImportResult] = useState<{ imported: number; duplicates: number } | null>(
+    null
+  )
 
   const importMutation = useImportRecipients()
 
@@ -52,37 +80,85 @@ export function ImportRecipientsDialog({
     onOpenChange(false)
   }
 
+  // Analyze data quality
+  const dataQualityReport = useMemo((): DataQualityReport | null => {
+    if (parsedData.length === 0) return null
+
+    const fields = [
+      { fieldName: "phone_number", displayName: "Phone" },
+      { fieldName: "first_name", displayName: "First Name" },
+      { fieldName: "last_name", displayName: "Last Name" },
+      { fieldName: "email", displayName: "Email" },
+      { fieldName: "company", displayName: "Company" },
+    ]
+
+    const fieldStats: FieldStats[] = fields.map((field) => {
+      const filled = parsedData.filter((r) => {
+        const value = r[field.fieldName as keyof ParsedRecipient]
+        return value !== null && value !== undefined && String(value).trim() !== ""
+      }).length
+      const missing = parsedData.length - filled
+      const completeness = (filled / parsedData.length) * 100
+
+      return {
+        fieldName: field.fieldName,
+        displayName: field.displayName,
+        total: parsedData.length,
+        filled,
+        missing,
+        completeness,
+      }
+    })
+
+    const recordsWithMissingData = parsedData.filter((r) => {
+      return !r.first_name?.trim() || !r.last_name?.trim() || !r.email?.trim() || !r.company?.trim()
+    }).length
+
+    const optionalFields = fieldStats.filter((f) => f.fieldName !== "phone_number")
+    const overallCompleteness =
+      optionalFields.reduce((sum, f) => sum + f.completeness, 0) / optionalFields.length
+
+    return {
+      totalRecords: parsedData.length,
+      fieldStats,
+      recordsWithMissingData,
+      overallCompleteness,
+    }
+  }, [parsedData])
+
   const parseCSV = useCallback((text: string): ParsedRecipient[] => {
-    const lines = text.split(/\r?\n/).filter(line => line.trim())
+    const lines = text.split(/\r?\n/).filter((line) => line.trim())
     if (lines.length < 2) {
       throw new Error("CSV must have a header row and at least one data row")
     }
 
-    // Parse header - safe to access [0] since we checked length >= 2
     const headerLine = lines[0]!
-    const header = headerLine.split(",").map(h => h.trim().toLowerCase().replace(/['"]/g, ""))
-    const phoneIndex = header.findIndex(h => 
-      h === "phone_number" || h === "phone" || h === "phonenumber" || h === "mobile"
+    const header = headerLine.split(",").map((h) => h.trim().toLowerCase().replace(/['"]/g, ""))
+    const phoneIndex = header.findIndex(
+      (h) => h === "phone_number" || h === "phone" || h === "phonenumber" || h === "mobile"
     )
-    
+
     if (phoneIndex === -1) {
       throw new Error("CSV must have a 'phone_number' or 'phone' column")
     }
 
-    const firstNameIndex = header.findIndex(h => h === "first_name" || h === "firstname" || h === "first")
-    const lastNameIndex = header.findIndex(h => h === "last_name" || h === "lastname" || h === "last")
-    const emailIndex = header.findIndex(h => h === "email")
-    const companyIndex = header.findIndex(h => h === "company")
+    const firstNameIndex = header.findIndex(
+      (h) => h === "first_name" || h === "firstname" || h === "first"
+    )
+    const lastNameIndex = header.findIndex(
+      (h) => h === "last_name" || h === "lastname" || h === "last"
+    )
+    const emailIndex = header.findIndex((h) => h === "email")
+    const companyIndex = header.findIndex((h) => h === "company")
 
-    // Parse data rows
     const recipients: ParsedRecipient[] = []
-    
+
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i]
       if (!line) continue
       const values = parseCSVLine(line)
       const phone = values[phoneIndex]?.trim()
-      
+
       if (!phone) continue
 
       const recipient: ParsedRecipient = {
@@ -95,7 +171,6 @@ export function ImportRecipientsDialog({
         _row: i + 1,
       }
 
-      // Add any extra columns as custom variables
       header.forEach((col, idx) => {
         if (
           idx !== phoneIndex &&
@@ -115,7 +190,6 @@ export function ImportRecipientsDialog({
     return recipients
   }, [])
 
-  // Helper to parse CSV line (handles quoted values)
   const parseCSVLine = (line: string): string[] => {
     const result: string[] = []
     let current = ""
@@ -123,7 +197,7 @@ export function ImportRecipientsDialog({
 
     for (let i = 0; i < line.length; i++) {
       const char = line[i]
-      
+
       if (char === '"') {
         inQuotes = !inQuotes
       } else if (char === "," && !inQuotes) {
@@ -134,7 +208,7 @@ export function ImportRecipientsDialog({
       }
     }
     result.push(current.replace(/^"|"$/g, ""))
-    
+
     return result
   }
 
@@ -153,7 +227,7 @@ export function ImportRecipientsDialog({
     try {
       const text = await selectedFile.text()
       const parsed = parseCSV(text)
-      
+
       if (parsed.length === 0) {
         throw new Error("No valid recipients found in the file")
       }
@@ -176,9 +250,8 @@ export function ImportRecipientsDialog({
     setStep("importing")
 
     try {
-      // Remove internal fields before sending
       const recipients = parsedData.map(({ _row, _error, ...rest }) => rest)
-      
+
       const result = await importMutation.mutateAsync({
         campaignId,
         recipients,
@@ -197,7 +270,8 @@ export function ImportRecipientsDialog({
   }
 
   const downloadTemplate = () => {
-    const template = "phone_number,first_name,last_name,email,company\n+14155551234,John,Doe,john@example.com,Acme Inc\n+14155555678,Jane,Smith,jane@example.com,Tech Corp"
+    const template =
+      "phone_number,first_name,last_name,email,company\n+14155551234,John,Doe,john@example.com,Acme Inc\n+14155555678,Jane,Smith,jane@example.com,Tech Corp"
     const blob = new Blob([template], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -207,9 +281,19 @@ export function ImportRecipientsDialog({
     URL.revokeObjectURL(url)
   }
 
+  const getCompletenessColor = (percentage: number) => {
+    if (percentage >= 80) return "text-green-600 dark:text-green-400"
+    if (percentage >= 50) return "text-yellow-600 dark:text-yellow-400"
+    return "text-red-600 dark:text-red-400"
+  }
+
+  const isFieldEmpty = (value: any) => {
+    return value === null || value === undefined || String(value).trim() === ""
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5" />
@@ -222,7 +306,7 @@ export function ImportRecipientsDialog({
 
         {step === "upload" && (
           <div className="space-y-4">
-            <div 
+            <div
               className="border-2 border-dashed rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer"
               onClick={() => document.getElementById("csv-upload")?.click()}
             >
@@ -248,9 +332,18 @@ export function ImportRecipientsDialog({
             <div className="bg-muted/50 rounded-lg p-4">
               <p className="text-sm font-medium mb-2">Required columns:</p>
               <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• <code className="bg-muted px-1 rounded">phone_number</code> or <code className="bg-muted px-1 rounded">phone</code> (required)</li>
-                <li>• <code className="bg-muted px-1 rounded">first_name</code>, <code className="bg-muted px-1 rounded">last_name</code> (optional)</li>
-                <li>• <code className="bg-muted px-1 rounded">email</code>, <code className="bg-muted px-1 rounded">company</code> (optional)</li>
+                <li>
+                  • <code className="bg-muted px-1 rounded">phone_number</code> or{" "}
+                  <code className="bg-muted px-1 rounded">phone</code> (required)
+                </li>
+                <li>
+                  • <code className="bg-muted px-1 rounded">first_name</code>,{" "}
+                  <code className="bg-muted px-1 rounded">last_name</code> (optional)
+                </li>
+                <li>
+                  • <code className="bg-muted px-1 rounded">email</code>,{" "}
+                  <code className="bg-muted px-1 rounded">company</code> (optional)
+                </li>
                 <li>• Any additional columns will be saved as custom variables</li>
               </ul>
               <Button variant="link" size="sm" className="px-0 mt-2" onClick={downloadTemplate}>
@@ -261,8 +354,9 @@ export function ImportRecipientsDialog({
           </div>
         )}
 
-        {step === "preview" && (
+        {step === "preview" && dataQualityReport && (
           <div className="space-y-4">
+            {/* Success Banner */}
             <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-lg">
               <CheckCircle2 className="h-5 w-5 shrink-0" />
               <p className="text-sm">
@@ -270,30 +364,129 @@ export function ImportRecipientsDialog({
               </p>
             </div>
 
-            <div className="border rounded-lg max-h-64 overflow-auto">
+            {/* Data Quality Summary - Simple Version */}
+            {dataQualityReport.recordsWithMissingData > 0 && (
+              <div className="border rounded-lg p-4 bg-muted/30">
+                <div className="flex items-start gap-3">
+                  <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                  <div className="flex-1 space-y-3">
+                    <div>
+                      <h4 className="font-medium text-sm mb-1">Data Quality Report</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {dataQualityReport.recordsWithMissingData} of{" "}
+                        {dataQualityReport.totalRecords} recipients (
+                        {Math.round(
+                          (dataQualityReport.recordsWithMissingData /
+                            dataQualityReport.totalRecords) *
+                            100
+                        )}
+                        %) have incomplete information
+                      </p>
+                    </div>
+
+                    {/* Field Completeness Stats - Simplified */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {dataQualityReport.fieldStats
+                        .filter((f) => f.fieldName !== "phone_number")
+                        .map((field) => (
+                          <div
+                            key={field.fieldName}
+                            className="flex items-center justify-between p-2 bg-background rounded border"
+                          >
+                            <span className="text-xs font-medium">{field.displayName}</span>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-xs font-bold ${getCompletenessColor(field.completeness)}`}
+                              >
+                                {Math.round(field.completeness)}%
+                              </span>
+                              {field.missing > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  {field.missing} missing
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Warning for low completeness */}
+                    {dataQualityReport.overallCompleteness < 70 && (
+                      <div className="flex items-start gap-2 p-2 bg-yellow-50 dark:bg-yellow-950/30 rounded text-yellow-800 dark:text-yellow-300">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <p className="text-xs">
+                          Low data completeness may limit personalization options in your campaign.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Preview Table */}
+            <div className="border rounded-lg max-h-80 overflow-auto">
               <table className="w-full text-sm">
-                <thead className="bg-muted sticky top-0">
+                <thead className="bg-muted sticky top-0 z-10">
                   <tr>
-                    <th className="px-3 py-2 text-left">Phone</th>
-                    <th className="px-3 py-2 text-left">Name</th>
-                    <th className="px-3 py-2 text-left">Email</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium">#</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium">Phone</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium">First Name</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium">Last Name</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium">Email</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium">Company</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {parsedData.slice(0, 50).map((r, i) => (
-                    <tr key={i} className="border-t">
+                  {parsedData.slice(0, 100).map((r, i) => (
+                    <tr key={i} className="border-t hover:bg-muted/50">
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{r._row}</td>
                       <td className="px-3 py-2 font-mono">{r.phone_number}</td>
-                      <td className="px-3 py-2">{[r.first_name, r.last_name].filter(Boolean).join(" ") || "—"}</td>
-                      <td className="px-3 py-2">{r.email || "—"}</td>
+                      <td
+                        className={`px-3 py-2 ${isFieldEmpty(r.first_name) ? "bg-yellow-50 dark:bg-yellow-950/20" : ""}`}
+                      >
+                        {r.first_name || (
+                          <span className="text-muted-foreground italic text-xs">Missing</span>
+                        )}
+                      </td>
+                      <td
+                        className={`px-3 py-2 ${isFieldEmpty(r.last_name) ? "bg-yellow-50 dark:bg-yellow-950/20" : ""}`}
+                      >
+                        {r.last_name || (
+                          <span className="text-muted-foreground italic text-xs">Missing</span>
+                        )}
+                      </td>
+                      <td
+                        className={`px-3 py-2 ${isFieldEmpty(r.email) ? "bg-yellow-50 dark:bg-yellow-950/20" : ""}`}
+                      >
+                        {r.email || (
+                          <span className="text-muted-foreground italic text-xs">Missing</span>
+                        )}
+                      </td>
+                      <td
+                        className={`px-3 py-2 ${isFieldEmpty(r.company) ? "bg-yellow-50 dark:bg-yellow-950/20" : ""}`}
+                      >
+                        {r.company || (
+                          <span className="text-muted-foreground italic text-xs">Missing</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {parsedData.length > 50 && (
+              {parsedData.length > 100 && (
                 <p className="text-center text-sm text-muted-foreground py-2 bg-muted">
-                  ...and {parsedData.length - 50} more
+                  ...and {parsedData.length - 100} more
                 </p>
               )}
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded"></div>
+                <span>Missing data</span>
+              </div>
             </div>
           </div>
         )}
@@ -321,7 +514,9 @@ export function ImportRecipientsDialog({
 
         <DialogFooter>
           {step === "upload" && (
-            <Button variant="outline" onClick={handleClose}>Cancel</Button>
+            <Button variant="outline" onClick={handleClose}>
+              Cancel
+            </Button>
           )}
           {step === "preview" && (
             <>
@@ -334,12 +529,9 @@ export function ImportRecipientsDialog({
               </Button>
             </>
           )}
-          {step === "complete" && (
-            <Button onClick={handleClose}>Done</Button>
-          )}
+          {step === "complete" && <Button onClick={handleClose}>Done</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
-

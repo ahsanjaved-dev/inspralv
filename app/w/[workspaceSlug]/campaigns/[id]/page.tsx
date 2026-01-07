@@ -31,7 +31,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { CampaignStatusBadge, CallStatusBadge, CallOutcomeBadge } from "@/components/workspace/campaigns/campaign-status-badge"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
+import {
+  CampaignStatusBadge,
+  CallStatusBadge,
+  CallOutcomeBadge,
+} from "@/components/workspace/campaigns/campaign-status-badge"
 import { ImportRecipientsDialog } from "@/components/workspace/campaigns/import-recipients-dialog"
 import { AddRecipientDialog } from "@/components/workspace/campaigns/add-recipient-dialog"
 import {
@@ -56,8 +69,6 @@ import {
   Phone,
   MoreVertical,
   RefreshCw,
-  ChevronLeft,
-  ChevronRight,
   Calendar,
   Variable,
   MessageSquare,
@@ -69,9 +80,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { formatDistanceToNow } from "date-fns"
 import { toast } from "sonner"
-import type { CallRecipient, RecipientCallStatus, BusinessHoursConfig, VariableMapping, AgentPromptOverrides } from "@/types/database.types"
+import type {
+  CallRecipient,
+  RecipientCallStatus,
+  BusinessHoursConfig,
+  VariableMapping,
+  AgentPromptOverrides,
+} from "@/types/database.types"
 
 const statusFilterOptions = [
   { value: "all", label: "All Status" },
@@ -82,6 +98,12 @@ const statusFilterOptions = [
   { value: "failed", label: "Failed" },
 ]
 
+const pageSizeOptions = [
+  { value: "25", label: "25" },
+  { value: "50", label: "50" },
+  { value: "100", label: "100" },
+]
+
 export default function CampaignDetailPage() {
   const router = useRouter()
   const params = useParams()
@@ -90,15 +112,21 @@ export default function CampaignDetailPage() {
 
   const [statusFilter, setStatusFilter] = useState<RecipientCallStatus | "all">("all")
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [importOpen, setImportOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<CallRecipient | null>(null)
 
-  const { data: campaignData, isLoading: campaignLoading, refetch: refetchCampaign } = useCampaign(campaignId)
-  const { data: recipientsData, isLoading: recipientsLoading, refetch: refetchRecipients } = useCampaignRecipients(
-    campaignId,
-    { status: statusFilter, page, pageSize: 50 }
-  )
+  const {
+    data: campaignData,
+    isLoading: campaignLoading,
+    refetch: refetchCampaign,
+  } = useCampaign(campaignId)
+  const {
+    data: recipientsData,
+    isLoading: recipientsLoading,
+    refetch: refetchRecipients,
+  } = useCampaignRecipients(campaignId, { status: statusFilter, page, pageSize })
   const updateMutation = useUpdateCampaign()
   const deleteRecipientMutation = useDeleteRecipient()
 
@@ -106,6 +134,56 @@ export default function CampaignDetailPage() {
   const recipients = recipientsData?.data || []
   const totalRecipients = recipientsData?.total || 0
   const totalPages = recipientsData?.totalPages || 1
+
+  // Generate page numbers for pagination
+  const getPageNumbers = () => {
+    const pages = []
+    const showPages = 5 // Number of page buttons to show
+
+    if (totalPages <= showPages) {
+      // Show all pages if total is less than showPages
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i)
+      }
+    } else {
+      // Always show first page
+      pages.push(1)
+
+      // Calculate range around current page
+      let start = Math.max(2, page - 1)
+      let end = Math.min(totalPages - 1, page + 1)
+
+      // Adjust if at the beginning
+      if (page <= 3) {
+        end = Math.min(4, totalPages - 1)
+      }
+
+      // Adjust if at the end
+      if (page >= totalPages - 2) {
+        start = Math.max(2, totalPages - 3)
+      }
+
+      // Add ellipsis after first page if needed
+      if (start > 2) {
+        pages.push(-1) // -1 represents ellipsis
+      }
+
+      // Add middle pages
+      for (let i = start; i <= end; i++) {
+        pages.push(i)
+      }
+
+      // Add ellipsis before last page if needed
+      if (end < totalPages - 1) {
+        pages.push(-2) // -2 represents ellipsis
+      }
+
+      // Always show last page
+      pages.push(totalPages)
+    }
+
+    return pages
+  }
 
   if (campaignLoading) {
     return (
@@ -126,11 +204,13 @@ export default function CampaignDetailPage() {
     )
   }
 
-  const progress = campaign.total_recipients > 0
-    ? Math.round((campaign.completed_calls / campaign.total_recipients) * 100)
-    : 0
+  const progress =
+    campaign.total_recipients > 0
+      ? Math.round((campaign.completed_calls / campaign.total_recipients) * 100)
+      : 0
 
-  const canStart = (campaign.status === "draft" || campaign.status === "paused") && campaign.total_recipients > 0
+  const canStart =
+    (campaign.status === "draft" || campaign.status === "paused") && campaign.total_recipients > 0
   const canPause = campaign.status === "active"
   const isEditable = campaign.status === "draft" || campaign.status === "paused"
 
@@ -164,12 +244,29 @@ export default function CampaignDetailPage() {
     return `${mins}:${secs.toString().padStart(2, "0")}`
   }
 
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage)
+    // Scroll to top of table when page changes
+    document
+      .querySelector("[data-recipients-table]")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  const handlePageSizeChange = (newPageSize: string) => {
+    setPageSize(Number(newPageSize))
+    setPage(1) // Reset to first page when changing page size
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push(`/w/${workspaceSlug}/campaigns`)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push(`/w/${workspaceSlug}/campaigns`)}
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -188,7 +285,14 @@ export default function CampaignDetailPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => { refetchCampaign(); refetchRecipients(); }}>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              refetchCampaign()
+              refetchRecipients()
+            }}
+          >
             <RefreshCw className="h-4 w-4" />
           </Button>
           {canPause && (
@@ -288,9 +392,10 @@ export default function CampaignDetailPage() {
                 )}
               </div>
             </div>
-            
+
             {/* Enhanced Business Hours Display */}
-            {campaign.business_hours_config && (campaign.business_hours_config as BusinessHoursConfig).enabled ? (
+            {campaign.business_hours_config &&
+            (campaign.business_hours_config as BusinessHoursConfig).enabled ? (
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Business Hours</span>
@@ -298,17 +403,28 @@ export default function CampaignDetailPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Timezone</span>
-                  <span className="text-sm">{(campaign.business_hours_config as BusinessHoursConfig).timezone}</span>
+                  <span className="text-sm">
+                    {(campaign.business_hours_config as BusinessHoursConfig).timezone}
+                  </span>
                 </div>
                 <div className="pt-2 border-t">
                   <p className="text-xs text-muted-foreground mb-2">Active Days:</p>
                   <div className="flex gap-1">
                     {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day, idx) => {
-                      const dayKey = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][idx]
-                      const schedule = (campaign.business_hours_config as BusinessHoursConfig)?.schedule
+                      const dayKey = [
+                        "monday",
+                        "tuesday",
+                        "wednesday",
+                        "thursday",
+                        "friday",
+                        "saturday",
+                        "sunday",
+                      ][idx]
+                      const schedule = (campaign.business_hours_config as BusinessHoursConfig)
+                        ?.schedule
                       const slots = schedule?.[dayKey as keyof typeof schedule] || []
                       const isActive = slots.length > 0
-                      
+
                       return (
                         <div
                           key={day}
@@ -317,7 +433,9 @@ export default function CampaignDetailPage() {
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted text-muted-foreground"
                           }`}
-                          title={isActive ? slots.map(s => `${s.start}-${s.end}`).join(", ") : "Off"}
+                          title={
+                            isActive ? slots.map((s) => `${s.start}-${s.end}`).join(", ") : "Off"
+                          }
                         >
                           {day}
                         </div>
@@ -357,52 +475,43 @@ export default function CampaignDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Concurrent Calls</span>
-              <span className="text-sm font-medium">{campaign.concurrency_limit}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Max Retries</span>
-              <span className="text-sm font-medium">{campaign.max_attempts}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Retry Delay</span>
-              <span className="text-sm font-medium">{campaign.retry_delay_minutes} min</span>
-            </div>
-            
             {/* Variable Mappings */}
-            {campaign.variable_mappings && (campaign.variable_mappings as VariableMapping[]).length > 0 && (
-              <div className="pt-3 border-t">
-                <div className="flex items-center gap-2 mb-2">
-                  <Variable className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Variables</span>
+            {campaign.variable_mappings &&
+              (campaign.variable_mappings as VariableMapping[]).length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Variable className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Variables</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {(campaign.variable_mappings as VariableMapping[]).map((mapping) => (
+                      <Badge key={mapping.csv_column} variant="outline" className="text-xs">
+                        {mapping.prompt_placeholder}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {(campaign.variable_mappings as VariableMapping[]).map((mapping) => (
-                    <Badge key={mapping.csv_column} variant="outline" className="text-xs">
-                      {mapping.prompt_placeholder}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
+              )}
 
             {/* Custom Greeting Indicator */}
-            {campaign.agent_prompt_overrides && (campaign.agent_prompt_overrides as AgentPromptOverrides).greeting_override && (
-              <div className="pt-3 border-t">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Custom Greeting</span>
-                  <Badge variant="secondary" className="text-xs">Active</Badge>
+            {campaign.agent_prompt_overrides &&
+              (campaign.agent_prompt_overrides as AgentPromptOverrides).greeting_override && (
+                <div className="pt-3 border-t">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Custom Greeting</span>
+                    <Badge variant="secondary" className="text-xs">
+                      Active
+                    </Badge>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </CardContent>
         </Card>
       </div>
 
       {/* Recipients Table */}
-      <Card>
+      <Card data-recipients-table>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -427,8 +536,8 @@ export default function CampaignDetailPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {/* Filter */}
-          <div className="flex items-center gap-4 mb-4">
+          {/* Filter and Page Size Controls */}
+          <div className="flex items-center justify-between gap-4 mb-4">
             <Select
               value={statusFilter}
               onValueChange={(v) => {
@@ -447,6 +556,22 @@ export default function CampaignDetailPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Rows per page:</span>
+              <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {pageSizeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {recipientsLoading ? (
@@ -477,86 +602,117 @@ export default function CampaignDetailPage() {
             </div>
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Phone Number</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Outcome</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Attempts</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recipients.map((recipient) => (
-                    <TableRow key={recipient.id}>
-                      <TableCell className="font-mono">{recipient.phone_number}</TableCell>
-                      <TableCell>
-                        {recipient.first_name || recipient.last_name
-                          ? `${recipient.first_name || ""} ${recipient.last_name || ""}`.trim()
-                          : <span className="text-muted-foreground">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        <CallStatusBadge status={recipient.call_status} />
-                      </TableCell>
-                      <TableCell>
-                        <CallOutcomeBadge outcome={recipient.call_outcome} />
-                      </TableCell>
-                      <TableCell>{formatDuration(recipient.call_duration_seconds)}</TableCell>
-                      <TableCell>{recipient.attempts}</TableCell>
-                      <TableCell>
-                        {isEditable && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => setDeleteTarget(recipient)}
-                                className="text-destructive focus:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Remove
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </TableCell>
+              <div className="border rounded-lg">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Phone Number</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Outcome</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Attempts</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {recipients.map((recipient) => (
+                      <TableRow key={recipient.id}>
+                        <TableCell className="font-mono">{recipient.phone_number}</TableCell>
+                        <TableCell>
+                          {recipient.first_name || recipient.last_name ? (
+                            `${recipient.first_name || ""} ${recipient.last_name || ""}`.trim()
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <CallStatusBadge status={recipient.call_status} />
+                        </TableCell>
+                        <TableCell>
+                          <CallOutcomeBadge outcome={recipient.call_outcome} />
+                        </TableCell>
+                        <TableCell>{formatDuration(recipient.call_duration_seconds)}</TableCell>
+                        <TableCell>{recipient.attempts}</TableCell>
+                        <TableCell>
+                          {isEditable && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => setDeleteTarget(recipient)}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Remove
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
-              {/* Pagination */}
+              {/* Enhanced Pagination with shadcn */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-between mt-4 pt-4 border-t">
                   <p className="text-sm text-muted-foreground">
-                    Page {page} of {totalPages}
+                    Showing {(page - 1) * pageSize + 1} to{" "}
+                    {Math.min(page * pageSize, totalRecipients)} of {totalRecipients} recipients
                   </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                    >
-                      Next
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
+
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          onClick={() => page > 1 && handlePageChange(page - 1)}
+                          className={
+                            page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"
+                          }
+                        />
+                      </PaginationItem>
+
+                      {getPageNumbers().map((pageNum, idx) => {
+                        if (pageNum === -1 || pageNum === -2) {
+                          return (
+                            <PaginationItem key={`ellipsis-${idx}`}>
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          )
+                        }
+
+                        return (
+                          <PaginationItem key={pageNum}>
+                            <PaginationLink
+                              onClick={() => handlePageChange(pageNum)}
+                              isActive={page === pageNum}
+                              className="cursor-pointer"
+                            >
+                              {pageNum}
+                            </PaginationLink>
+                          </PaginationItem>
+                        )
+                      })}
+
+                      <PaginationItem>
+                        <PaginationNext
+                          onClick={() => page < totalPages && handlePageChange(page + 1)}
+                          className={
+                            page === totalPages
+                              ? "pointer-events-none opacity-50"
+                              : "cursor-pointer"
+                          }
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
                 </div>
               )}
             </>
@@ -571,11 +727,7 @@ export default function CampaignDetailPage() {
         onOpenChange={setImportOpen}
       />
 
-      <AddRecipientDialog
-        campaignId={campaignId}
-        open={addOpen}
-        onOpenChange={setAddOpen}
-      />
+      <AddRecipientDialog campaignId={campaignId} open={addOpen} onOpenChange={setAddOpen} />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
@@ -600,4 +752,3 @@ export default function CampaignDetailPage() {
     </div>
   )
 }
-

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +27,8 @@ import {
   AlertCircle,
   X,
   ArrowRight,
+  Info,
+  AlertTriangle,
 } from "lucide-react"
 import type { CreateRecipientInput } from "@/types/database.types"
 import type { WizardFormData } from "../campaign-wizard"
@@ -48,7 +50,7 @@ const STANDARD_FIELDS = [
   { key: "skip", label: "Skip Column", required: false },
 ] as const
 
-type FieldKey = typeof STANDARD_FIELDS[number]["key"]
+type FieldKey = (typeof STANDARD_FIELDS)[number]["key"]
 
 interface ColumnMapping {
   csvColumn: string
@@ -56,11 +58,23 @@ interface ColumnMapping {
   customVariableName?: string
 }
 
-export function StepImport({
-  formData,
-  updateMultipleFields,
-  errors,
-}: StepImportProps) {
+interface FieldStats {
+  fieldName: string
+  displayName: string
+  total: number
+  filled: number
+  missing: number
+  completeness: number
+}
+
+interface DataQualityReport {
+  totalRecords: number
+  fieldStats: FieldStats[]
+  recordsWithMissingData: number
+  overallCompleteness: number
+}
+
+export function StepImport({ formData, updateMultipleFields, errors }: StepImportProps) {
   const [file, setFile] = useState<File | null>(null)
   const [csvData, setCsvData] = useState<string[][]>([])
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([])
@@ -68,6 +82,62 @@ export function StepImport({
   const [step, setStep] = useState<"upload" | "mapping" | "preview">(
     formData.recipients.length > 0 ? "preview" : "upload"
   )
+
+  // Analyze data quality
+  const dataQualityReport = useMemo((): DataQualityReport | null => {
+    if (formData.recipients.length === 0) return null
+
+    const fields = [
+      { fieldName: "phone_number", displayName: "Phone" },
+      { fieldName: "first_name", displayName: "First Name" },
+      { fieldName: "last_name", displayName: "Last Name" },
+      { fieldName: "email", displayName: "Email" },
+      { fieldName: "company", displayName: "Company" },
+    ]
+
+    const fieldStats: FieldStats[] = fields.map((field) => {
+      const filled = formData.recipients.filter((r) => {
+        const value = r[field.fieldName as keyof CreateRecipientInput]
+        return value !== null && value !== undefined && String(value).trim() !== ""
+      }).length
+      const missing = formData.recipients.length - filled
+      const completeness = (filled / formData.recipients.length) * 100
+
+      return {
+        fieldName: field.fieldName,
+        displayName: field.displayName,
+        total: formData.recipients.length,
+        filled,
+        missing,
+        completeness,
+      }
+    })
+
+    const recordsWithMissingData = formData.recipients.filter((r) => {
+      return !r.first_name?.trim() || !r.last_name?.trim() || !r.email?.trim() || !r.company?.trim()
+    }).length
+
+    const optionalFields = fieldStats.filter((f) => f.fieldName !== "phone_number")
+    const overallCompleteness =
+      optionalFields.reduce((sum, f) => sum + f.completeness, 0) / optionalFields.length
+
+    return {
+      totalRecords: formData.recipients.length,
+      fieldStats,
+      recordsWithMissingData,
+      overallCompleteness,
+    }
+  }, [formData.recipients])
+
+  const getCompletenessColor = (percentage: number) => {
+    if (percentage >= 80) return "text-green-600 dark:text-green-400"
+    if (percentage >= 50) return "text-yellow-600 dark:text-yellow-400"
+    return "text-red-600 dark:text-red-400"
+  }
+
+  const isFieldEmpty = (value: any) => {
+    return value === null || value === undefined || String(value).trim() === ""
+  }
 
   // Helper to parse CSV line (handles quoted values)
   const parseCSVLine = (line: string): string[] => {
@@ -94,9 +164,9 @@ export function StepImport({
   const autoDetectMapping = (headers: string[]): ColumnMapping[] => {
     return headers.map((header) => {
       const lowerHeader = header.toLowerCase().replace(/[_\s-]/g, "")
-      
+
       let mappedTo: FieldKey = "custom"
-      
+
       if (["phone", "phonenumber", "mobile", "cell", "telephone"].includes(lowerHeader)) {
         mappedTo = "phone_number"
       } else if (["firstname", "first", "fname", "givenname"].includes(lowerHeader)) {
@@ -105,14 +175,17 @@ export function StepImport({
         mappedTo = "last_name"
       } else if (["email", "emailaddress", "mail"].includes(lowerHeader)) {
         mappedTo = "email"
-      } else if (["company", "organization", "org", "business", "companyname"].includes(lowerHeader)) {
+      } else if (
+        ["company", "organization", "org", "business", "companyname"].includes(lowerHeader)
+      ) {
         mappedTo = "company"
       }
 
       return {
         csvColumn: header,
         mappedTo,
-        customVariableName: mappedTo === "custom" ? header.toLowerCase().replace(/[^a-z0-9_]/g, "_") : undefined,
+        customVariableName:
+          mappedTo === "custom" ? header.toLowerCase().replace(/[^a-z0-9_]/g, "_") : undefined,
       }
     })
   }
@@ -140,7 +213,7 @@ export function StepImport({
       // Parse all rows
       const parsedData = lines.map(parseCSVLine)
       const headers = parsedData[0] || []
-      
+
       if (headers.length === 0) {
         throw new Error("No columns found in CSV")
       }
@@ -243,9 +316,7 @@ export function StepImport({
 
     // Get all unique custom variable columns for later use in variable mapping
     const allCustomVariables = Array.from(
-      new Set(
-        recipients.flatMap((r) => Object.keys(r.custom_variables || {}))
-      )
+      new Set(recipients.flatMap((r) => Object.keys(r.custom_variables || {})))
     )
 
     updateMultipleFields({
@@ -265,7 +336,8 @@ export function StepImport({
   }, [csvData, columnMappings, file, updateMultipleFields])
 
   const downloadTemplate = () => {
-    const template = "phone_number,first_name,last_name,email,company,product_interest,account_balance\n+14155551234,John,Doe,john@example.com,Acme Inc,Premium Plan,1250.00\n+14155555678,Jane,Smith,jane@example.com,Tech Corp,Basic Plan,500.00"
+    const template =
+      "phone_number,first_name,last_name,email,company,product_interest,account_balance\n+14155551234,John,Doe,john@example.com,Acme Inc,Premium Plan,1250.00\n+14155555678,Jane,Smith,jane@example.com,Tech Corp,Basic Plan,500.00"
     const blob = new Blob([template], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -327,16 +399,26 @@ export function StepImport({
             <div>
               <p className="font-medium text-foreground mb-1">Standard Columns</p>
               <ul className="space-y-0.5">
-                <li>• <code className="bg-muted px-1 rounded">phone_number</code> (required)</li>
-                <li>• <code className="bg-muted px-1 rounded">first_name</code>, <code className="bg-muted px-1 rounded">last_name</code></li>
-                <li>• <code className="bg-muted px-1 rounded">email</code>, <code className="bg-muted px-1 rounded">company</code></li>
+                <li>
+                  • <code className="bg-muted px-1 rounded">phone_number</code> (required)
+                </li>
+                <li>
+                  • <code className="bg-muted px-1 rounded">first_name</code>,{" "}
+                  <code className="bg-muted px-1 rounded">last_name</code>
+                </li>
+                <li>
+                  • <code className="bg-muted px-1 rounded">email</code>,{" "}
+                  <code className="bg-muted px-1 rounded">company</code>
+                </li>
               </ul>
             </div>
             <div>
               <p className="font-medium text-foreground mb-1">Custom Variables</p>
               <ul className="space-y-0.5">
                 <li>• Add any columns for personalization</li>
-                <li>• Example: <code className="bg-muted px-1 rounded">product_interest</code></li>
+                <li>
+                  • Example: <code className="bg-muted px-1 rounded">product_interest</code>
+                </li>
                 <li>• Map to prompts in next step</li>
               </ul>
             </div>
@@ -390,9 +472,7 @@ export function StepImport({
               <TableBody>
                 {columnMappings.map((mapping, index) => (
                   <TableRow key={index}>
-                    <TableCell className="font-mono text-sm">
-                      {mapping.csvColumn}
-                    </TableCell>
+                    <TableCell className="font-mono text-sm">{mapping.csvColumn}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {sampleRow[index] || "—"}
                     </TableCell>
@@ -446,7 +526,7 @@ export function StepImport({
   }
 
   // ============================================================================
-  // RENDER: PREVIEW STEP
+  // RENDER: PREVIEW STEP (WITH DATA QUALITY REPORT)
   // ============================================================================
 
   return (
@@ -473,6 +553,65 @@ export function StepImport({
         </Button>
       </div>
 
+      {/* Data Quality Report */}
+      {dataQualityReport && dataQualityReport.recordsWithMissingData > 0 && (
+        <div className="border rounded-lg p-4 bg-muted/30">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+            <div className="flex-1 space-y-3">
+              <div>
+                <h4 className="font-medium text-sm mb-1">Data Quality Report</h4>
+                <p className="text-sm text-muted-foreground">
+                  {dataQualityReport.recordsWithMissingData} of {dataQualityReport.totalRecords}{" "}
+                  recipients (
+                  {Math.round(
+                    (dataQualityReport.recordsWithMissingData / dataQualityReport.totalRecords) *
+                      100
+                  )}
+                  %) have incomplete information
+                </p>
+              </div>
+
+              {/* Field Completeness Stats */}
+              <div className="grid grid-cols-2 gap-3">
+                {dataQualityReport.fieldStats
+                  .filter((f) => f.fieldName !== "phone_number")
+                  .map((field) => (
+                    <div
+                      key={field.fieldName}
+                      className="flex items-center justify-between p-2 bg-background rounded border"
+                    >
+                      <span className="text-xs font-medium">{field.displayName}</span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-bold ${getCompletenessColor(field.completeness)}`}
+                        >
+                          {Math.round(field.completeness)}%
+                        </span>
+                        {field.missing > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {field.missing} missing
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+
+              {/* Warning for low completeness */}
+              {dataQualityReport.overallCompleteness < 70 && (
+                <div className="flex items-start gap-2 p-2 bg-yellow-50 dark:bg-yellow-950/30 rounded text-yellow-800 dark:text-yellow-300">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <p className="text-xs">
+                    Low data completeness may limit personalization options in your campaign.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Custom Variables Badge */}
       {formData.variableMappings.length > 0 && (
         <div>
@@ -490,7 +629,7 @@ export function StepImport({
         </div>
       )}
 
-      {/* Preview Table */}
+      {/* Preview Table with Missing Field Highlights */}
       <div className="border rounded-lg overflow-hidden">
         <Table>
           <TableHeader>
@@ -503,38 +642,71 @@ export function StepImport({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {formData.recipients.slice(0, 5).map((recipient, i) => (
-              <TableRow key={i}>
-                <TableCell className="font-mono">{recipient.phone_number}</TableCell>
-                <TableCell>
-                  {[recipient.first_name, recipient.last_name].filter(Boolean).join(" ") || "—"}
-                </TableCell>
-                <TableCell>{recipient.email || "—"}</TableCell>
-                <TableCell>{recipient.company || "—"}</TableCell>
-                <TableCell>
-                  {Object.keys(recipient.custom_variables || {}).length > 0 ? (
-                    <div className="flex gap-1 flex-wrap">
-                      {Object.entries(recipient.custom_variables || {}).slice(0, 2).map(([key, value]) => (
-                        <Badge key={key} variant="outline" className="text-xs">
-                          {key}: {String(value).slice(0, 15)}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    "—"
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+            {formData.recipients.slice(0, 10).map((recipient, i) => {
+              const fullName = [recipient.first_name, recipient.last_name].filter(Boolean).join(" ")
+
+              return (
+                <TableRow key={i}>
+                  <TableCell className="font-mono">{recipient.phone_number}</TableCell>
+                  <TableCell
+                    className={isFieldEmpty(fullName) ? "bg-yellow-50 dark:bg-yellow-950/20" : ""}
+                  >
+                    {fullName || (
+                      <span className="text-muted-foreground italic text-xs">Missing</span>
+                    )}
+                  </TableCell>
+                  <TableCell
+                    className={
+                      isFieldEmpty(recipient.email) ? "bg-yellow-50 dark:bg-yellow-950/20" : ""
+                    }
+                  >
+                    {recipient.email || (
+                      <span className="text-muted-foreground italic text-xs">Missing</span>
+                    )}
+                  </TableCell>
+                  <TableCell
+                    className={
+                      isFieldEmpty(recipient.company) ? "bg-yellow-50 dark:bg-yellow-950/20" : ""
+                    }
+                  >
+                    {recipient.company || (
+                      <span className="text-muted-foreground italic text-xs">Missing</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {Object.keys(recipient.custom_variables || {}).length > 0 ? (
+                      <div className="flex gap-1 flex-wrap">
+                        {Object.entries(recipient.custom_variables || {})
+                          .slice(0, 2)
+                          .map(([key, value]) => (
+                            <Badge key={key} variant="outline" className="text-xs">
+                              {key}: {String(value).slice(0, 15)}
+                            </Badge>
+                          ))}
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
-        {formData.recipients.length > 5 && (
+        {formData.recipients.length > 10 && (
           <div className="bg-muted/50 text-center py-2 text-sm text-muted-foreground">
-            ...and {formData.recipients.length - 5} more recipients
+            ...and {formData.recipients.length - 10} more recipients
           </div>
         )}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded"></div>
+          <span>Missing data</span>
+        </div>
       </div>
     </div>
   )
 }
-

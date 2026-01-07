@@ -48,7 +48,9 @@ function AcceptPartnerInvitationContent() {
   useEffect(() => {
     async function checkAuth() {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       setIsAuthenticated(!!user)
     }
     checkAuth()
@@ -118,7 +120,7 @@ function AcceptPartnerInvitationContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-slate-50 to-slate-100">
         <Card className="w-full max-w-md">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
@@ -131,14 +133,16 @@ function AcceptPartnerInvitationContent() {
 
   if (error || !invitation) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-slate-50 to-slate-100 p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
               <XCircle className="h-6 w-6 text-red-600" />
             </div>
             <CardTitle>Invalid Invitation</CardTitle>
-            <CardDescription>{error || "This invitation is invalid or has expired."}</CardDescription>
+            <CardDescription>
+              {error || "This invitation is invalid or has expired."}
+            </CardDescription>
           </CardHeader>
           <CardContent className="text-center">
             <Link href="/">
@@ -152,7 +156,7 @@ function AcceptPartnerInvitationContent() {
 
   if (invitation.status !== "pending" || invitation.is_expired) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-slate-50 to-slate-100 p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mb-4">
@@ -160,7 +164,8 @@ function AcceptPartnerInvitationContent() {
             </div>
             <CardTitle>Invitation Expired</CardTitle>
             <CardDescription>
-              This invitation has {invitation.status === "accepted" ? "already been used" : "expired"}.
+              This invitation has{" "}
+              {invitation.status === "accepted" ? "already been used" : "expired"}.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center">
@@ -175,7 +180,7 @@ function AcceptPartnerInvitationContent() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-slate-50 to-slate-100 p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mb-4">
@@ -195,10 +200,10 @@ function AcceptPartnerInvitationContent() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-slate-50 to-slate-100 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div 
+          <div
             className="mx-auto w-16 h-16 rounded-xl flex items-center justify-center mb-4 text-white font-bold text-2xl"
             style={{ backgroundColor: invitation.partner.branding?.primary_color || "#7c3aed" }}
           >
@@ -237,12 +242,7 @@ function AcceptPartnerInvitationContent() {
 
           {/* Actions */}
           {isAuthenticated ? (
-            <Button 
-              className="w-full" 
-              size="lg" 
-              onClick={handleAccept}
-              disabled={accepting}
-            >
+            <Button className="w-full" size="lg" onClick={handleAccept} disabled={accepting}>
               {accepting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -258,10 +258,16 @@ function AcceptPartnerInvitationContent() {
                 Sign in or create an account to accept this invitation
               </p>
               <div className="grid grid-cols-2 gap-3">
-                <Link href={`/login?redirect=${encodeURIComponent(`/accept-partner-invitation?token=${token}`)}`}>
-                  <Button variant="outline" className="w-full">Sign In</Button>
+                <Link
+                  href={`/login?redirect=${encodeURIComponent(`/accept-partner-invitation?token=${token}`)}`}
+                >
+                  <Button variant="outline" className="w-full">
+                    Sign In
+                  </Button>
                 </Link>
-                <Link href={`/signup?redirect=${encodeURIComponent(`/accept-partner-invitation?token=${token}`)}&email=${encodeURIComponent(invitation.email)}`}>
+                <Link
+                  href={`/signup?redirect=${encodeURIComponent(`/accept-partner-invitation?token=${token}`)}&email=${encodeURIComponent(invitation.email)}`}
+                >
                   <Button className="w-full">Create Account</Button>
                 </Link>
               </div>
@@ -277,7 +283,7 @@ export default function AcceptPartnerInvitationPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-slate-50 to-slate-100">
           <Card className="w-full max-w-md">
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
@@ -291,4 +297,3 @@ export default function AcceptPartnerInvitationPage() {
     </Suspense>
   )
 }
-
