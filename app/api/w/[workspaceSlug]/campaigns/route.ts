@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
-import { apiResponse, apiError, unauthorized, serverError, getValidationError } from "@/lib/api/helpers"
+import {
+  apiResponse,
+  apiError,
+  unauthorized,
+  serverError,
+  getValidationError,
+} from "@/lib/api/helpers"
 import { createCampaignSchema, createCampaignWizardSchema } from "@/types/database.types"
 
 // GET /api/w/[workspaceSlug]/campaigns - List campaigns
@@ -22,10 +28,13 @@ export async function GET(
     // Build query
     let query = ctx.adminClient
       .from("call_campaigns")
-      .select(`
+      .select(
+        `
         *,
         agent:ai_agents!agent_id(id, name, provider, is_active)
-      `, { count: "exact" })
+      `,
+        { count: "exact" }
+      )
       .eq("workspace_id", ctx.workspace.id)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
@@ -66,12 +75,12 @@ export async function POST(
     if (!ctx) return unauthorized()
 
     const body = await request.json()
-    
+
     // Check if this is a wizard flow creation
     const isWizardFlow = body.wizard_flow === true
-    
+
     // Parse with appropriate schema
-    const parsed = isWizardFlow 
+    const parsed = isWizardFlow
       ? createCampaignWizardSchema.safeParse(body)
       : createCampaignSchema.safeParse(body)
 
@@ -101,13 +110,15 @@ export async function POST(
 
     // Extract wizard-specific fields if present
     const recipients = isWizardFlow ? (rest as any).recipients || [] : []
-    const wizardFields = isWizardFlow ? {
-      business_hours_config: (rest as any).business_hours_config || null,
-      variable_mappings: (rest as any).variable_mappings || [],
-      agent_prompt_overrides: (rest as any).agent_prompt_overrides || null,
-      csv_column_headers: (rest as any).csv_column_headers || [],
-      wizard_completed: true,
-    } : {}
+    const wizardFields = isWizardFlow
+      ? {
+          business_hours_config: (rest as any).business_hours_config || null,
+          variable_mappings: (rest as any).variable_mappings || [],
+          agent_prompt_overrides: (rest as any).agent_prompt_overrides || null,
+          csv_column_headers: (rest as any).csv_column_headers || [],
+          wizard_completed: true,
+        }
+      : {}
 
     // Prepare campaign data
     const campaignData = {
@@ -120,9 +131,9 @@ export async function POST(
       business_hours_start: rest.business_hours_start || null,
       business_hours_end: rest.business_hours_end || null,
       timezone: rest.timezone || "UTC",
-      concurrency_limit: rest.concurrency_limit || 1,
-      max_attempts: rest.max_attempts || 3,
-      retry_delay_minutes: rest.retry_delay_minutes || 30,
+      concurrency_limit: 1,
+      max_attempts: 3,
+      retry_delay_minutes: 30,
       ...wizardFields,
     }
 
@@ -138,10 +149,12 @@ export async function POST(
         total_recipients: recipients.length,
         pending_calls: recipients.length,
       })
-      .select(`
+      .select(
+        `
         *,
         agent:ai_agents!agent_id(id, name, provider, is_active)
-      `)
+      `
+      )
       .single()
 
     if (error) {
@@ -205,21 +218,26 @@ export async function POST(
       // Re-fetch campaign with updated counts
       const { data: updatedCampaign } = await ctx.adminClient
         .from("call_campaigns")
-        .select(`
+        .select(
+          `
           *,
           agent:ai_agents!agent_id(id, name, provider, is_active)
-        `)
+        `
+        )
         .eq("id", campaign.id)
         .single()
 
-      return apiResponse({
-        ...updatedCampaign,
-        _import: {
-          imported: insertedCount,
-          duplicates: duplicatesCount,
-          total: recipients.length,
-        }
-      }, 201)
+      return apiResponse(
+        {
+          ...updatedCampaign,
+          _import: {
+            imported: insertedCount,
+            duplicates: duplicatesCount,
+            total: recipients.length,
+          },
+        },
+        201
+      )
     }
 
     return apiResponse(campaign, 201)

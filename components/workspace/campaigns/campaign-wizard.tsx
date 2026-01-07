@@ -62,11 +62,6 @@ export interface WizardFormData {
   scheduledStartAt: string | null
   scheduledExpiresAt: string | null
   businessHoursConfig: BusinessHoursConfig
-
-  // Step 4: Advanced Settings
-  concurrencyLimit: number
-  maxAttempts: number
-  retryDelayMinutes: number
 }
 
 interface WizardStep {
@@ -152,10 +147,6 @@ export function CampaignWizard({
     scheduledStartAt: null,
     scheduledExpiresAt: null,
     businessHoursConfig: DEFAULT_BUSINESS_HOURS_CONFIG,
-    // Step 4
-    concurrencyLimit: 1,
-    maxAttempts: 3,
-    retryDelayMinutes: 30,
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -164,29 +155,32 @@ export function CampaignWizard({
   // VALIDATION
   // ============================================================================
 
-  const validateStep = useCallback((step: number): boolean => {
-    const newErrors: Record<string, string> = {}
+  const validateStep = useCallback(
+    (step: number): boolean => {
+      const newErrors: Record<string, string> = {}
 
-    if (step === 1) {
-      if (!formData.name.trim()) {
-        newErrors.name = "Campaign name is required"
+      if (step === 1) {
+        if (!formData.name.trim()) {
+          newErrors.name = "Campaign name is required"
+        }
+        if (!formData.agent_id) {
+          newErrors.agent_id = "Please select an AI agent"
+        }
       }
-      if (!formData.agent_id) {
-        newErrors.agent_id = "Please select an AI agent"
-      }
-    }
 
-    // Step 2 is optional - can have 0 recipients and add later
-    // Step 3 validation if scheduled
-    if (step === 3) {
-      if (formData.scheduleType === "scheduled" && !formData.scheduledStartAt) {
-        newErrors.scheduledStartAt = "Please select a start date/time"
+      // Step 2 is optional - can have 0 recipients and add later
+      // Step 3 validation if scheduled
+      if (step === 3) {
+        if (formData.scheduleType === "scheduled" && !formData.scheduledStartAt) {
+          newErrors.scheduledStartAt = "Please select a start date/time"
+        }
       }
-    }
 
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }, [formData])
+      setErrors(newErrors)
+      return Object.keys(newErrors).length === 0
+    },
+    [formData]
+  )
 
   // ============================================================================
   // NAVIGATION
@@ -205,31 +199,34 @@ export function CampaignWizard({
     }
   }, [currentStep])
 
-  const goToStep = useCallback((step: number) => {
-    // Only allow going to previous steps or validated future steps
-    if (step < currentStep) {
-      setCurrentStep(step)
-    }
-  }, [currentStep])
+  const goToStep = useCallback(
+    (step: number) => {
+      // Only allow going to previous steps or validated future steps
+      if (step < currentStep) {
+        setCurrentStep(step)
+      }
+    },
+    [currentStep]
+  )
 
   // ============================================================================
   // FORM UPDATE HANDLERS
   // ============================================================================
 
-  const updateFormData = useCallback(<K extends keyof WizardFormData>(
-    key: K,
-    value: WizardFormData[K]
-  ) => {
-    setFormData((prev) => ({ ...prev, [key]: value }))
-    // Clear error for this field
-    if (errors[key]) {
-      setErrors((prev) => {
-        const next = { ...prev }
-        delete next[key]
-        return next
-      })
-    }
-  }, [errors])
+  const updateFormData = useCallback(
+    <K extends keyof WizardFormData>(key: K, value: WizardFormData[K]) => {
+      setFormData((prev) => ({ ...prev, [key]: value }))
+      // Clear error for this field
+      if (errors[key]) {
+        setErrors((prev) => {
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
+      }
+    },
+    [errors]
+  )
 
   const updateMultipleFields = useCallback((updates: Partial<WizardFormData>) => {
     setFormData((prev) => ({ ...prev, ...updates }))
@@ -255,12 +252,12 @@ export function CampaignWizard({
     // datetime-local gives "2026-01-15T09:00" but Zod expects "2026-01-15T09:00:00.000Z"
     let scheduledStartAt: string | null = null
     let scheduledExpiresAt: string | null = null
-    
+
     if (formData.scheduleType === "scheduled" && formData.scheduledStartAt) {
       // Append seconds and Z for UTC timezone
       scheduledStartAt = new Date(formData.scheduledStartAt).toISOString()
     }
-    
+
     if (formData.scheduleType === "scheduled" && formData.scheduledExpiresAt) {
       scheduledExpiresAt = new Date(formData.scheduledExpiresAt).toISOString()
     }
@@ -279,9 +276,6 @@ export function CampaignWizard({
       business_hours_config: formData.businessHoursConfig,
       business_hours_only: formData.businessHoursConfig.enabled,
       timezone: formData.businessHoursConfig.timezone,
-      concurrency_limit: formData.concurrencyLimit,
-      max_attempts: formData.maxAttempts,
-      retry_delay_minutes: formData.retryDelayMinutes,
       wizard_completed: true,
     }
 
@@ -339,11 +333,13 @@ export function CampaignWizard({
                         )}
                       </div>
                       <div className="text-center hidden md:block">
-                        <p className={cn(
-                          "text-sm font-medium",
-                          isCurrent && "text-primary",
-                          !isCurrent && !isCompleted && "text-muted-foreground"
-                        )}>
+                        <p
+                          className={cn(
+                            "text-sm font-medium",
+                            isCurrent && "text-primary",
+                            !isCurrent && !isCompleted && "text-muted-foreground"
+                          )}
+                        >
                           {step.title}
                         </p>
                         <p className="text-xs text-muted-foreground max-w-[100px]">
@@ -353,10 +349,7 @@ export function CampaignWizard({
                     </button>
                     {index < WIZARD_STEPS.length - 1 && (
                       <div
-                        className={cn(
-                          "flex-1 h-0.5 mx-2",
-                          isCompleted ? "bg-primary" : "bg-muted"
-                        )}
+                        className={cn("flex-1 h-0.5 mx-2", isCompleted ? "bg-primary" : "bg-muted")}
                       />
                     )}
                   </div>
@@ -397,11 +390,7 @@ export function CampaignWizard({
             />
           )}
           {currentStep === 3 && (
-            <StepSchedule
-              formData={formData}
-              updateFormData={updateFormData}
-              errors={errors}
-            />
+            <StepSchedule formData={formData} updateFormData={updateFormData} errors={errors} />
           )}
           {currentStep === 4 && (
             <StepReview
@@ -416,11 +405,7 @@ export function CampaignWizard({
 
       {/* Navigation Buttons */}
       <div className="flex items-center justify-between">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={currentStep === 1 ? onCancel : prevStep}
-        >
+        <Button type="button" variant="outline" onClick={currentStep === 1 ? onCancel : prevStep}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           {currentStep === 1 ? "Cancel" : "Previous"}
         </Button>
@@ -431,11 +416,7 @@ export function CampaignWizard({
             <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         ) : (
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-          >
+          <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -453,4 +434,3 @@ export function CampaignWizard({
     </div>
   )
 }
-

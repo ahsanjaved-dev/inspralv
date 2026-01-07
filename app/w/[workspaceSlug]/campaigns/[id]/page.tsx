@@ -475,23 +475,10 @@ export default function CampaignDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Concurrent Calls</span>
-              <span className="text-sm font-medium">{campaign.concurrency_limit}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Max Retries</span>
-              <span className="text-sm font-medium">{campaign.max_attempts}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Retry Delay</span>
-              <span className="text-sm font-medium">{campaign.retry_delay_minutes} min</span>
-            </div>
-
             {/* Variable Mappings */}
             {campaign.variable_mappings &&
               (campaign.variable_mappings as VariableMapping[]).length > 0 && (
-                <div className="pt-3 border-t">
+                <div>
                   <div className="flex items-center gap-2 mb-2">
                     <Variable className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">Variables</span>
