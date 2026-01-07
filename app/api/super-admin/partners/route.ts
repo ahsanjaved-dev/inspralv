@@ -2,7 +2,11 @@ import { NextRequest } from "next/server"
 import { getSuperAdminContext } from "@/lib/api/super-admin-auth"
 import { apiResponse, apiError, unauthorized, serverError, getValidationError } from "@/lib/api/helpers"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { sendPartnerApprovalEmail } from "@/lib/email/send"
+import { env } from "@/lib/env"
 import { z } from "zod"
+
+const PLATFORM_DOMAIN = process.env.NEXT_PUBLIC_PLATFORM_DOMAIN || "genius365.app"
 
 const createPartnerSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -21,7 +25,7 @@ const createPartnerSchema = z.object({
       secondary_color: z.string().optional(),
     })
     .optional(),
-  plan_tier: z.enum(["free", "starter", "pro", "enterprise"]).default("starter"),
+  plan_tier: z.enum(["free", "starter", "pro", "enterprise"]).default("enterprise"),
   features: z
     .object({
       white_label: z.boolean().optional(),
@@ -39,7 +43,33 @@ const createPartnerSchema = z.object({
     })
     .optional(),
   is_platform_partner: z.boolean().default(false),
+  // New fields for admin user creation
+  admin_email: z.string().email("Valid email is required").optional(),
+  admin_first_name: z.string().max(100).optional(),
+  admin_last_name: z.string().max(100).optional(),
+  send_welcome_email: z.boolean().default(true),
+  create_first_workspace: z.boolean().default(true),
+  first_workspace_name: z.string().max(255).optional(),
 })
+
+// Generate a random password
+function generateTemporaryPassword(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%"
+  let password = ""
+  for (let i = 0; i < 16; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return password
+}
+
+// Generate a slug from name
+function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-+/g, "-")
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -145,7 +175,16 @@ export async function POST(request: NextRequest) {
     }
 
     const adminClient = createAdminClient()
-    const { hostname, ...partnerData } = validation.data
+    const {
+      hostname,
+      admin_email,
+      admin_first_name,
+      admin_last_name,
+      send_welcome_email,
+      create_first_workspace,
+      first_workspace_name,
+      ...partnerData
+    } = validation.data
 
     // Check slug uniqueness
     const { data: existingSlug } = await adminClient
@@ -170,6 +209,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create partner
+    // Note: onboarding_status defaults to "active" in the database
     const { data: partner, error: partnerError } = await adminClient
       .from("partners")
       .insert({
@@ -177,8 +217,18 @@ export async function POST(request: NextRequest) {
         slug: partnerData.slug,
         branding: partnerData.branding || {},
         plan_tier: partnerData.plan_tier,
-        features: partnerData.features || {},
-        resource_limits: partnerData.resource_limits || {},
+        features: partnerData.features || {
+          white_label: true,
+          custom_domain: true,
+          api_access: true,
+          sso: true,
+          advanced_analytics: true,
+        },
+        resource_limits: partnerData.resource_limits || {
+          max_workspaces: -1,
+          max_users_per_workspace: -1,
+          max_agents_per_workspace: -1,
+        },
         is_platform_partner: partnerData.is_platform_partner,
         subscription_status: "active",
         settings: {},
@@ -206,7 +256,136 @@ export async function POST(request: NextRequest) {
       return apiError("Failed to create partner domain")
     }
 
-    return apiResponse(partner, 201)
+    let userId: string | null = null
+    let temporaryPassword: string | null = null
+    let isExistingUser = false
+
+    // Create or find admin user if email provided
+    if (admin_email) {
+      // Check if user already exists
+      const { data: existingUser } = await adminClient
+        .from("users")
+        .select("id")
+        .eq("email", admin_email.toLowerCase())
+        .maybeSingle()
+
+      if (existingUser) {
+        userId = existingUser.id
+        isExistingUser = true
+      } else {
+        // Create new user in Supabase Auth
+        temporaryPassword = generateTemporaryPassword()
+
+        const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+          email: admin_email.toLowerCase(),
+          password: temporaryPassword,
+          email_confirm: true, // Auto-confirm email
+          user_metadata: {
+            first_name: admin_first_name || "",
+            last_name: admin_last_name || "",
+          },
+        })
+
+        if (authError) {
+          console.error("Create auth user error:", authError)
+          // Don't fail the whole operation, just log it
+        } else if (authData.user) {
+          userId = authData.user.id
+
+          // Create user profile in public.users table
+          const { error: profileError } = await adminClient.from("users").insert({
+            id: userId,
+            email: admin_email.toLowerCase(),
+            first_name: admin_first_name || null,
+            last_name: admin_last_name || null,
+          })
+
+          if (profileError) {
+            console.error("Create user profile error:", profileError)
+          }
+        }
+      }
+
+      // Add user as partner owner
+      if (userId) {
+        const { error: memberError } = await adminClient.from("partner_members").insert({
+          partner_id: partner.id,
+          user_id: userId,
+          role: "owner",
+        })
+
+        if (memberError) {
+          console.error("Create partner member error:", memberError)
+        }
+      }
+    }
+
+    // Create first workspace if requested
+    let workspace = null
+    if (create_first_workspace && first_workspace_name) {
+      const workspaceSlug = generateSlug(first_workspace_name)
+
+      const { data: newWorkspace, error: workspaceError } = await adminClient
+        .from("workspaces")
+        .insert({
+          partner_id: partner.id,
+          name: first_workspace_name,
+          slug: workspaceSlug,
+          status: "active",
+          resource_limits: {},
+          settings: {},
+        })
+        .select()
+        .single()
+
+      if (workspaceError) {
+        console.error("Create workspace error:", workspaceError)
+      } else {
+        workspace = newWorkspace
+
+        // Add admin user to workspace as owner
+        if (userId) {
+          const { error: wsMemberError } = await adminClient.from("workspace_members").insert({
+            workspace_id: workspace.id,
+            user_id: userId,
+            role: "owner",
+          })
+
+          if (wsMemberError) {
+            console.error("Create workspace member error:", wsMemberError)
+          }
+        }
+      }
+    }
+
+    // Send welcome email if requested
+    if (send_welcome_email && admin_email) {
+      const loginUrl = `https://${hostname}/login`
+
+      try {
+        await sendPartnerApprovalEmail(admin_email, {
+          company_name: partnerData.name,
+          subdomain: hostname,
+          login_url: loginUrl,
+          temporary_password: isExistingUser ? "existing-user-use-your-password" : temporaryPassword,
+          contact_email: admin_email,
+        })
+        console.log("Welcome email sent to:", admin_email)
+      } catch (emailError) {
+        console.error("Failed to send welcome email:", emailError)
+        // Don't fail the operation if email fails
+      }
+    }
+
+    return apiResponse(
+      {
+        ...partner,
+        admin_created: !!userId,
+        workspace_created: !!workspace,
+        email_sent: send_welcome_email && !!admin_email,
+      },
+      201
+    )
   } catch (error) {
     console.error("POST /api/super-admin/partners error:", error)
     return serverError()

@@ -25,6 +25,13 @@ interface CreatePartnerInput {
   features?: Record<string, boolean>
   resource_limits?: Record<string, number>
   is_platform_partner?: boolean
+  // Admin user creation
+  admin_email?: string
+  admin_first_name?: string
+  admin_last_name?: string
+  send_welcome_email?: boolean
+  create_first_workspace?: boolean
+  first_workspace_name?: string
 }
 
 interface UpdatePartnerInput {

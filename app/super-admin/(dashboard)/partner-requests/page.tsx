@@ -14,7 +14,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { usePartnerRequests } from "@/lib/hooks/use-partner-requests"
-import { Search, FileText, Loader2, Eye, CheckCircle, XCircle, Clock } from "lucide-react"
+import { Search, FileText, Loader2, Eye, CheckCircle, XCircle, Clock, Globe } from "lucide-react"
+
+const PLATFORM_DOMAIN = process.env.NEXT_PUBLIC_PLATFORM_DOMAIN || "genius365.app"
 import { formatDistanceToNow } from "date-fns"
 
 const statusConfig = {
@@ -188,9 +190,17 @@ export default function PartnerRequestsPage() {
                             <p className="text-xs text-muted-foreground">{request.contact_email}</p>
                           </td>
                           <td className="py-3 px-4">
-                            <code className="text-xs bg-muted px-2 py-1 rounded text-foreground">
-                              {request.custom_domain}
-                            </code>
+                            {request.desired_subdomain ? (
+                              <code className="text-xs bg-muted px-2 py-1 rounded text-foreground">
+                                {request.desired_subdomain}.{PLATFORM_DOMAIN}
+                              </code>
+                            ) : request.custom_domain ? (
+                              <code className="text-xs bg-muted px-2 py-1 rounded text-foreground">
+                                {request.custom_domain}
+                              </code>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
                           </td>
                           <td className="py-3 px-4">
                             <Badge variant="outline" className={status.color}>

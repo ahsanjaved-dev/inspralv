@@ -10,7 +10,6 @@ import {
   TrendingUp,
   ArrowRight,
   Loader2,
-  LayoutGrid,
   FileText,
   Clock,
   CheckCircle,
@@ -38,9 +37,6 @@ export default function SuperAdminDashboard() {
   const totalPartners = partnersData?.total || 0
   const pendingCount = pendingRequestsData?.total || 0
   const recentRequests = allRequestsData?.data || []
-
-  // Calculate totals from partner data
-  const totalWorkspaces = partners.reduce((sum, p) => sum + (p.workspace_count || 0), 0)
 
   const isLoading = partnersLoading || requestsLoading
 
@@ -78,8 +74,8 @@ export default function SuperAdminDashboard() {
         </div>
       </div>
 
-      {/* Stats Grid - Now 4 columns */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Stats Grid - 3 columns */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Pending Requests - NEW */}
         <Card
           className={`bg-card border-border ${pendingCount > 0 ? "ring-2 ring-yellow-500/20" : ""}`}
@@ -132,26 +128,6 @@ export default function SuperAdminDashboard() {
               </div>
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                 <Briefcase className="w-6 h-6 text-primary" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Workspaces</p>
-                {isLoading ? (
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mt-2" />
-                ) : (
-                  <p className="text-3xl font-bold tracking-tight text-foreground">
-                    {totalWorkspaces}
-                  </p>
-                )}
-              </div>
-              <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
-                <LayoutGrid className="w-6 h-6 text-accent-foreground" />
               </div>
             </div>
           </CardContent>
