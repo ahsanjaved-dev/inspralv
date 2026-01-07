@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { getWorkspaceContext } from "@/lib/api/workspace-auth"
+import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, serverError } from "@/lib/api/helpers"
 import type { AIAgent, IntegrationApiKeys } from "@/types/database.types"
 import { createVapiWebCall } from "@/lib/integrations/vapi/web-call"
@@ -141,6 +141,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (!ctx) {
       return unauthorized()
     }
+
+    // Check paywall - block test calls if credits exhausted
+    const paywallError = await checkWorkspacePaywall(ctx.workspace.id, workspaceSlug)
+    if (paywallError) return paywallError
 
     // Get agent
     const { data: agent, error: agentError } = await ctx.adminClient

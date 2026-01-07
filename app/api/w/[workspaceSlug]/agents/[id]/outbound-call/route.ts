@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { getWorkspaceContext } from "@/lib/api/workspace-auth"
+import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import type { AIAgent, IntegrationApiKeys, VapiIntegrationConfig } from "@/types/database.types"
 import { createOutboundCall } from "@/lib/integrations/vapi/calls"
@@ -137,6 +137,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (!ctx) {
       return forbidden("No permission to make outbound calls")
     }
+
+    // Check paywall - block outbound calls if credits exhausted
+    const paywallError = await checkWorkspacePaywall(ctx.workspace.id, workspaceSlug)
+    if (paywallError) return paywallError
 
     // Parse and validate request body
     const body = await request.json()

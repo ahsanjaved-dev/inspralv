@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getWorkspaceContext } from "@/lib/api/workspace-auth"
+import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, serverError, notFound, getValidationError } from "@/lib/api/helpers"
 import { createRecipientSchema, importRecipientsSchema } from "@/types/database.types"
 
@@ -73,6 +73,10 @@ export async function POST(
     const { workspaceSlug, id } = await params
     const ctx = await getWorkspaceContext(workspaceSlug)
     if (!ctx) return unauthorized()
+
+    // Check paywall - block adding recipients if credits exhausted
+    const paywallError = await checkWorkspacePaywall(ctx.workspace.id, workspaceSlug)
+    if (paywallError) return paywallError
 
     const body = await request.json()
 

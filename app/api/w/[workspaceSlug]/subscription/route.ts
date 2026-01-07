@@ -60,10 +60,28 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     })
 
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/e7abe0ce-adad-4c04-8933-7a7770164db8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'subscription/route.ts:GET',message:'Subscription fetched',data:{found:!!subscription,status:subscription?.status,planName:subscription?.plan?.name,workspaceId:context.workspace.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B-C'})}).catch(()=>{});
+    // #endregion
+
     if (!subscription) {
       return apiResponse({
         hasSubscription: false,
         subscription: null,
+      })
+    }
+
+    // Incomplete subscriptions should not be treated as active subscriptions
+    // They represent a checkout that was started but not completed
+    if (subscription.status === "incomplete") {
+      return apiResponse({
+        hasSubscription: false,
+        subscription: null,
+        pendingCheckout: true,
+        pendingPlan: {
+          id: subscription.plan.id,
+          name: subscription.plan.name,
+        },
       })
     }
 
@@ -129,7 +147,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     })
 
     if (existingSubscription && existingSubscription.status === "active") {
-      return apiError("Workspace already has an active subscription. Cancel first to switch plans.")
+      return apiError("Workspace already has an active subscription. Use plan change to switch plans.")
+    }
+    
+    // If there's an incomplete subscription for a different plan, delete it first
+    if (existingSubscription && existingSubscription.status === "incomplete" && existingSubscription.planId !== planId) {
+      await prisma.workspaceSubscription.delete({
+        where: { id: existingSubscription.id },
+      })
     }
 
     // Get the plan

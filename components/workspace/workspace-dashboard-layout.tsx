@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { WorkspaceSidebar } from "./workspace-sidebar"
 import { WorkspaceHeader } from "./workspace-header"
+import { PaywallBanner } from "./paywall-banner"
 import { BrandingProvider } from "@/context/branding-context"
 import { cn } from "@/lib/utils"
 import type { PartnerAuthUser, AccessibleWorkspace, PartnerMemberRole } from "@/types/database.types"
@@ -125,7 +126,8 @@ export function WorkspaceDashboardLayout({
             onToggleSidebar={toggleSidebar}
           />
           <main className="flex-1 overflow-y-auto bg-muted/30 p-6">
-            <div className="max-w-[1400px] mx-auto">
+            <div className="max-w-[1400px] mx-auto space-y-6">
+              <PaywallBanner workspaceSlug={currentWorkspace.slug} />
               {children}
             </div>
           </main>

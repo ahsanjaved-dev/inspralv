@@ -13,7 +13,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Clock, DollarSign, TrendingUp, Package, Check, AlertCircle, ArrowUpRight, ArrowDownRight } from "lucide-react"
+import { Clock, DollarSign, TrendingUp, Package, Check, AlertCircle, ArrowUpRight, ArrowDownRight, Building2 } from "lucide-react"
+import Link from "next/link"
 import { Progress } from "@/components/ui/progress"
 import { WorkspaceCreditsCard } from "@/components/workspace/billing/workspace-credits-card"
 import { useWorkspaceCredits } from "@/lib/hooks/use-workspace-credits"
@@ -309,6 +310,56 @@ export default function BillingPage() {
                   </Card>
                 )
               })}
+              
+              {/* White Label Request Card - Always show */}
+              <Card className="relative transition-all hover:shadow-md border-dashed border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-primary" />
+                    <CardTitle className="text-lg">White Label</CardTitle>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-bold">Custom</span>
+                  </div>
+                  <CardDescription>
+                    Build your own branded AI voice platform
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <ul className="space-y-1.5">
+                    <li className="flex items-center gap-2 text-sm">
+                      <Check className="h-4 w-4 text-green-600 shrink-0" />
+                      <span>Custom branding & domain</span>
+                    </li>
+                    <li className="flex items-center gap-2 text-sm">
+                      <Check className="h-4 w-4 text-green-600 shrink-0" />
+                      <span>Unlimited workspaces</span>
+                    </li>
+                    <li className="flex items-center gap-2 text-sm">
+                      <Check className="h-4 w-4 text-green-600 shrink-0" />
+                      <span>Custom subscription plans</span>
+                    </li>
+                    <li className="flex items-center gap-2 text-sm">
+                      <Check className="h-4 w-4 text-green-600 shrink-0" />
+                      <span>Revenue sharing with Stripe Connect</span>
+                    </li>
+                    <li className="flex items-center gap-2 text-sm">
+                      <Check className="h-4 w-4 text-green-600 shrink-0" />
+                      <span>Dedicated support</span>
+                    </li>
+                  </ul>
+                  
+                  <Button 
+                    className="w-full"
+                    variant="outline"
+                    asChild
+                  >
+                    <Link href="/request-partner">
+                      Request White Label
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
             </div>
           </CardContent>
         </Card>

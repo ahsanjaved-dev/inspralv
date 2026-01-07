@@ -331,6 +331,7 @@ model Workspace {
   knowledgeDocuments KnowledgeDocument[]
   leads              Lead[]
   workspaceCredits   WorkspaceCredits?
+  subscription       WorkspaceSubscription?
 
   @@unique([partnerId, slug])
   @@map("workspaces")
@@ -944,7 +945,8 @@ model WorkspaceSubscription {
   updatedAt                 DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  plan WorkspaceSubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  workspace Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan      WorkspaceSubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
 
   @@index([workspaceId])
   @@index([planId])

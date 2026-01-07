@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { getWorkspaceContext } from "@/lib/api/workspace-auth"
+import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, serverError, notFound, getValidationError } from "@/lib/api/helpers"
 import { updateCampaignSchema } from "@/types/database.types"
 
@@ -44,6 +44,10 @@ export async function PATCH(
     const { workspaceSlug, id } = await params
     const ctx = await getWorkspaceContext(workspaceSlug)
     if (!ctx) return unauthorized()
+
+    // Check paywall - block campaign updates if credits exhausted
+    const paywallError = await checkWorkspacePaywall(ctx.workspace.id, workspaceSlug)
+    if (paywallError) return paywallError
 
     const body = await request.json()
     const parsed = updateCampaignSchema.safeParse(body)
@@ -123,6 +127,10 @@ export async function DELETE(
     const { workspaceSlug, id } = await params
     const ctx = await getWorkspaceContext(workspaceSlug)
     if (!ctx) return unauthorized()
+
+    // Check paywall - block campaign deletion if credits exhausted
+    const paywallError = await checkWorkspacePaywall(ctx.workspace.id, workspaceSlug)
+    if (paywallError) return paywallError
 
     // Only admins/owners can delete
     if (ctx.workspace.role !== "owner" && ctx.workspace.role !== "admin") {

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { getWorkspaceContext } from "@/lib/api/workspace-auth"
+import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import { createWorkspaceIntegrationSchema } from "@/types/database.types"
 import { createAuditLog, getRequestMetadata } from "@/lib/audit"
@@ -71,6 +71,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (!ctx) {
       return forbidden("Only workspace admins can manage integrations")
     }
+
+    // Check paywall - block integration creation if credits exhausted
+    const paywallError = await checkWorkspacePaywall(ctx.workspace.id, workspaceSlug)
+    if (paywallError) return paywallError
 
     const body = await request.json()
     const validation = createWorkspaceIntegrationSchema.safeParse(body)

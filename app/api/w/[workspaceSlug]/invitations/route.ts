@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { getWorkspaceContext } from "@/lib/api/workspace-auth"
+import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError, getValidationError } from "@/lib/api/helpers"
 import { createWorkspaceInvitationSchema } from "@/types/database.types"
 import { sendWorkspaceInvitation } from "@/lib/email/send"
@@ -45,6 +45,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (!ctx) {
       return forbidden("Only owners and admins can invite members")
     }
+
+    // Check paywall - block invitations if credits exhausted
+    const paywallError = await checkWorkspacePaywall(ctx.workspace.id, workspaceSlug)
+    if (paywallError) return paywallError
 
     const body = await request.json()
     const validation = createWorkspaceInvitationSchema.safeParse(body)

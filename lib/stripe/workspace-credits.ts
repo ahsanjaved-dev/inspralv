@@ -22,6 +22,9 @@ export const WORKSPACE_TOPUP_AMOUNTS_CENTS = [
   { label: "$50", value: 5000 },
 ] as const
 
+// Free tier credits grant amount (in cents)
+export const FREE_TIER_CREDITS_CENTS = 1000 // $10
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -111,6 +114,65 @@ export async function getOrCreateWorkspaceCredits(workspaceId: string) {
   }
 
   return credits
+}
+
+/**
+ * Grant initial free tier credits to a workspace (idempotent)
+ * This is called when a workspace is created with the "free" plan.
+ * It checks for an existing grant transaction before applying.
+ * 
+ * @param workspaceId - The workspace to grant credits to
+ * @param amountCents - Amount to grant (default: $10 = 1000 cents)
+ * @returns Object with success status and whether already granted
+ */
+export async function grantInitialFreeTierCredits(
+  workspaceId: string,
+  amountCents: number = FREE_TIER_CREDITS_CENTS
+): Promise<{ success: boolean; alreadyGranted: boolean; newBalanceCents?: number }> {
+  if (!prisma) throw new Error("Database not configured")
+
+  // Get or create the workspace credits record
+  const credits = await getOrCreateWorkspaceCredits(workspaceId)
+
+  // Check if we've already granted free tier credits (idempotency)
+  const existingGrant = await prisma.workspaceCreditTransaction.findFirst({
+    where: {
+      workspaceCreditsId: credits.id,
+      type: "adjustment",
+      metadata: {
+        path: ["reason"],
+        equals: "free_tier_grant",
+      },
+    },
+  })
+
+  if (existingGrant) {
+    return { success: true, alreadyGranted: true, newBalanceCents: credits.balanceCents }
+  }
+
+  // Apply the free tier grant in a transaction
+  const newBalance = credits.balanceCents + amountCents
+
+  await prisma.$transaction([
+    prisma.workspaceCredits.update({
+      where: { id: credits.id },
+      data: { balanceCents: newBalance },
+    }),
+    prisma.workspaceCreditTransaction.create({
+      data: {
+        workspaceCreditsId: credits.id,
+        type: "adjustment",
+        amountCents: amountCents,
+        balanceAfterCents: newBalance,
+        description: `Free tier credits: $${(amountCents / 100).toFixed(2)}`,
+        metadata: { reason: "free_tier_grant" },
+      },
+    }),
+  ])
+
+  console.log(`[Workspace Credits] Granted $${(amountCents / 100).toFixed(2)} free tier credits to workspace ${workspaceId}`)
+
+  return { success: true, alreadyGranted: false, newBalanceCents: newBalance }
 }
 
 /**

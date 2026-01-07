@@ -1,4 +1,23 @@
 export const plans = {
+  free: {
+    name: "Free",
+    price: 0,
+    features: {
+      maxAgents: 1,
+      maxMinutesPerMonth: 0, // Uses credits, not included minutes
+      maxIntegrations: 1,
+      storageGB: 1,
+      freeCredits: 10, // $10 in credits
+    },
+    features_list: [
+      "$10 free credits to start",
+      "1 AI agent",
+      "1 provider integration",
+      "1GB storage",
+      "Community support",
+      "Pay-as-you-go after credits",
+    ],
+  },
   starter: {
     name: "Starter",
     price: 79,

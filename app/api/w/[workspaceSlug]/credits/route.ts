@@ -9,6 +9,7 @@ import { apiResponse, unauthorized, serverError } from "@/lib/api/helpers"
 import { getWorkspaceCreditsInfo, getWorkspaceTransactions } from "@/lib/stripe/workspace-credits"
 import { getConnectAccountId } from "@/lib/stripe"
 import { prisma } from "@/lib/prisma"
+import { getWorkspacePaywallStatus } from "@/lib/billing/workspace-paywall"
 
 export async function GET(
   request: NextRequest,
@@ -32,15 +33,19 @@ export async function GET(
       stripeConnectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown> | null) || null
     }
 
-    const [creditsInfo, transactions] = await Promise.all([
+    const [creditsInfo, transactions, paywallStatus] = await Promise.all([
       getWorkspaceCreditsInfo(context.workspace.id),
       getWorkspaceTransactions(context.workspace.id, 10),
+      getWorkspacePaywallStatus(context.workspace.id),
     ])
 
     return apiResponse({
       credits: creditsInfo,
       transactions,
       stripeConnectAccountId,
+      // Paywall status for UI enforcement
+      isPaywalled: paywallStatus.isPaywalled,
+      hasActiveSubscription: paywallStatus.hasActiveSubscription,
     })
   } catch (error) {
     console.error("GET /api/w/[slug]/credits error:", error)

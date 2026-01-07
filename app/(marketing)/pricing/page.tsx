@@ -18,7 +18,18 @@ export default async function PricingPage() {
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+          {/* Free Plan */}
+          <PricingCard
+            name="Free"
+            price={plans.free.price}
+            description="Try out our platform with no commitment"
+            features={plans.free.features_list}
+            ctaText="Start Free"
+            ctaHref="/signup?plan=free"
+            primaryColor={primaryColor}
+          />
+
           {/* Starter Plan */}
           <PricingCard
             name="Starter"
@@ -62,6 +73,7 @@ export default async function PricingPage() {
               <thead>
                 <tr className="border-b">
                   <th className="text-left py-4 px-6 font-semibold">Feature</th>
+                  <th className="text-center py-4 px-6 font-semibold">Free</th>
                   <th className="text-center py-4 px-6 font-semibold">Starter</th>
                   <th className="text-center py-4 px-6 font-semibold">Professional</th>
                   <th className="text-center py-4 px-6 font-semibold">Enterprise</th>
@@ -69,13 +81,22 @@ export default async function PricingPage() {
               </thead>
               <tbody>
                 <tr className="border-b hover:bg-muted/50">
+                  <td className="py-4 px-6">Free Credits</td>
+                  <td className="text-center py-4 px-6">$10</td>
+                  <td className="text-center py-4 px-6">—</td>
+                  <td className="text-center py-4 px-6">—</td>
+                  <td className="text-center py-4 px-6">—</td>
+                </tr>
+                <tr className="border-b hover:bg-muted/50">
                   <td className="py-4 px-6">AI Agents</td>
+                  <td className="text-center py-4 px-6">{plans.free.features.maxAgents}</td>
                   <td className="text-center py-4 px-6">{plans.starter.features.maxAgents}</td>
                   <td className="text-center py-4 px-6">{plans.professional.features.maxAgents}</td>
                   <td className="text-center py-4 px-6">Unlimited</td>
                 </tr>
                 <tr className="border-b hover:bg-muted/50">
                   <td className="py-4 px-6">Minutes per Month</td>
+                  <td className="text-center py-4 px-6">Pay-as-you-go</td>
                   <td className="text-center py-4 px-6">
                     {plans.starter.features.maxMinutesPerMonth.toLocaleString()}
                   </td>
@@ -86,6 +107,7 @@ export default async function PricingPage() {
                 </tr>
                 <tr className="border-b hover:bg-muted/50">
                   <td className="py-4 px-6">Provider Integrations</td>
+                  <td className="text-center py-4 px-6">{plans.free.features.maxIntegrations}</td>
                   <td className="text-center py-4 px-6">
                     {plans.starter.features.maxIntegrations}
                   </td>
@@ -94,6 +116,7 @@ export default async function PricingPage() {
                 </tr>
                 <tr className="border-b hover:bg-muted/50">
                   <td className="py-4 px-6">Storage</td>
+                  <td className="text-center py-4 px-6">{plans.free.features.storageGB}GB</td>
                   <td className="text-center py-4 px-6">{plans.starter.features.storageGB}GB</td>
                   <td className="text-center py-4 px-6">
                     {plans.professional.features.storageGB}GB
@@ -103,11 +126,13 @@ export default async function PricingPage() {
                 <tr className="border-b hover:bg-muted/50">
                   <td className="py-4 px-6">Custom Branding</td>
                   <td className="text-center py-4 px-6">❌</td>
+                  <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">✅</td>
                   <td className="text-center py-4 px-6">✅</td>
                 </tr>
                 <tr className="border-b hover:bg-muted/50">
                   <td className="py-4 px-6">White-Label</td>
+                  <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">✅</td>
@@ -116,10 +141,12 @@ export default async function PricingPage() {
                   <td className="py-4 px-6">Custom Domain</td>
                   <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">❌</td>
+                  <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">✅</td>
                 </tr>
                 <tr className="border-b hover:bg-muted/50">
                   <td className="py-4 px-6">API Access</td>
+                  <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">✅</td>
                   <td className="text-center py-4 px-6">✅</td>
@@ -127,11 +154,13 @@ export default async function PricingPage() {
                 <tr className="border-b hover:bg-muted/50">
                   <td className="py-4 px-6">Priority Support</td>
                   <td className="text-center py-4 px-6">❌</td>
+                  <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">✅</td>
                   <td className="text-center py-4 px-6">✅</td>
                 </tr>
                 <tr className="hover:bg-muted/50">
                   <td className="py-4 px-6">Dedicated Account Manager</td>
+                  <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">❌</td>
                   <td className="text-center py-4 px-6">✅</td>
@@ -152,13 +181,14 @@ export default async function PricingPage() {
                   "Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately.",
               },
               {
+                question: "How does the Free plan work?",
+                answer:
+                  "Start with $10 in free credits—no credit card required. Use them to build and test your AI agents. Once your credits are used up, simply upgrade to Starter or Professional to continue.",
+              },
+              {
                 question: "What happens if I exceed my minute limit?",
                 answer:
                   "You'll be notified when you reach 80% of your limit. Overage is billed at $0.10 per minute.",
-              },
-              {
-                question: "Is there a free trial?",
-                answer: "Yes! All plans come with a 14-day free trial. No credit card required.",
               },
               {
                 question: "What's included in the Enterprise plan?",

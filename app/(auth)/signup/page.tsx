@@ -24,6 +24,7 @@ import { validatePassword } from "@/lib/auth/password"
 type PlanKey = keyof typeof plans
 
 const planBenefits: Record<PlanKey, string[]> = {
+  free: ["$10 free credits", "1 AI agent", "No credit card required"],
   starter: ["5 AI agents", "1,000 minutes/month", "Email support"],
   professional: ["25 AI agents", "5,000 minutes/month", "Priority support", "Custom branding"],
   enterprise: ["Unlimited agents", "Custom minutes", "Dedicated support", "White-label"],
@@ -128,6 +129,12 @@ function SignupForm() {
           // Continue anyway - user is authenticated
         }
 
+        // If the API returned a checkoutUrl (for paid plans), redirect to Stripe checkout
+        if (setupData?.checkoutUrl) {
+          window.location.href = setupData.checkoutUrl
+          return
+        }
+
         // Redirect to invitation, workspace (if auto-created), or workspace selector
         if (redirectTo) {
           router.push(redirectTo)
@@ -203,7 +210,11 @@ function SignupForm() {
                 <Sparkles className="h-4 w-4 text-primary" />
                 <span className="font-semibold text-foreground">{planInfo.name} Plan</span>
               </div>
-              {planInfo.price ? (
+              {planInfo.price === 0 ? (
+                <Badge variant="outline" className="bg-background">
+                  Free
+                </Badge>
+              ) : planInfo.price ? (
                 <Badge variant="outline" className="bg-background">
                   ${planInfo.price}/mo
                 </Badge>

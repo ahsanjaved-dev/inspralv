@@ -43,6 +43,11 @@ export function PricingCard({
         <div className="mt-4">
           {price === null ? (
             <div className="text-4xl font-bold">Custom</div>
+          ) : price === 0 ? (
+            <div>
+              <span className="text-4xl font-bold">Free</span>
+              <span className="text-muted-foreground ml-2 text-sm">No credit card required</span>
+            </div>
           ) : (
             <div>
               <span className="text-4xl font-bold">${price}</span>

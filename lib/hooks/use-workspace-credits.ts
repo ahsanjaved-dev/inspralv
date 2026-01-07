@@ -30,6 +30,9 @@ export interface WorkspaceCreditsResponse {
   credits: WorkspaceCreditsInfo
   transactions: WorkspaceCreditTransaction[]
   stripeConnectAccountId: string | null
+  // Paywall status
+  isPaywalled: boolean
+  hasActiveSubscription: boolean
 }
 
 export interface WorkspaceTopupIntentResponse {

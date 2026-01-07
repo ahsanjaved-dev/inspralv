@@ -3,10 +3,17 @@
  *
  * Handles credit deduction and monthly minutes tracking for voice calls.
  * Called by provider webhooks (VAPI, Retell, Synthflow) when calls complete.
+ * 
+ * Billing priority:
+ * 1. Postpaid subscriptions → Track usage, invoice at period end
+ * 2. Prepaid subscriptions → Use included minutes, then credits for overage
+ * 3. No subscription → Deduct from workspace prepaid credits
+ * 4. Billing-exempt workspaces → Use partner credits
  */
 
 import { prisma } from "@/lib/prisma"
 import { deductUsage, hasSufficientCredits as checkCredits } from "@/lib/stripe/credits"
+import { deductWorkspaceUsage, canMakePostpaidCall } from "@/lib/stripe/workspace-credits"
 
 // =============================================================================
 // TYPES
@@ -116,10 +123,11 @@ export async function checkMonthlyMinutesLimit(workspaceId: string): Promise<{
  * Called by provider webhooks after a call completes
  *
  * This function:
- * 1. Deducts credits from partner balance
- * 2. Increments workspace monthly minutes
- * 3. Updates conversation cost
- * 4. Is idempotent (checks if already processed)
+ * 1. Uses workspace-level billing (subscriptions + credits)
+ * 2. Supports postpaid subscriptions (track usage, invoice later)
+ * 3. Supports prepaid subscriptions (included minutes + overage)
+ * 4. Falls back to partner credits for billing-exempt workspaces
+ * 5. Is idempotent (checks if already processed)
  */
 export async function processCallCompletion(
   data: CallUsageData
@@ -151,21 +159,21 @@ export async function processCallCompletion(
       return {
         success: true,
         reason: "Already processed (idempotent)",
-        amountDeducted: Number(conversation.totalCost),
+        amountDeducted: Number(conversation.totalCost) * 100, // Convert back to cents
       }
     }
 
-    // 2. Deduct credits from partner balance
-    const { amountDeducted, newBalanceCents } = await deductUsage(
-      partnerId,
+    // 2. Deduct using workspace-level billing (handles subscriptions, postpaid, prepaid, partner fallback)
+    const usageResult = await deductWorkspaceUsage(
+      workspaceId,
       durationSeconds,
       conversationId,
       `${provider.toUpperCase()} call - ${Math.ceil(durationSeconds / 60)} minutes`
     )
 
-    // 3. Calculate minutes and update workspace + conversation in transaction
+    // 3. Calculate minutes and update workspace + conversation
     const minutes = Math.ceil(durationSeconds / 60)
-    const costDollars = amountDeducted / 100
+    const costDollars = usageResult.amountDeducted / 100
 
     await prisma.$transaction([
       // Update workspace monthly minutes
@@ -187,18 +195,30 @@ export async function processCallCompletion(
           totalCost: costDollars,
           costBreakdown: {
             minutes,
-            rate_per_minute: amountDeducted / minutes / 100,
-            total_cents: amountDeducted,
+            rate_per_minute: usageResult.amountDeducted / minutes / 100,
+            total_cents: usageResult.amountDeducted,
+            billing_type: usageResult.deductedFrom,
+            // Include postpaid info if applicable
+            ...(usageResult.deductedFrom === "postpaid" && {
+              postpaid_minutes_used: usageResult.postpaidMinutesUsed,
+              postpaid_minutes_limit: usageResult.postpaidMinutesLimit,
+              pending_invoice_cents: usageResult.pendingInvoiceAmountCents,
+            }),
           },
           durationSeconds: durationSeconds,
         },
       }),
     ])
 
+    console.log(
+      `[Billing] Usage processed: ${minutes} min, $${costDollars.toFixed(2)}, ` +
+      `billed to: ${usageResult.deductedFrom}`
+    )
+
     return {
       success: true,
-      amountDeducted,
-      newBalanceCents,
+      amountDeducted: usageResult.amountDeducted,
+      newBalanceCents: usageResult.newBalanceCents,
       minutesAdded: minutes,
     }
   } catch (error) {
