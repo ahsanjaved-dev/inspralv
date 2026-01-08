@@ -13,6 +13,31 @@ export async function POST(request: NextRequest) {
       return forbidden("Only partner administrators can create workspaces")
     }
 
+    // Check workspace limit before creating
+    const resourceLimits = auth.partner.resource_limits as { max_workspaces?: number } | null
+    const maxWorkspaces = resourceLimits?.max_workspaces ?? -1
+
+    if (maxWorkspaces !== -1) {
+      // Count existing workspaces for this partner
+      const { count: workspaceCount, error: countError } = await auth.adminClient
+        .from("workspaces")
+        .select("id", { count: "exact", head: true })
+        .eq("partner_id", auth.partner.id)
+        .is("deleted_at", null)
+
+      if (countError) {
+        console.error("Count workspaces error:", countError)
+        return serverError("Failed to check workspace limit")
+      }
+
+      if ((workspaceCount || 0) >= maxWorkspaces) {
+        return apiError(
+          `Workspace limit reached (${maxWorkspaces}). Please upgrade your plan or contact support to create more workspaces.`,
+          403
+        )
+      }
+    }
+
     const body = await request.json()
 
     // Add a timestamp suffix to ensure unique slugs
@@ -93,15 +118,31 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function GET(_request: NextRequest) {
   try {
     const auth = await getPartnerAuthContext()
     if (!auth) return unauthorized()
 
-    // Return user's accessible workspaces
+    // Get workspace limit info
+    const resourceLimits = auth.partner.resource_limits as { max_workspaces?: number } | null
+    const maxWorkspaces = resourceLimits?.max_workspaces ?? -1
+    const currentWorkspaceCount = auth.workspaces.length
+
+    // Check if user can create more workspaces
+    const canCreateWorkspace = isPartnerAdmin(auth) && 
+      (maxWorkspaces === -1 || currentWorkspaceCount < maxWorkspaces)
+
+    // Return user's accessible workspaces with limit info
     return apiResponse({
       workspaces: auth.workspaces,
-      canCreateWorkspace: isPartnerAdmin(auth),
+      canCreateWorkspace,
+      workspaceLimits: {
+        max: maxWorkspaces,
+        current: currentWorkspaceCount,
+        remaining: maxWorkspaces === -1 ? -1 : Math.max(0, maxWorkspaces - currentWorkspaceCount),
+        isUnlimited: maxWorkspaces === -1,
+      },
     })
   } catch (error) {
     console.error("GET /api/workspaces error:", error)

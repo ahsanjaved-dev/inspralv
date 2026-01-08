@@ -45,28 +45,35 @@ export type PlanSlug = "free" | "pro" | "agency"
 // Legacy tier type for backwards compatibility
 export type PlanTier = "starter" | "professional" | "enterprise" | "pro"
 
+export type CanonicalPlanTier = PlanSlug
+
+export function normalizePlanTier(plan: string): CanonicalPlanTier | null {
+  const p = plan.toLowerCase().trim()
+  if (p === "free") return "free"
+  if (p === "pro") return "pro"
+  if (p === "agency") return "agency"
+  // Legacy aliases
+  if (p === "starter" || p === "professional") return "pro"
+  if (p === "enterprise") return "agency"
+  return null
+}
+
 /**
  * Get Stripe Price ID for a plan
  * Supports both new (free, pro, agency) and legacy (starter, professional, enterprise) plan names
  */
 export function getPriceIdForPlan(plan: string): string | null {
-  switch (plan) {
-    // New plan structure
-    case "pro":
-      return env.stripePricePro || env.stripePriceProfessional || null
+  const normalized = normalizePlanTier(plan)
+  if (!normalized) return null
+
+  switch (normalized) {
     case "free":
-      return null // Free plan doesn't need a Stripe price
+      // Some installs use a $0 Stripe price to create a subscription record; allow it if configured.
+      return env.stripePriceFree || null
+    case "pro":
+      return env.stripePricePro || env.stripePriceProfessional || env.stripePriceStarter || null
     case "agency":
-      return null // Agency is custom/request-only
-    // Legacy plan names (map to new structure)
-    case "starter":
-      return env.stripePriceStarter || env.stripePricePro || null
-    case "professional":
-      return env.stripePriceProfessional || env.stripePricePro || null
-    case "enterprise":
-      return env.stripePriceEnterprise || null
-    default:
-      return null
+      return env.stripePriceAgency || env.stripePriceEnterprise || null
   }
 }
 
@@ -74,12 +81,15 @@ export function getPriceIdForPlan(plan: string): string | null {
  * Get plan slug from Stripe Price ID
  */
 export function getPlanFromPriceId(priceId: string): PlanSlug | null {
-  // Check new Pro price first
-  if (priceId === env.stripePricePro) return "pro"
+  // Canonical mappings first
+  if (env.stripePriceFree && priceId === env.stripePriceFree) return "free"
+  if (env.stripePricePro && priceId === env.stripePricePro) return "pro"
+  if (env.stripePriceAgency && priceId === env.stripePriceAgency) return "agency"
+
   // Legacy mappings
-  if (priceId === env.stripePriceStarter) return "pro" // Map starter to pro
-  if (priceId === env.stripePriceProfessional) return "pro" // Map professional to pro
-  if (priceId === env.stripePriceEnterprise) return "agency"
+  if (env.stripePriceStarter && priceId === env.stripePriceStarter) return "pro" // Map starter to pro
+  if (env.stripePriceProfessional && priceId === env.stripePriceProfessional) return "pro" // Map professional to pro
+  if (env.stripePriceEnterprise && priceId === env.stripePriceEnterprise) return "agency"
   return null
 }
 
@@ -87,7 +97,11 @@ export function getPlanFromPriceId(priceId: string): PlanSlug | null {
  * Check if a plan requires Stripe checkout
  */
 export function isPaidPlan(plan: string): boolean {
-  return plan === "pro" || plan === "starter" || plan === "professional"
+  const normalized = normalizePlanTier(plan)
+  if (!normalized) return false
+  // If a "free" Stripe price is configured (e.g. $0 subscription), treat it as requiring checkout.
+  if (normalized === "free") return !!env.stripePriceFree
+  return normalized === "pro" || normalized === "agency"
 }
 
 // =============================================================================

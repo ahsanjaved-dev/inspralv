@@ -72,11 +72,11 @@ async function testStripeConfiguration() {
     const balance = await stripe.balance.retrieve()
     logSuccess(`Connected to Stripe (Available: ${balance.available.map(b => `${b.amount / 100} ${b.currency.toUpperCase()}`).join(", ")})`)
     
-    // Check for required price IDs
+    // Check for required price IDs (canonical)
     const priceIds = [
-      process.env.STRIPE_PRICE_STARTER,
-      process.env.STRIPE_PRICE_PROFESSIONAL,
-      process.env.STRIPE_PRICE_ENTERPRISE,
+      process.env.STRIPE_PRICE_FREE,
+      process.env.STRIPE_PRICE_PRO,
+      process.env.STRIPE_PRICE_AGENCY,
     ]
     
     for (const priceId of priceIds) {
@@ -164,9 +164,9 @@ async function testPaymentIntent() {
 async function testCheckoutSession() {
   logSection("TEST 3: Create Checkout Session (Simulates Subscription)")
   
-  const priceId = process.env.STRIPE_PRICE_STARTER
+  const priceId = process.env.STRIPE_PRICE_PRO
   if (!priceId) {
-    logWarning("STRIPE_PRICE_STARTER not set, skipping checkout test")
+    logWarning("STRIPE_PRICE_PRO not set, skipping checkout test")
     return true
   }
   
@@ -190,7 +190,7 @@ async function testCheckoutSession() {
       cancel_url: `${BASE_URL}/org/billing?checkout=cancelled`,
       metadata: {
         partner_id: "test-checkout-partner",
-        plan_tier: "starter",
+        plan_tier: "pro",
       },
     })
     
@@ -255,7 +255,7 @@ async function testAPIEndpoints() {
   console.log(`curl -X POST ${BASE_URL}/api/partner/billing/checkout \\
   -H "Content-Type: application/json" \\
   -H "Cookie: <your-session-cookie>" \\
-  -d '{"plan": "starter"}'\n`)
+  -d '{"plan": "pro"}'\n`)
   
   console.log(`${colors.yellow}# Create credits top-up:${colors.reset}`)
   console.log(`curl -X POST ${BASE_URL}/api/partner/credits/topup \\

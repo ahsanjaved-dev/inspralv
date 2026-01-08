@@ -67,9 +67,8 @@ export default function SuperAdminPartnersPage() {
               <SelectContent>
                 <SelectItem value="all">All Plans</SelectItem>
                 <SelectItem value="free">Free</SelectItem>
-                <SelectItem value="starter">Starter</SelectItem>
                 <SelectItem value="pro">Pro</SelectItem>
-                <SelectItem value="enterprise">Enterprise</SelectItem>
+                <SelectItem value="agency">Agency</SelectItem>
               </SelectContent>
             </Select>
           </div>

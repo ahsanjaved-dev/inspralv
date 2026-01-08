@@ -154,6 +154,33 @@ enum LeadSource {
 }
 
 // =============================================================================
+// WHITE-LABEL VARIANTS (Super Admin-managed plan tiers for agencies)
+// =============================================================================
+
+model WhiteLabelVariant {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug              String    @unique @db.VarChar(50)
+  name              String    @db.VarChar(100)
+  description       String?
+  monthlyPriceCents Int       @default(0) @map("monthly_price_cents")
+  stripePriceId     String?   @map("stripe_price_id") @db.VarChar(100)
+  maxWorkspaces     Int       @default(10) @map("max_workspaces") // -1 = unlimited
+  isActive          Boolean   @default(true) @map("is_active")
+  sortOrder         Int       @default(0) @map("sort_order")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  partners        Partner[]
+  partnerRequests PartnerRequest[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("white_label_variants")
+  @@schema("public")
+}
+
+// =============================================================================
 // PARTNER (Agency/Organization) - Top Level
 // =============================================================================
 
@@ -175,6 +202,8 @@ model Partner {
   isBillingExempt        Boolean   @default(false) @map("is_billing_exempt")
   onboardingStatus       String?   @default("active") @map("onboarding_status")
   requestId              String?   @unique @map("request_id") @db.Uuid
+  // Reference to the white-label variant (plan tier) this partner is subscribed to
+  whiteLabelVariantId    String?   @map("white_label_variant_id") @db.Uuid
   deletedAt              DateTime? @map("deleted_at") @db.Timestamptz
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -188,6 +217,7 @@ model Partner {
   originatingRequest PartnerRequest?     @relation("OriginatingRequest", fields: [requestId], references: [id])
   billingCredits     BillingCredits?
   subscriptionPlans  WorkspaceSubscriptionPlan[]
+  whiteLabelVariant  WhiteLabelVariant?  @relation(fields: [whiteLabelVariantId], references: [id])
 
   @@map("partners")
   @@schema("public")
@@ -269,32 +299,35 @@ model PartnerInvitation {
 // =============================================================================
 
 model PartnerRequest {
-  id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  status                PartnerRequestStatus @default(pending)
-  companyName           String               @map("company_name")
-  contactEmail          String               @map("contact_email")
-  contactName           String               @map("contact_name")
-  phone                 String?
-  desiredSubdomain      String               @map("desired_subdomain")
-  customDomain          String               @map("custom_domain")
-  businessDescription   String               @map("business_description")
-  expectedUsers         Int?                 @map("expected_users")
-  useCase               String               @map("use_case")
-  brandingData          Json                 @default("{}") @map("branding_data")
-  selectedPlan          String               @default("enterprise") @map("selected_plan")
-  billingInfo           Json?                @map("billing_info")
-  requestedAt           DateTime             @default(now()) @map("requested_at") @db.Timestamptz
-  reviewedAt            DateTime?            @map("reviewed_at") @db.Timestamptz
-  reviewedBy            String?              @map("reviewed_by") @db.Uuid
-  rejectionReason       String?              @map("rejection_reason")
-  provisionedPartnerId  String?              @unique @map("provisioned_partner_id") @db.Uuid
-  metadata              Json                 @default("{}")
-  createdAt             DateTime             @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt             DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                         String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status                     PartnerRequestStatus @default(pending)
+  companyName                String               @map("company_name")
+  contactEmail               String               @map("contact_email")
+  contactName                String               @map("contact_name")
+  phone                      String?
+  desiredSubdomain           String               @map("desired_subdomain")
+  customDomain               String               @map("custom_domain")
+  businessDescription        String               @map("business_description")
+  expectedUsers              Int?                 @map("expected_users")
+  useCase                    String               @map("use_case")
+  brandingData               Json                 @default("{}") @map("branding_data")
+  selectedPlan               String               @default("enterprise") @map("selected_plan")
+  billingInfo                Json?                @map("billing_info")
+  requestedAt                DateTime             @default(now()) @map("requested_at") @db.Timestamptz
+  reviewedAt                 DateTime?            @map("reviewed_at") @db.Timestamptz
+  reviewedBy                 String?              @map("reviewed_by") @db.Uuid
+  rejectionReason            String?              @map("rejection_reason")
+  provisionedPartnerId       String?              @unique @map("provisioned_partner_id") @db.Uuid
+  // Assigned white-label variant for this request (set by super admin before provisioning)
+  assignedWhiteLabelVariantId String?             @map("assigned_white_label_variant_id") @db.Uuid
+  metadata                   Json                 @default("{}")
+  createdAt                  DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                  DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  provisionedPartner Partner? @relation("ProvisionedPartner", fields: [provisionedPartnerId], references: [id])
-  originatingPartner Partner? @relation("OriginatingRequest")
+  provisionedPartner        Partner?           @relation("ProvisionedPartner", fields: [provisionedPartnerId], references: [id])
+  originatingPartner        Partner?           @relation("OriginatingRequest")
+  assignedWhiteLabelVariant WhiteLabelVariant? @relation(fields: [assignedWhiteLabelVariantId], references: [id])
 
   @@map("partner_requests")
   @@schema("public")

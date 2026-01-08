@@ -14,14 +14,15 @@ import { getPartnerAuthContext, isPartnerAdmin } from "@/lib/api/auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import {
   getPriceIdForPlan,
+  normalizePlanTier,
   updateSubscriptionPlan,
   previewSubscriptionChange,
-  type PlanTier
 } from "@/lib/stripe"
 import { prisma } from "@/lib/prisma"
 
 const changePlanSchema = z.object({
-  newPlan: z.enum(["starter", "professional", "enterprise"]),
+  // Canonical partner subscription tiers
+  newPlan: z.enum(["pro", "agency"]),
 })
 
 /**
@@ -40,9 +41,9 @@ export async function GET(request: NextRequest) {
     }
 
     const searchParams = request.nextUrl.searchParams
-    const newPlan = searchParams.get("newPlan") as PlanTier | null
+    const newPlan = searchParams.get("newPlan")
 
-    if (!newPlan || !["starter", "professional", "enterprise"].includes(newPlan)) {
+    if (!newPlan || !["pro", "agency"].includes(newPlan)) {
       return apiError("Invalid plan specified")
     }
 
@@ -68,7 +69,8 @@ export async function GET(request: NextRequest) {
       return apiError("No active subscription found", 400)
     }
 
-    if (partner.planTier === newPlan) {
+    const currentTier = normalizePlanTier(partner.planTier || "")
+    if (currentTier === newPlan) {
       return apiError("You are already on this plan", 400)
     }
 
@@ -144,7 +146,8 @@ export async function POST(request: NextRequest) {
       return apiError("No active subscription found", 400)
     }
 
-    if (partner.planTier === newPlan) {
+    const currentTier = normalizePlanTier(partner.planTier || "")
+    if (currentTier === newPlan) {
       return apiError("You are already on this plan", 400)
     }
 
@@ -188,9 +191,12 @@ export async function POST(request: NextRequest) {
  * Helper to determine if plan change is an upgrade
  */
 function getIsUpgrade(currentPlan: string, newPlan: string): boolean {
-  const planOrder = { starter: 1, professional: 2, enterprise: 3 }
+  const current = normalizePlanTier(currentPlan) || "free"
+  const next = normalizePlanTier(newPlan)
+  if (!next) return false
+  const planOrder = { free: 0, pro: 1, agency: 2 }
   return (
-    planOrder[newPlan as keyof typeof planOrder] >
-    planOrder[currentPlan as keyof typeof planOrder]
+    planOrder[next] >
+    planOrder[current]
   )
 }

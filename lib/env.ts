@@ -29,12 +29,17 @@ export const env = {
   stripeWebhookSecret: getEnvVar("STRIPE_WEBHOOK_SECRET", false),
   stripeConnectWebhookSecret: getEnvVar("STRIPE_CONNECT_WEBHOOK_SECRET", false),
   // Stripe Price IDs (create in Stripe Dashboard first)
-  // New simplified plan structure
+  // New simplified plan structure (canonical)
+  stripePriceFree: getEnvVar("STRIPE_PRICE_FREE", false),
   stripePricePro: getEnvVar("STRIPE_PRICE_PRO", false),
+  stripePriceAgency: getEnvVar("STRIPE_PRICE_AGENCY", false),
   // Legacy price IDs (for backwards compatibility)
   stripePriceStarter: getEnvVar("STRIPE_PRICE_STARTER", false),
   stripePriceProfessional: getEnvVar("STRIPE_PRICE_PROFESSIONAL", false),
   stripePriceEnterprise: getEnvVar("STRIPE_PRICE_ENTERPRISE", false),
+  // Stripe Connect: Global platform fee percentage taken from each payment on Connect accounts
+  // Default: 10% (e.g., if workspace pays $100, platform gets $10, agency gets $90)
+  stripeConnectPlatformFeePercent: parseFloat(getEnvVar("STRIPE_CONNECT_PLATFORM_FEE_PERCENT", false) || "10"),
 
   // Resend Email Service
   resendApiKey: getEnvVar("RESEND_API_KEY", false),

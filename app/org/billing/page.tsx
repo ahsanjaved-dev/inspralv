@@ -14,7 +14,8 @@ import {
   Link2,
   CheckCircle2,
   AlertCircle,
-  XCircle
+  XCircle,
+  ShieldCheck
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
@@ -43,14 +44,14 @@ export default function OrgBillingPage() {
   // Plan change dialog state
   const [changePlanDialog, setChangePlanDialog] = useState<{
     open: boolean
-    plan: "starter" | "professional" | "enterprise" | null
+    plan: "pro" | "agency" | null
     planName: string
-    planPrice: number
+    planPrice: number | null
   }>({
     open: false,
     plan: null,
     planName: "",
-    planPrice: 0,
+    planPrice: null,
   })
 
   // Handle callback messages from URL params
@@ -80,7 +81,20 @@ export default function OrgBillingPage() {
     }
   }, [searchParams, refetch, refetchConnect, refetchCredits])
 
-  const handleCheckout = async (plan: "starter" | "professional" | "enterprise") => {
+  // Variant-based checkout (for white-label partners)
+  const handleVariantCheckout = async () => {
+    try {
+      // No plan param needed - uses assigned variant (pass undefined)
+      const result = await checkout.mutateAsync(undefined)
+      if (result.url) {
+        window.location.href = result.url
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to start checkout")
+    }
+  }
+
+  const handleCheckout = async (plan: "pro" | "agency") => {
     try {
       const result = await checkout.mutateAsync(plan)
       if (result.url) {
@@ -92,12 +106,18 @@ export default function OrgBillingPage() {
   }
 
   const handlePlanSelection = (
-    plan: "starter" | "professional" | "enterprise",
+    plan: "pro" | "agency",
     planName: string,
-    planPrice: number
+    planPrice: number | null
   ) => {
+    const current = subscription?.planTier
+    const isCurrent =
+      plan === "pro"
+        ? current === "pro" || current === "starter" || current === "professional"
+        : current === "agency" || current === "enterprise"
+
     // If they have an active subscription, show change plan dialog
-    if (hasActiveSubscription && subscription?.planTier !== plan) {
+    if (hasActiveSubscription && !isCurrent) {
       setChangePlanDialog({
         open: true,
         plan,
@@ -142,6 +162,8 @@ export default function OrgBillingPage() {
 
   const subscription = billingInfo?.subscription
   const hasActiveSubscription = subscription?.hasActiveSubscription
+  const isBillingExempt = billingInfo?.partner?.isBillingExempt
+  const whiteLabelVariant = billingInfo?.whiteLabelVariant
 
   return (
     <div className="space-y-6">
@@ -153,7 +175,7 @@ export default function OrgBillingPage() {
             Manage your subscription and billing settings
           </p>
         </div>
-        {hasActiveSubscription && subscription?.hasStripeCustomer && (
+        {hasActiveSubscription && subscription?.hasStripeCustomer && !isBillingExempt && (
           <Button onClick={handleManageBilling} disabled={portal.isPending}>
             {portal.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -165,6 +187,27 @@ export default function OrgBillingPage() {
         )}
       </div>
 
+      {/* Billing Exempt Banner */}
+      {isBillingExempt && (
+        <Card className="border-green-500/30 bg-green-500/5">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                <ShieldCheck className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="font-medium text-green-700 dark:text-green-400">
+                  Platform Partner - Billing Exempt
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Your organization is exempt from platform billing fees.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Current Plan Card */}
       <Card>
         <CardHeader>
@@ -174,25 +217,43 @@ export default function OrgBillingPage() {
                 <Building2 className="h-5 w-5" />
                 Current Plan
               </CardTitle>
-              <CardDescription>Your organization's subscription</CardDescription>
+              <CardDescription>Your organization&apos;s subscription</CardDescription>
             </div>
             <Badge 
-              variant={subscription?.status === "active" ? "default" : "secondary"}
+              variant={isBillingExempt ? "default" : subscription?.status === "active" ? "default" : "secondary"}
               className="capitalize"
             >
-              {subscription?.status || "No subscription"}
+              {isBillingExempt ? "Exempt" : subscription?.status || "No subscription"}
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
           <div className="flex items-baseline gap-2 mb-4">
             <span className="text-4xl font-bold">{subscription?.planName || "Free"}</span>
-            {subscription?.planPrice && (
+            {!isBillingExempt && subscription?.planPrice != null && subscription.planPrice > 0 && (
               <span className="text-xl text-muted-foreground">
                 ${subscription.planPrice}/month
               </span>
             )}
+            {isBillingExempt && (
+              <span className="text-xl text-muted-foreground">
+                (Platform Partner)
+              </span>
+            )}
           </div>
+
+          {/* Show variant details if assigned */}
+          {whiteLabelVariant && (
+            <div className="mb-4 p-3 rounded-lg bg-muted/50">
+              <p className="text-sm font-medium">Plan Details</p>
+              <p className="text-sm text-muted-foreground">
+                {whiteLabelVariant.description || `${whiteLabelVariant.name} plan`}
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Workspace limit: {whiteLabelVariant.maxWorkspaces === -1 ? "Unlimited" : whiteLabelVariant.maxWorkspaces}
+              </p>
+            </div>
+          )}
 
           {/* Plan Features */}
           {billingInfo?.features_list && (
@@ -211,158 +272,214 @@ export default function OrgBillingPage() {
       {/* Credits Card */}
       <CreditsCard />
 
-      {/* Plan Selection - Always show for upgrades/changes */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="h-5 w-5" />
-            {hasActiveSubscription ? "Change Plan" : "Choose a Plan"}
-          </CardTitle>
-          <CardDescription>
-            {hasActiveSubscription 
-              ? "Upgrade or downgrade your subscription" 
-              : "Select a plan to get started"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Starter Plan */}
-            <div className={`relative border rounded-xl p-6 transition-all ${
-              subscription?.planTier === "starter" 
-                ? "border-primary bg-primary/5" 
-                : "hover:border-primary/50"
-            }`}>
-              {subscription?.planTier === "starter" && (
-                <Badge className="absolute -top-2 right-4">Current</Badge>
-              )}
-              <div className="mb-4">
-                <h3 className="text-xl font-semibold">Starter</h3>
-                <p className="text-3xl font-bold mt-2">
-                  $79<span className="text-sm font-normal text-muted-foreground">/mo</span>
-                </p>
+      {/* Plan Selection - Show variant checkout for white-label, or legacy plan selection */}
+      {!isBillingExempt && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              {hasActiveSubscription ? "Subscription" : whiteLabelVariant ? "Activate Subscription" : "Choose a Plan"}
+            </CardTitle>
+            <CardDescription>
+              {hasActiveSubscription 
+                ? "Manage your subscription" 
+                : whiteLabelVariant 
+                  ? `Complete checkout to activate your ${whiteLabelVariant.name} plan`
+                  : "Select a plan to get started"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {/* White-label variant checkout (assigned by super admin) */}
+            {whiteLabelVariant && !hasActiveSubscription && (
+              <div className="border-2 border-primary rounded-xl p-6 bg-primary/5">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-xl font-semibold">{whiteLabelVariant.name}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {whiteLabelVariant.description || "Your assigned plan"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-3xl font-bold">
+                      ${(whiteLabelVariant.monthlyPriceCents / 100).toFixed(0)}
+                      <span className="text-sm font-normal text-muted-foreground">/mo</span>
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
+                  <li className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-500" />
+                    {whiteLabelVariant.maxWorkspaces === -1 
+                      ? "Unlimited workspaces" 
+                      : `Up to ${whiteLabelVariant.maxWorkspaces} workspaces`}
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-500" /> White-label platform access
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-green-500" /> Stripe Connect for payments
+                  </li>
+                </ul>
+                <Button
+                  className="w-full"
+                  onClick={handleVariantCheckout}
+                  disabled={checkout.isPending}
+                >
+                  {checkout.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      Complete Checkout
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </>
+                  )}
+                </Button>
               </div>
-              <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> 5 AI agents
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> 1,000 minutes/month
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> Email support
-                </li>
-              </ul>
-              <Button
-                className="w-full"
-                variant={subscription?.planTier === "starter" ? "outline" : "default"}
-                onClick={() => handlePlanSelection("starter", "Starter", 79)}
-                disabled={checkout.isPending || subscription?.planTier === "starter"}
-              >
-                {checkout.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : subscription?.planTier === "starter" ? (
-                  "Current Plan"
-                ) : hasActiveSubscription ? (
-                  "Change to Starter"
-                ) : (
-                  <>Select <ArrowRight className="h-4 w-4 ml-2" /></>
-                )}
-              </Button>
-            </div>
+            )}
 
-            {/* Professional Plan */}
-            <div className={`relative border-2 rounded-xl p-6 transition-all ${
-              subscription?.planTier === "professional" 
-                ? "border-primary bg-primary/5" 
-                : "border-primary hover:shadow-lg"
-            }`}>
-              <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary">
-                {subscription?.planTier === "professional" ? "Current" : "Most Popular"}
-              </Badge>
-              <div className="mb-4">
-                <h3 className="text-xl font-semibold">Professional</h3>
-                <p className="text-3xl font-bold mt-2">
-                  $249<span className="text-sm font-normal text-muted-foreground">/mo</span>
-                </p>
-              </div>
-              <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> 25 AI agents
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> 5,000 minutes/month
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> Priority support
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> Custom branding
-                </li>
-              </ul>
-              <Button
-                className="w-full"
-                onClick={() => handlePlanSelection("professional", "Professional", 249)}
-                disabled={checkout.isPending || subscription?.planTier === "professional"}
-              >
-                {checkout.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : subscription?.planTier === "professional" ? (
-                  "Current Plan"
-                ) : hasActiveSubscription ? (
-                  "Change to Professional"
-                ) : (
-                  <>Select <ArrowRight className="h-4 w-4 ml-2" /></>
-                )}
-              </Button>
-            </div>
+            {/* Legacy plan selection (for partners without assigned variant) */}
+            {!whiteLabelVariant && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Free Plan */}
+                <div className={`relative border rounded-xl p-6 transition-all ${
+                  !hasActiveSubscription || subscription?.planTier === "free"
+                    ? "border-primary bg-primary/5"
+                    : "hover:border-primary/50"
+                }`}>
+                  {(!hasActiveSubscription || subscription?.planTier === "free") && (
+                    <Badge className="absolute -top-2 right-4">Current</Badge>
+                  )}
+                  <div className="mb-4">
+                    <h3 className="text-xl font-semibold">Free</h3>
+                    <p className="text-3xl font-bold mt-2">
+                      $0<span className="text-sm font-normal text-muted-foreground">/mo</span>
+                    </p>
+                  </div>
+                  <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> Get started with the basics
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> Upgrade anytime
+                    </li>
+                  </ul>
+                  <Button className="w-full" variant="outline" disabled>
+                    Included
+                  </Button>
+                </div>
 
-            {/* Enterprise Plan */}
-            <div className={`relative border rounded-xl p-6 transition-all ${
-              subscription?.planTier === "enterprise" 
-                ? "border-primary bg-primary/5" 
-                : "hover:border-primary/50"
-            }`}>
-              {subscription?.planTier === "enterprise" && (
-                <Badge className="absolute -top-2 right-4">Current</Badge>
-              )}
-              <div className="mb-4">
-                <h3 className="text-xl font-semibold">Enterprise</h3>
-                <p className="text-3xl font-bold mt-2">Custom</p>
+                {/* Pro Plan */}
+                <div className={`relative border-2 rounded-xl p-6 transition-all ${
+                  subscription?.planTier === "pro" || subscription?.planTier === "starter" || subscription?.planTier === "professional"
+                    ? "border-primary bg-primary/5"
+                    : "border-primary hover:shadow-lg"
+                }`}>
+                  <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary">
+                    {subscription?.planTier === "pro" || subscription?.planTier === "starter" || subscription?.planTier === "professional"
+                      ? "Current"
+                      : "Most Popular"}
+                  </Badge>
+                  <div className="mb-4">
+                    <h3 className="text-xl font-semibold">Pro</h3>
+                    <p className="text-3xl font-bold mt-2">
+                      $99<span className="text-sm font-normal text-muted-foreground">/mo</span>
+                    </p>
+                  </div>
+                  <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> More usage & higher limits
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> Priority support
+                    </li>
+                  </ul>
+                  <Button
+                    className="w-full"
+                    onClick={() => handlePlanSelection("pro", "Pro", 99)}
+                    disabled={
+                      checkout.isPending ||
+                      subscription?.planTier === "pro" ||
+                      subscription?.planTier === "starter" ||
+                      subscription?.planTier === "professional"
+                    }
+                  >
+                    {checkout.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : subscription?.planTier === "pro" ||
+                      subscription?.planTier === "starter" ||
+                      subscription?.planTier === "professional" ? (
+                      "Current Plan"
+                    ) : hasActiveSubscription ? (
+                      "Change to Pro"
+                    ) : (
+                      <>Select <ArrowRight className="h-4 w-4 ml-2" /></>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Agency Plan */}
+                <div className={`relative border rounded-xl p-6 transition-all ${
+                  subscription?.planTier === "agency" || subscription?.planTier === "enterprise"
+                    ? "border-primary bg-primary/5"
+                    : "hover:border-primary/50"
+                }`}>
+                  {(subscription?.planTier === "agency" || subscription?.planTier === "enterprise") && (
+                    <Badge className="absolute -top-2 right-4">Current</Badge>
+                  )}
+                  <div className="mb-4">
+                    <h3 className="text-xl font-semibold">Agency</h3>
+                    <p className="text-3xl font-bold mt-2">Custom</p>
+                  </div>
+                  <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> White-label & advanced controls
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> Dedicated support
+                    </li>
+                  </ul>
+                  <Button
+                    className="w-full"
+                    variant="outline"
+                    onClick={() => handlePlanSelection("agency", "Agency", null)}
+                    disabled={checkout.isPending || subscription?.planTier === "agency" || subscription?.planTier === "enterprise"}
+                  >
+                    {checkout.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : subscription?.planTier === "agency" || subscription?.planTier === "enterprise" ? (
+                      "Current Plan"
+                    ) : hasActiveSubscription ? (
+                      "Change to Agency"
+                    ) : (
+                      <>Select <ArrowRight className="h-4 w-4 ml-2" /></>
+                    )}
+                  </Button>
+                </div>
               </div>
-              <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> Unlimited agents
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> Custom minute pools
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> 24/7 support
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-500" /> Dedicated infrastructure
-                </li>
-              </ul>
-              <Button
-                className="w-full"
-                variant="outline"
-                onClick={() => handlePlanSelection("enterprise", "Enterprise", 0)}
-                disabled={checkout.isPending || subscription?.planTier === "enterprise"}
-              >
-                {checkout.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : subscription?.planTier === "enterprise" ? (
-                  "Current Plan"
-                ) : hasActiveSubscription ? (
-                  "Change to Enterprise"
-                ) : (
-                  "Contact Sales"
-                )}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            )}
+
+            {/* Active subscription with variant */}
+            {whiteLabelVariant && hasActiveSubscription && (
+              <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
+                <div>
+                  <p className="font-medium">Your subscription is active</p>
+                  <p className="text-sm text-muted-foreground">
+                    {whiteLabelVariant.name} - ${(whiteLabelVariant.monthlyPriceCents / 100).toFixed(0)}/month
+                  </p>
+                </div>
+                <Button variant="outline" onClick={handleManageBilling} disabled={portal.isPending}>
+                  {portal.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                  )}
+                  Manage
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Payment Method */}
       {hasActiveSubscription && (

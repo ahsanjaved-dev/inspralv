@@ -20,9 +20,9 @@ interface ChangePlanDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentPlan: string
-  newPlan: "starter" | "professional" | "enterprise"
+  newPlan: "pro" | "agency"
   planName: string
-  planPrice: number
+  planPrice: number | null
 }
 
 export function ChangePlanDialog({
@@ -94,7 +94,9 @@ export function ChangePlanDialog({
           <div className="rounded-lg border p-4">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">New monthly price</span>
-              <span className="font-semibold">${planPrice}/month</span>
+              <span className="font-semibold">
+                {planPrice == null ? "Custom" : `$${planPrice}/month`}
+              </span>
             </div>
           </div>
 

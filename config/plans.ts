@@ -203,6 +203,19 @@ export const plans = {
     features: workspacePlans.free.features,
     features_list: workspacePlans.free.featuresList,
   },
+  // New canonical keys (preferred)
+  pro: {
+    name: workspacePlans.pro.name,
+    price: 99,
+    features: workspacePlans.pro.features,
+    features_list: workspacePlans.pro.featuresList,
+  },
+  agency: {
+    name: workspacePlans.agency.name,
+    price: null,
+    features: workspacePlans.agency.features,
+    features_list: workspacePlans.agency.featuresList,
+  },
   starter: {
     // Map old 'starter' to 'pro' for backwards compatibility
     name: workspacePlans.pro.name,

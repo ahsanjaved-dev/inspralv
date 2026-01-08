@@ -258,11 +258,12 @@ export async function getWorkspaceTransactions(
 /**
  * Create a PaymentIntent for topping up workspace credits
  * Payment goes to partner's Stripe Connect account
+ * Platform takes a % cut from each payment via application_fee_amount
  */
 export async function createWorkspaceTopupPaymentIntent(
   workspaceId: string,
   amountCents: number,
-  platformFeePercent = 10 // 10% platform fee by default
+  platformFeePercent?: number
 ): Promise<{ clientSecret: string; paymentIntentId: string }> {
   const stripe = getStripe()
 
@@ -277,8 +278,9 @@ export async function createWorkspaceTopupPaymentIntent(
     throw new Error("Partner has not completed Stripe Connect onboarding")
   }
 
-  // Calculate platform fee
-  const applicationFeeAmount = Math.round(amountCents * (platformFeePercent / 100))
+  // Calculate platform fee using env var (default 10%)
+  const feePercent = platformFeePercent ?? env.stripeConnectPlatformFeePercent ?? 10
+  const applicationFeeAmount = Math.round(amountCents * (feePercent / 100))
 
   const paymentIntent = await stripe.paymentIntents.create(
     {

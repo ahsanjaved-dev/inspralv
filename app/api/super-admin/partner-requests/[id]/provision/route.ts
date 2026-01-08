@@ -52,14 +52,30 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const fullPlatformHostname = getFullSubdomainUrl(platformSubdomain)
     const loginUrl = getLoginUrl(platformSubdomain)
 
-    // Step 1: Create partner record
+    // Get the assigned white-label variant (if any) to determine workspace limits
+    let maxWorkspaces = -1 // Default unlimited
+    const variantId = partnerRequest.assigned_white_label_variant_id
+    
+    if (variantId) {
+      const { data: variant } = await adminClient
+        .from("white_label_variants")
+        .select("max_workspaces")
+        .eq("id", variantId)
+        .single()
+      
+      if (variant) {
+        maxWorkspaces = variant.max_workspaces
+      }
+    }
+
+    // Step 1: Create partner record with variant assignment
     const { data: partner, error: partnerError } = await adminClient
       .from("partners")
       .insert({
         name: partnerRequest.company_name,
         slug: platformSubdomain,
         branding: partnerRequest.branding_data || {},
-        plan_tier: partnerRequest.selected_plan || "enterprise",
+        plan_tier: partnerRequest.selected_plan || "partner",
         features: {
           white_label: true,
           custom_domain: true,
@@ -68,14 +84,15 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           advanced_analytics: true,
         },
         resource_limits: {
-          max_workspaces: -1,
+          max_workspaces: maxWorkspaces,
           max_users_per_workspace: -1,
           max_agents_per_workspace: -1,
         },
-        subscription_status: "active",
+        subscription_status: variantId ? "pending" : "active", // Pending until they complete checkout
         is_platform_partner: false,
         onboarding_status: "provisioning",
         request_id: id,
+        white_label_variant_id: variantId || null,
       })
       .select()
       .single()
