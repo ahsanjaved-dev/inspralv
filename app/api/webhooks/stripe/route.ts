@@ -90,7 +90,17 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
 
   const partnerId = session.metadata?.partner_id
   const planTier = session.metadata?.plan_tier
+  const type = session.metadata?.type
+  const workspaceId = session.metadata?.workspace_id
 
+  // Handle workspace subscription checkout (from public signups)
+  if (type === "workspace_subscription" && workspaceId) {
+    console.log(`[Stripe Webhook] Workspace subscription checkout completed: ${session.id} for workspace ${workspaceId}`)
+    // The actual subscription update will be handled by customer.subscription.created/updated
+    return
+  }
+
+  // Handle partner subscription checkout
   if (!partnerId) {
     console.error("[Stripe Webhook] No partner_id in checkout session metadata")
     return
@@ -113,13 +123,31 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   if (!prisma) return
   console.log(`[Stripe Webhook] Subscription updated: ${subscription.id}, status: ${subscription.status}`)
+  console.log(`[Stripe Webhook] Subscription metadata:`, JSON.stringify(subscription.metadata, null, 2))
 
+  const workspaceId = subscription.metadata?.workspace_id
   const partnerId = subscription.metadata?.partner_id
+  const planId = subscription.metadata?.plan_id
+  const type = subscription.metadata?.type
 
+  // Handle workspace subscription (from public signups using main Stripe account)
+  if (type === "workspace_subscription" && workspaceId && planId) {
+    console.log(`[Stripe Webhook] Updating workspace subscription for workspace ${workspaceId}`)
+    try {
+      await updateWorkspaceSubscription(workspaceId, planId, subscription)
+      console.log(`[Stripe Webhook] Successfully updated workspace subscription`)
+    } catch (error) {
+      console.error(`[Stripe Webhook] Error updating workspace subscription:`, error)
+      throw error
+    }
+    return
+  }
+
+  // Handle partner subscription
   if (!partnerId) {
     // Try to find partner by customer ID
-    const customerId = typeof subscription.customer === "string" 
-      ? subscription.customer 
+    const customerId = typeof subscription.customer === "string"
+      ? subscription.customer
       : subscription.customer?.id
 
     if (customerId) {
@@ -134,7 +162,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
       }
     }
 
-    console.error("[Stripe Webhook] Could not find partner for subscription:", subscription.id)
+    console.error("[Stripe Webhook] Could not find partner or workspace for subscription:", subscription.id)
     return
   }
 
@@ -305,7 +333,7 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
 
 async function updatePartnerSubscription(partnerId: string, subscription: Stripe.Subscription) {
   if (!prisma) return
-  
+
   // Get the price ID from the subscription
   const priceId = subscription.items.data[0]?.price?.id
   const planTier = priceId ? getPlanFromPriceId(priceId) : null
@@ -320,5 +348,65 @@ async function updatePartnerSubscription(partnerId: string, subscription: Stripe
   })
 
   console.log(`[Stripe Webhook] Partner ${partnerId} subscription updated: status=${subscription.status}, plan=${planTier || "unknown"}`)
+}
+
+async function updateWorkspaceSubscription(workspaceId: string, planId: string, subscription: Stripe.Subscription) {
+  if (!prisma) return
+
+  // Map Stripe status to our status
+  const statusMap: Record<string, string> = {
+    active: "active",
+    past_due: "past_due",
+    canceled: "canceled",
+    incomplete: "incomplete",
+    incomplete_expired: "canceled",
+    trialing: "trialing",
+    unpaid: "past_due",
+    paused: "paused",
+  }
+
+  const status = statusMap[subscription.status] || "incomplete"
+
+  // Get billing period from subscription
+  const currentPeriodStart = subscription.current_period_start
+    ? new Date(subscription.current_period_start * 1000)
+    : null
+  const currentPeriodEnd = subscription.current_period_end
+    ? new Date(subscription.current_period_end * 1000)
+    : null
+
+  const customerId = typeof subscription.customer === "string"
+    ? subscription.customer
+    : subscription.customer?.id
+
+  await prisma.workspaceSubscription.upsert({
+    where: { workspaceId },
+    create: {
+      workspaceId,
+      planId,
+      stripeSubscriptionId: subscription.id,
+      stripeCustomerId: customerId,
+      status: status as "active" | "past_due" | "canceled" | "incomplete" | "trialing" | "paused",
+      currentPeriodStart,
+      currentPeriodEnd,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      canceledAt: subscription.canceled_at ? new Date(subscription.canceled_at * 1000) : null,
+      trialStart: subscription.trial_start ? new Date(subscription.trial_start * 1000) : null,
+      trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000) : null,
+    },
+    update: {
+      stripeSubscriptionId: subscription.id,
+      stripeCustomerId: customerId,
+      status: status as "active" | "past_due" | "canceled" | "incomplete" | "trialing" | "paused",
+      currentPeriodStart,
+      currentPeriodEnd,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      canceledAt: subscription.canceled_at ? new Date(subscription.canceled_at * 1000) : null,
+      trialStart: subscription.trial_start ? new Date(subscription.trial_start * 1000) : null,
+      trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000) : null,
+    },
+  })
+
+  console.log(`[Stripe Webhook] Workspace ${workspaceId} subscription updated: status=${status}`)
 }
 

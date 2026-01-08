@@ -21,6 +21,8 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect")
+  const subscriptionStatus = searchParams.get("subscription")
+  const workspaceSlug = searchParams.get("workspace")
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -41,9 +43,12 @@ function LoginForm() {
 
       if (error) throw error
 
-      // Redirect to original destination or workspace selector
+      // Redirect to original destination or workspace
       if (redirectTo) {
         router.push(redirectTo)
+      } else if (workspaceSlug) {
+        // If coming from signup with subscription, redirect to workspace dashboard
+        router.push(`/w/${workspaceSlug}/dashboard${subscriptionStatus === 'success' ? '?subscription=success' : ''}`)
       } else {
         router.push("/select-workspace")
       }
@@ -59,10 +64,26 @@ function LoginForm() {
     <Card className="shadow-xl">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">Welcome back</CardTitle>
-        <CardDescription>Sign in to your account to continue</CardDescription>
+        <CardDescription>
+          {subscriptionStatus === 'success'
+            ? 'Payment successful! Sign in to access your workspace.'
+            : subscriptionStatus === 'canceled'
+            ? 'Payment was canceled. Sign in to try again.'
+            : 'Sign in to your account to continue'}
+        </CardDescription>
       </CardHeader>
       <form onSubmit={handleLogin}>
         <CardContent className="space-y-4">
+          {subscriptionStatus === 'success' && (
+            <div className="bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 p-3 rounded-lg text-sm">
+              ✓ Your subscription is active! Please sign in to access your workspace.
+            </div>
+          )}
+          {subscriptionStatus === 'canceled' && (
+            <div className="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 p-3 rounded-lg text-sm">
+              Payment was canceled. You can try again after signing in.
+            </div>
+          )}
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm">
               {error}

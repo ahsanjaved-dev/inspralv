@@ -288,33 +288,55 @@ async function createPlanCheckoutSession(
     return null
   }
 
-  // Get partner's Connect account
+  // Get partner's Connect account and platform partner flag
   const partner = await prisma.partner.findUnique({
     where: { id: partnerId },
-    select: { settings: true },
+    select: {
+      settings: true,
+      isPlatformPartner: true,
+    },
   })
 
-  const connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown> | null)
+  const isPlatformPartner = partner?.isPlatformPartner || false
 
-  if (!connectAccountId) {
-    console.error(`[Signup Checkout] Partner ${partnerId} has no Stripe Connect account`)
-    return null
+  console.log(`[Signup Checkout] Partner ${partnerId} is platform partner: ${isPlatformPartner}`)
+
+  // For platform partner: use main Stripe account
+  // For other partners: use Stripe Connect account
+  let connectAccountId: string | null = null
+
+  if (!isPlatformPartner) {
+    connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown> | null)
+
+    if (!connectAccountId) {
+      console.error(`[Signup Checkout] Non-platform partner ${partnerId} has no Stripe Connect account`)
+      return null
+    }
+    console.log(`[Signup Checkout] Using Stripe Connect account: ${connectAccountId}`)
+  } else {
+    console.log(`[Signup Checkout] Using main platform Stripe account for platform partner`)
   }
 
-  // Create or get Stripe customer on Connect account
+  // Create or get Stripe customer
+  // For platform partner: use main account
+  // For other partners: use Connect account
   const stripe = getStripe()
 
-  const customer = await stripe.customers.create(
-    {
-      email: userEmail,
-      metadata: {
-        workspace_id: workspaceId,
-        workspace_slug: workspaceSlug,
-        partner_id: partnerId,
-      },
+  const customerParams = {
+    email: userEmail,
+    metadata: {
+      workspace_id: workspaceId,
+      workspace_slug: workspaceSlug,
+      partner_id: partnerId,
+      is_platform_partner: isPlatformPartner.toString(),
     },
-    { stripeAccount: connectAccountId }
-  )
+  }
+
+  const customer = connectAccountId
+    ? await stripe.customers.create(customerParams, { stripeAccount: connectAccountId })
+    : await stripe.customers.create(customerParams)
+
+  console.log(`[Signup Checkout] Created Stripe customer: ${customer.id}`)
 
   // Create subscription record as incomplete
   await prisma.workspaceSubscription.upsert({
@@ -334,39 +356,45 @@ async function createPlanCheckoutSession(
 
   // Create Checkout Session
   const baseUrl = env.appUrl || "http://localhost:3000"
-  const successUrl = `${baseUrl}/w/${workspaceSlug}/dashboard?subscription=success`
-  const cancelUrl = `${baseUrl}/w/${workspaceSlug}/billing?subscription=canceled`
+  // After successful payment, redirect to login page (user needs to confirm email and login)
+  // The workspace slug is passed so we can redirect to the correct workspace after login
+  const successUrl = `${baseUrl}/login?subscription=success&workspace=${workspaceSlug}`
+  const cancelUrl = `${baseUrl}/login?subscription=canceled&workspace=${workspaceSlug}`
 
-  const session = await stripe.checkout.sessions.create(
-    {
-      customer: customer.id,
-      mode: "subscription",
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price: subscriptionPlan.stripePriceId,
-          quantity: 1,
-        },
-      ],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      subscription_data: {
-        metadata: {
-          workspace_id: workspaceId,
-          plan_id: subscriptionPlan.id,
-          partner_id: partnerId,
-        },
+  const sessionParams = {
+    customer: customer.id,
+    mode: "subscription" as const,
+    payment_method_types: ["card" as const],
+    line_items: [
+      {
+        price: subscriptionPlan.stripePriceId,
+        quantity: 1,
       },
+    ],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    subscription_data: {
       metadata: {
         workspace_id: workspaceId,
         plan_id: subscriptionPlan.id,
         type: "workspace_subscription",
+        partner_id: partnerId,
+        is_platform_partner: isPlatformPartner.toString(),
       },
     },
-    { stripeAccount: connectAccountId }
-  )
+    metadata: {
+      workspace_id: workspaceId,
+      plan_id: subscriptionPlan.id,
+      type: "workspace_subscription",
+      partner_id: partnerId,
+    },
+  }
 
-  console.log(`[Signup Checkout] Created checkout session for workspace ${workspaceId}, plan: ${subscriptionPlan.name}`)
+  const session = connectAccountId
+    ? await stripe.checkout.sessions.create(sessionParams, { stripeAccount: connectAccountId })
+    : await stripe.checkout.sessions.create(sessionParams)
+
+  console.log(`[Signup Checkout] Created checkout session ${session.id} for workspace ${workspaceId}, plan: ${subscriptionPlan.name}`)
 
   return session.url
 }
