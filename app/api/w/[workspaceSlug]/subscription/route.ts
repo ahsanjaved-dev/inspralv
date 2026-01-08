@@ -256,7 +256,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const defaultSuccessUrl = `${baseUrl}/w/${workspaceSlug}/billing?subscription=success`
     const defaultCancelUrl = `${baseUrl}/w/${workspaceSlug}/billing?subscription=canceled`
 
-    // Create Checkout Session on Connect account
+    // Create Checkout Session on Connect account with platform fee
+    // The platform takes a % cut from each subscription payment
+    const platformFeePercent = env.stripeConnectPlatformFeePercent || 10
+    
     const session = await stripe.checkout.sessions.create(
       {
         customer: stripeCustomerId,
@@ -271,6 +274,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         success_url: successUrl || defaultSuccessUrl,
         cancel_url: cancelUrl || defaultCancelUrl,
         subscription_data: {
+          // Platform fee: this % of each invoice goes to the platform account
+          application_fee_percent: platformFeePercent,
           metadata: {
             workspace_id: context.workspace.id,
             plan_id: plan.id,

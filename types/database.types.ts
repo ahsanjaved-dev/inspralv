@@ -709,6 +709,7 @@ export type Database = {
       }
       partner_requests: {
         Row: {
+          assigned_white_label_variant_id: string | null
           billing_info: Json | null
           branding_data: Json
           business_description: string
@@ -733,6 +734,7 @@ export type Database = {
           use_case: string
         }
         Insert: {
+          assigned_white_label_variant_id?: string | null
           billing_info?: Json | null
           branding_data?: Json
           business_description: string
@@ -757,6 +759,7 @@ export type Database = {
           use_case: string
         }
         Update: {
+          assigned_white_label_variant_id?: string | null
           billing_info?: Json | null
           branding_data?: Json
           business_description?: string
@@ -788,6 +791,13 @@ export type Database = {
             referencedRelation: "partners"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "partner_requests_assigned_white_label_variant_id_fkey"
+            columns: ["assigned_white_label_variant_id"]
+            isOneToOne: false
+            referencedRelation: "white_label_variants"
+            referencedColumns: ["id"]
+          },
         ]
       }
       partners: {
@@ -797,6 +807,7 @@ export type Database = {
           deleted_at: string | null
           features: Json
           id: string
+          is_billing_exempt: boolean
           is_platform_partner: boolean
           name: string
           onboarding_status: string | null
@@ -809,6 +820,7 @@ export type Database = {
           stripe_subscription_id: string | null
           subscription_status: string
           updated_at: string
+          white_label_variant_id: string | null
         }
         Insert: {
           branding?: Json
@@ -816,6 +828,7 @@ export type Database = {
           deleted_at?: string | null
           features?: Json
           id?: string
+          is_billing_exempt?: boolean
           is_platform_partner?: boolean
           name: string
           onboarding_status?: string | null
@@ -828,6 +841,7 @@ export type Database = {
           stripe_subscription_id?: string | null
           subscription_status?: string
           updated_at?: string
+          white_label_variant_id?: string | null
         }
         Update: {
           branding?: Json
@@ -835,6 +849,7 @@ export type Database = {
           deleted_at?: string | null
           features?: Json
           id?: string
+          is_billing_exempt?: boolean
           is_platform_partner?: boolean
           name?: string
           onboarding_status?: string | null
@@ -847,6 +862,7 @@ export type Database = {
           stripe_subscription_id?: string | null
           subscription_status?: string
           updated_at?: string
+          white_label_variant_id?: string | null
         }
         Relationships: [
           {
@@ -856,7 +872,56 @@ export type Database = {
             referencedRelation: "partner_requests"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "partners_white_label_variant_id_fkey"
+            columns: ["white_label_variant_id"]
+            isOneToOne: false
+            referencedRelation: "white_label_variants"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      white_label_variants: {
+        Row: {
+          id: string
+          slug: string
+          name: string
+          description: string | null
+          monthly_price_cents: number
+          stripe_price_id: string | null
+          max_workspaces: number
+          is_active: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          name: string
+          description?: string | null
+          monthly_price_cents?: number
+          stripe_price_id?: string | null
+          max_workspaces?: number
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          name?: string
+          description?: string | null
+          monthly_price_cents?: number
+          stripe_price_id?: string | null
+          max_workspaces?: number
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       super_admin: {
         Row: {
@@ -2172,6 +2237,63 @@ export const createWorkspaceIntegrationSchema = z.object({
   additional_keys: z.array(additionalApiKeySchema).optional().default([]),
   config: z.record(z.string(), z.unknown()).optional(),
 })
+
+// ============================================================================
+// WHITE-LABEL VARIANT TYPES AND SCHEMAS
+// ============================================================================
+
+/**
+ * White-label variant (plan tier for agencies)
+ * Managed by super admin to define pricing and workspace limits
+ */
+export interface WhiteLabelVariant {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  monthly_price_cents: number
+  stripe_price_id: string | null
+  max_workspaces: number // -1 = unlimited
+  is_active: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export const createWhiteLabelVariantSchema = z.object({
+  slug: z
+    .string()
+    .min(2, "Slug must be at least 2 characters")
+    .max(50, "Slug must be 50 characters or less")
+    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
+  name: z.string().min(1, "Name is required").max(100),
+  description: z.string().max(500).optional(),
+  monthly_price_cents: z.number().int().min(0, "Price must be non-negative").default(0),
+  stripe_price_id: z.string().max(100).optional().nullable(),
+  max_workspaces: z.number().int().default(10), // -1 = unlimited
+  is_active: z.boolean().default(true),
+  sort_order: z.number().int().default(0),
+})
+
+export type CreateWhiteLabelVariantInput = z.infer<typeof createWhiteLabelVariantSchema>
+
+export const updateWhiteLabelVariantSchema = z.object({
+  slug: z
+    .string()
+    .min(2, "Slug must be at least 2 characters")
+    .max(50, "Slug must be 50 characters or less")
+    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens")
+    .optional(),
+  name: z.string().min(1, "Name is required").max(100).optional(),
+  description: z.string().max(500).optional().nullable(),
+  monthly_price_cents: z.number().int().min(0, "Price must be non-negative").optional(),
+  stripe_price_id: z.string().max(100).optional().nullable(),
+  max_workspaces: z.number().int().optional(), // -1 = unlimited
+  is_active: z.boolean().optional(),
+  sort_order: z.number().int().optional(),
+})
+
+export type UpdateWhiteLabelVariantInput = z.infer<typeof updateWhiteLabelVariantSchema>
 
 // ============================================================================
 // ALGOLIA INTEGRATION CONFIG

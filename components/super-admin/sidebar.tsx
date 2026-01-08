@@ -12,12 +12,14 @@ import {
   Shield,
   LayoutDashboard,
   FileText,
+  Layers,
 } from "lucide-react"
 
 const navigation = [
   { name: "Dashboard", href: "/super-admin", icon: LayoutDashboard },
   { name: "Partner Requests", href: "/super-admin/partner-requests", icon: FileText },
   { name: "Partners", href: "/super-admin/partners", icon: Briefcase },
+  { name: "Plan Variants", href: "/super-admin/variants", icon: Layers },
   { name: "Users", href: "/super-admin/users", icon: Users },
   { name: "Analytics", href: "/super-admin/analytics", icon: BarChart3 },
   { name: "Billing", href: "/super-admin/billing", icon: CreditCard },

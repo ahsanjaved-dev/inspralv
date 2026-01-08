@@ -1,18 +1,22 @@
 /**
  * POST /api/partner/billing/checkout
  * Creates a Stripe Checkout Session for partner subscription
+ * 
+ * For white-label partners: Uses the assigned variant's Stripe price ID
+ * For regular partners: Uses the legacy plan-based pricing
  */
 
 import { NextRequest } from "next/server"
 import { z } from "zod"
 import { getPartnerAuthContext, isPartnerAdmin } from "@/lib/api/auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
-import { getStripe, getOrCreateCustomer, getPriceIdForPlan, type PlanTier } from "@/lib/stripe"
+import { getStripe, getOrCreateCustomer, getPriceIdForPlan } from "@/lib/stripe"
 import { env } from "@/lib/env"
 import { prisma } from "@/lib/prisma"
 
 const checkoutSchema = z.object({
-  plan: z.enum(["starter", "professional", "enterprise"]),
+  // Optional: legacy plan-based checkout (for backwards compatibility)
+  plan: z.enum(["pro", "agency"]).optional(),
   successUrl: z.string().url().optional(),
   cancelUrl: z.string().url().optional(),
 })
@@ -39,17 +43,11 @@ export async function POST(request: NextRequest) {
 
     const { plan, successUrl, cancelUrl } = parsed.data
 
-    // 4. Get the price ID for the selected plan
-    const priceId = getPriceIdForPlan(plan as PlanTier)
-    if (!priceId) {
-      return apiError(`Price not configured for plan: ${plan}. Please set STRIPE_PRICE_${plan.toUpperCase()} env var.`)
-    }
-
     if (!prisma) {
       return serverError("Database not configured")
     }
 
-    // 5. Get partner from database using Prisma
+    // 4. Get partner from database with variant info
     const partner = await prisma.partner.findUnique({
       where: { id: auth.partner.id },
       select: {
@@ -58,6 +56,17 @@ export async function POST(request: NextRequest) {
         stripeCustomerId: true,
         stripeSubscriptionId: true,
         subscriptionStatus: true,
+        isBillingExempt: true,
+        whiteLabelVariantId: true,
+        whiteLabelVariant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            stripePriceId: true,
+            monthlyPriceCents: true,
+          },
+        },
       },
     })
 
@@ -65,12 +74,39 @@ export async function POST(request: NextRequest) {
       return apiError("Partner not found", 404)
     }
 
+    // 5. Check if partner is billing-exempt (e.g., Genius365 / platform partner)
+    if (partner.isBillingExempt) {
+      return apiError("This organization is exempt from platform billing.")
+    }
+
     // 6. Check if partner already has an active subscription
     if (partner.stripeSubscriptionId && partner.subscriptionStatus === "active") {
       return apiError("Partner already has an active subscription. Use the customer portal to change plans.")
     }
 
-    // 7. Get or create Stripe customer
+    // 7. Determine the Stripe price ID
+    let priceId: string | null = null
+    let planTier: string = "partner"
+
+    // If partner has an assigned white-label variant, use that price
+    if (partner.whiteLabelVariant?.stripePriceId) {
+      priceId = partner.whiteLabelVariant.stripePriceId
+      planTier = partner.whiteLabelVariant.slug
+    } else if (plan) {
+      // Legacy: use plan-based pricing
+      priceId = getPriceIdForPlan(plan)
+      planTier = plan
+    }
+
+    if (!priceId) {
+      // If no variant assigned and no plan specified
+      if (partner.whiteLabelVariantId) {
+        return apiError("Your plan variant does not have a Stripe price configured. Please contact support.")
+      }
+      return apiError("No plan specified and no variant assigned. Please contact support.")
+    }
+
+    // 8. Get or create Stripe customer
     const customer = await getOrCreateCustomer(
       partner.id,
       auth.user.email,
@@ -78,7 +114,7 @@ export async function POST(request: NextRequest) {
       partner.stripeCustomerId
     )
 
-    // 8. Update partner with Stripe customer ID if new
+    // 9. Update partner with Stripe customer ID if new
     if (!partner.stripeCustomerId) {
       await prisma.partner.update({
         where: { id: partner.id },
@@ -86,7 +122,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 9. Create Checkout Session
+    // 10. Create Checkout Session on platform Stripe account
     const stripe = getStripe()
     const baseUrl = env.appUrl
 
@@ -99,16 +135,18 @@ export async function POST(request: NextRequest) {
           quantity: 1,
         },
       ],
-      success_url: successUrl || `${baseUrl}/org/settings?checkout=success`,
-      cancel_url: cancelUrl || `${baseUrl}/org/settings?checkout=cancelled`,
+      success_url: successUrl || `${baseUrl}/org/billing?checkout=success`,
+      cancel_url: cancelUrl || `${baseUrl}/org/billing?checkout=cancelled`,
       metadata: {
         partner_id: partner.id,
-        plan_tier: plan,
+        plan_tier: planTier,
+        white_label_variant_id: partner.whiteLabelVariantId || "",
       },
       subscription_data: {
         metadata: {
           partner_id: partner.id,
-          plan_tier: plan,
+          plan_tier: planTier,
+          white_label_variant_id: partner.whiteLabelVariantId || "",
         },
       },
     })

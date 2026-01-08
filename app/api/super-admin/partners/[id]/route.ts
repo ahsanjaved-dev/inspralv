@@ -19,7 +19,8 @@ const updatePartnerSchema = z.object({
       secondary_color: z.string().optional(),
     })
     .optional(),
-  plan_tier: z.enum(["free", "starter", "pro", "enterprise"]).optional(),
+  // Canonical tiers are free/pro/agency; keep legacy values accepted for older records.
+  plan_tier: z.enum(["free", "pro", "agency", "starter", "professional", "enterprise"]).optional(),
   features: z
     .object({
       white_label: z.boolean().optional(),

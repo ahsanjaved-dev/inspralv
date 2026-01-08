@@ -9,6 +9,16 @@ import { apiFetch } from "@/lib/api/fetcher"
 // TYPES
 // =============================================================================
 
+export interface WhiteLabelVariantInfo {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  monthlyPriceCents: number
+  stripePriceId: string | null
+  maxWorkspaces: number
+}
+
 export interface BillingSubscription {
   planTier: string
   planName: string
@@ -23,8 +33,10 @@ export interface BillingInfo {
   partner: {
     id: string
     name: string
+    isBillingExempt: boolean
   }
   subscription: BillingSubscription
+  whiteLabelVariant: WhiteLabelVariantInfo | null
   features: Record<string, number>
   features_list: string[]
 }
@@ -130,16 +142,18 @@ export function useBillingInfo() {
 
 /**
  * Create checkout session mutation
+ * For white-label partners: uses assigned variant (no plan param needed)
+ * For legacy partners: uses plan param
  */
 export function useCheckout() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (plan: "starter" | "professional" | "enterprise") => {
+    mutationFn: async (plan?: "pro" | "agency") => {
       const response = await fetch("/api/partner/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify(plan ? { plan } : {}),
       })
 
       if (!response.ok) {
@@ -295,7 +309,7 @@ export function useChangePlan() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (newPlan: "starter" | "professional" | "enterprise") => {
+    mutationFn: async (newPlan: "pro" | "agency") => {
       const response = await fetch("/api/partner/billing/change-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
