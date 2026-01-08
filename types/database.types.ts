@@ -2008,6 +2008,16 @@ export interface AccessibleWorkspace {
   role: WorkspaceMemberRole
   resource_limits: Record<string, unknown>
   status: string
+  /** True if user has access via partner admin role (not direct workspace membership) */
+  is_partner_admin_access?: boolean
+  /** Owner email for display purposes (only populated for partner admin view) */
+  owner_email?: string | null
+  /** Member count for display purposes (only populated for partner admin view) */
+  member_count?: number
+  /** Agent count for display purposes (only populated for partner admin view) */
+  agent_count?: number
+  /** Created at timestamp */
+  created_at?: string
 }
 
 export interface PartnerMembership {

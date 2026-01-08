@@ -7,6 +7,8 @@ export interface PartnerDashboardStats {
   total_workspaces: number
   total_agents_all_workspaces: number
   total_calls_today: number
+  /** Total members across all workspaces */
+  total_members?: number
 }
 
 export async function GET(request: NextRequest) {
@@ -32,10 +34,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Total workspaces the user has access to
+    // For partner admins/owners, count ALL workspaces under this partner (not just accessible ones)
+    // This is now already handled by getPartnerAuthContext which returns all workspaces for admins
     const totalWorkspaces = auth.workspaces.length
 
-    // Get workspace IDs for querying
+    // Get workspace IDs for querying (now includes all partner workspaces for admins)
     const workspaceIds = auth.workspaces.map((ws) => ws.id)
 
     if (workspaceIds.length === 0) {
@@ -44,6 +47,7 @@ export async function GET(request: NextRequest) {
         total_workspaces: 0,
         total_agents_all_workspaces: 0,
         total_calls_today: 0,
+        total_members: 0,
       }
       return apiResponse(stats)
     }
@@ -66,12 +70,24 @@ export async function GET(request: NextRequest) {
       .is("deleted_at", null)
       .gte("created_at", startOfToday.toISOString())
 
-    const [agentsResult, callsTodayResult] = await Promise.all([agentsQuery, callsTodayQuery])
+    // Query total unique members across all workspaces
+    const membersQuery = auth.adminClient
+      .from("workspace_members")
+      .select("user_id", { count: "exact", head: true })
+      .in("workspace_id", workspaceIds)
+      .is("removed_at", null)
+
+    const [agentsResult, callsTodayResult, membersResult] = await Promise.all([
+      agentsQuery, 
+      callsTodayQuery,
+      membersQuery
+    ])
 
     const stats: PartnerDashboardStats = {
       total_workspaces: totalWorkspaces,
       total_agents_all_workspaces: agentsResult.count || 0,
       total_calls_today: callsTodayResult.count || 0,
+      total_members: membersResult.count || 0,
     }
 
     return apiResponse(stats)

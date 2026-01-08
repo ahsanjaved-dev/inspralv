@@ -23,7 +23,11 @@ const protectedPaths = [
   "/select-workspace",
   "/workspace-onboarding",
   "/w/",
+  "/org/",
 ]
+
+// Cookie name for storing last visited workspace
+const LAST_WORKSPACE_COOKIE = "genius365_last_workspace"
 
 /**
  * Build Content Security Policy header
@@ -58,33 +62,10 @@ function buildCSP(): string {
   return policies.join("; ")
 }
 
-// Function named 'proxy' as required by Next.js 16
-export async function proxy(request: NextRequest) {
-  const { supabaseResponse, user } = await updateSession(request)
-  const { pathname } = request.nextUrl
-
-  const isPublicPath = publicPaths.some(
-    (path) => pathname === path || pathname.startsWith(path + "/")
-  )
-  const isProtectedPath = protectedPaths.some((path) => pathname.startsWith(path))
-  const isSuperAdminPath = superAdminPaths.some((path) => pathname.startsWith(path))
-
-  if (isProtectedPath && !user) {
-    const redirectUrl = new URL("/login", request.url)
-    redirectUrl.searchParams.set("redirect", pathname)
-    return NextResponse.redirect(redirectUrl)
-  }
-
-  const authPaths = ["/login", "/signup"]
-  const isAuthPath = authPaths.some((path) => pathname.startsWith(path))
-  const redirectParam = request.nextUrl.searchParams.get("redirect")
-
-  if (isAuthPath && user && !redirectParam) {
-    return NextResponse.redirect(new URL("/select-workspace", request.url))
-  }
-
-  const response = supabaseResponse
-
+/**
+ * Apply security headers to response
+ */
+function applySecurityHeaders(response: NextResponse): void {
   response.headers.set("X-Content-Type-Options", "nosniff")
   response.headers.set("X-Frame-Options", "DENY")
   response.headers.set("X-XSS-Protection", "1; mode=block")
@@ -103,7 +84,75 @@ export async function proxy(request: NextRequest) {
     "camera=(), microphone=(self), geolocation=(), payment=()"
   )
   response.headers.set("X-DNS-Prefetch-Control", "on")
+}
 
+// Function named 'proxy' as required by Next.js 16
+export async function proxy(request: NextRequest) {
+  const { supabaseResponse, user } = await updateSession(request)
+  const { pathname } = request.nextUrl
+
+  const isPublicPath = publicPaths.some(
+    (path) => pathname === path || pathname.startsWith(path + "/")
+  )
+  const isProtectedPath = protectedPaths.some((path) => pathname.startsWith(path))
+  const isSuperAdminPath = superAdminPaths.some((path) => pathname.startsWith(path))
+  const isApiPath = pathname.startsWith("/api/")
+  const isWorkspacePath = pathname.startsWith("/w/")
+
+  // Protected path without user -> redirect to login
+  if (isProtectedPath && !user) {
+    const redirectUrl = new URL("/login", request.url)
+    redirectUrl.searchParams.set("redirect", pathname)
+    const response = NextResponse.redirect(redirectUrl)
+    applySecurityHeaders(response)
+    return response
+  }
+
+  const authPaths = ["/login", "/signup"]
+  const isAuthPath = authPaths.some((path) => pathname.startsWith(path))
+  const redirectParam = request.nextUrl.searchParams.get("redirect")
+
+  // Authenticated user on auth page without redirect param -> smart redirect
+  if (isAuthPath && user && !redirectParam) {
+    // Check if user has a last visited workspace stored in cookie
+    const lastWorkspace = request.cookies.get(LAST_WORKSPACE_COOKIE)?.value
+    
+    if (lastWorkspace) {
+      // Redirect to last visited workspace
+      const response = NextResponse.redirect(new URL(`/w/${lastWorkspace}/dashboard`, request.url))
+      applySecurityHeaders(response)
+      return response
+    }
+    
+    // Otherwise go to workspace selector
+    const response = NextResponse.redirect(new URL("/select-workspace", request.url))
+    applySecurityHeaders(response)
+    return response
+  }
+
+  // Track workspace visits for smart redirect
+  if (isWorkspacePath && user) {
+    // Extract workspace slug from path: /w/[slug]/...
+    const pathParts = pathname.split("/")
+    const workspaceSlug = pathParts[2]
+    
+    if (workspaceSlug && workspaceSlug !== "undefined") {
+      // Set cookie to remember last visited workspace
+      const response = supabaseResponse
+      response.cookies.set(LAST_WORKSPACE_COOKIE, workspaceSlug, {
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30, // 30 days
+        httpOnly: false, // Allow client-side access for UX
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+      })
+      applySecurityHeaders(response)
+      return response
+    }
+  }
+
+  const response = supabaseResponse
+  applySecurityHeaders(response)
   return response
 }
 

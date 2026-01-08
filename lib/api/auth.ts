@@ -9,6 +9,11 @@ import type {
   PartnerMembership,
 } from "@/types/database.types"
 
+// Helper to check if user is partner admin/owner
+function isPartnerAdminOrOwner(role: PartnerMemberRole | null): boolean {
+  return role === "owner" || role === "admin"
+}
+
 // ============================================================================
 // PARTNER AUTH CONTEXT
 // ============================================================================
@@ -108,7 +113,8 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
           description,
           resource_limits,
           status,
-          deleted_at
+          deleted_at,
+          created_at
         )
       `
       )
@@ -120,7 +126,7 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
     }
 
     // Filter to only workspaces belonging to current partner and not deleted
-    const workspaces: AccessibleWorkspace[] = (memberships || [])
+    const userWorkspaces: AccessibleWorkspace[] = (memberships || [])
       .filter(
         (m: any) => m.workspace?.partner_id === partner.id && m.workspace?.deleted_at === null
       )
@@ -133,8 +139,82 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
         role: m.role as WorkspaceMemberRole,
         resource_limits: m.workspace.resource_limits || {},
         status: m.workspace.status,
+        is_partner_admin_access: false,
+        created_at: m.workspace.created_at,
       }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+
+    // Step 5: For partner admins/owners, also fetch ALL workspaces under this partner
+    let workspaces: AccessibleWorkspace[] = userWorkspaces
+
+    if (isPartnerAdminOrOwner(partnerRole)) {
+      // Fetch all workspaces for this partner
+      const { data: allPartnerWorkspaces, error: allWsError } = await adminClient
+        .from("workspaces")
+        .select("id, name, slug, partner_id, description, resource_limits, status, created_at")
+        .eq("partner_id", partner.id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+
+      if (allWsError) {
+        console.error("[getPartnerAuthContext] All workspaces query error:", allWsError)
+      } else if (allPartnerWorkspaces) {
+        // Get workspace IDs user is already a member of
+        const userWorkspaceIds = new Set(userWorkspaces.map((w) => w.id))
+
+        // Get member counts and owner info for workspaces user doesn't have direct access to
+        const additionalWorkspaces: AccessibleWorkspace[] = []
+
+        for (const ws of allPartnerWorkspaces) {
+          if (!userWorkspaceIds.has(ws.id)) {
+            // Get member count
+            const { count: memberCount } = await adminClient
+              .from("workspace_members")
+              .select("*", { count: "exact", head: true })
+              .eq("workspace_id", ws.id)
+              .is("removed_at", null)
+
+            // Get agent count
+            const { count: agentCount } = await adminClient
+              .from("ai_agents")
+              .select("*", { count: "exact", head: true })
+              .eq("workspace_id", ws.id)
+              .is("deleted_at", null)
+
+            // Get owner email
+            const { data: ownerData } = await adminClient
+              .from("workspace_members")
+              .select("user_id, users!workspace_members_user_id_fkey(email)")
+              .eq("workspace_id", ws.id)
+              .eq("role", "owner")
+              .is("removed_at", null)
+              .limit(1)
+              .maybeSingle()
+
+            additionalWorkspaces.push({
+              id: ws.id,
+              name: ws.name,
+              slug: ws.slug,
+              partner_id: ws.partner_id,
+              description: ws.description,
+              role: "admin" as WorkspaceMemberRole, // Partner admin gets admin access
+              resource_limits: ws.resource_limits || {},
+              status: ws.status,
+              is_partner_admin_access: true,
+              owner_email: (ownerData as any)?.users?.email || null,
+              member_count: memberCount || 0,
+              agent_count: agentCount || 0,
+              created_at: ws.created_at,
+            })
+          }
+        }
+
+        // Merge: user's direct workspaces first, then additional workspaces
+        workspaces = [...userWorkspaces, ...additionalWorkspaces]
+      }
+    }
+
+    // Sort workspaces by name
+    workspaces.sort((a, b) => a.name.localeCompare(b.name))
 
     // Construct user object
     const user: PartnerAuthUser = {

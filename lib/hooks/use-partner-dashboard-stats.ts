@@ -6,6 +6,7 @@ export interface PartnerDashboardStats {
   total_workspaces: number
   total_agents_all_workspaces: number
   total_calls_today: number
+  total_members?: number
 }
 
 export function usePartnerDashboardStats() {

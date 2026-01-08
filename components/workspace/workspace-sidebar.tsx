@@ -1,10 +1,13 @@
 "use client"
 
+import { useState, useMemo } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import {
   LayoutDashboard,
   LayoutGrid,
@@ -25,6 +28,8 @@ import {
   Shield,
   User,
   Megaphone,
+  Search,
+  ExternalLink,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -43,6 +48,9 @@ interface Props {
   isCollapsed: boolean
   partnerRole?: "owner" | "admin" | "member" | null
 }
+
+// Max workspaces to show in dropdown before showing "View all" link
+const MAX_DROPDOWN_WORKSPACES = 8
 
 // Generate a consistent gradient based on string
 function getWorkspaceGradient(str: string): string {
@@ -82,6 +90,8 @@ const roleConfig = {
 
 export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isCollapsed, partnerRole }: Props) {
   const pathname = usePathname()
+  const [searchQuery, setSearchQuery] = useState("")
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 
   const branding = partner.branding
   const primaryColor = branding.primary_color || "#7c3aed"
@@ -93,6 +103,32 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
   // Role-based navigation - some items only for admins/owners
   const isWorkspaceAdmin = currentWorkspace.role === "owner" || currentWorkspace.role === "admin"
   const isPartnerAdmin = partnerRole === "owner" || partnerRole === "admin"
+
+  // Filter and sort workspaces
+  const filteredWorkspaces = useMemo(() => {
+    let filtered = workspaces
+    
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = workspaces.filter(
+        (ws) =>
+          ws.name.toLowerCase().includes(query) ||
+          ws.slug.toLowerCase().includes(query) ||
+          ws.owner_email?.toLowerCase().includes(query)
+      )
+    }
+    
+    return filtered
+  }, [workspaces, searchQuery])
+
+  // Determine if we should show search (more than MAX_DROPDOWN_WORKSPACES workspaces)
+  const showSearch = workspaces.length > MAX_DROPDOWN_WORKSPACES
+  const showViewAll = workspaces.length > MAX_DROPDOWN_WORKSPACES && !searchQuery
+
+  // Limit displayed workspaces in dropdown
+  const displayedWorkspaces = showViewAll 
+    ? filteredWorkspaces.slice(0, MAX_DROPDOWN_WORKSPACES)
+    : filteredWorkspaces
 
   const navigation = [
     { title: "Dashboard", href: `${baseUrl}/dashboard`, icon: LayoutDashboard },
@@ -112,6 +148,14 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
     { title: "Organization Team", href: `/org/team`, icon: Building2 },
     { title: "Invite Members", href: `/org/invitations`, icon: UserPlus },
   ] : []
+
+  // Reset search when dropdown closes
+  const handleOpenChange = (open: boolean) => {
+    setIsDropdownOpen(open)
+    if (!open) {
+      setSearchQuery("")
+    }
+  }
 
   return (
     <div
@@ -157,9 +201,9 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
         </Link>
       </div>
 
-      {/* Workspace Selector - Redesigned */}
+      {/* Workspace Selector - Redesigned with Search */}
       <div className={cn("p-3 shrink-0", isCollapsed && "px-2")}>
-        <DropdownMenu>
+        <DropdownMenu open={isDropdownOpen} onOpenChange={handleOpenChange}>
           <DropdownMenuTrigger asChild>
             <button
               className={cn(
@@ -181,93 +225,160 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
               {!isCollapsed && (
                 <>
                   <div className="flex-1 text-left min-w-0">
-                    <p className="font-medium text-sm text-foreground truncate">{currentWorkspace.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-sm text-foreground truncate">{currentWorkspace.name}</p>
+                      {currentWorkspace.is_partner_admin_access && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 bg-purple-500/10 text-purple-600 border-purple-500/20">
+                          Admin
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground capitalize">{currentWorkspace.role}</p>
                   </div>
-                  <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
+                  <ChevronDown className={cn(
+                    "h-4 w-4 text-muted-foreground group-hover:text-foreground transition-all shrink-0",
+                    isDropdownOpen && "rotate-180"
+                  )} />
                 </>
               )}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent 
             align="start" 
-            className="w-80 p-2" 
+            className="w-80 p-0" 
             sideOffset={8}
           >
-            {/* Current Workspace Header */}
-            <div className="px-2 py-1.5 mb-1">
-              <p className="text-xs font-medium text-muted-foreground">Switch workspace</p>
+            {/* Header with workspace count */}
+            <div className="px-3 py-2.5 border-b border-border">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground">Switch workspace</p>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                  {workspaces.length}
+                </Badge>
+              </div>
             </div>
+
+            {/* Search Input (only show if many workspaces) */}
+            {showSearch && (
+              <div className="px-2 py-2 border-b border-border">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search workspaces..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-8 pl-8 text-sm bg-muted/50 border-0 focus-visible:ring-1"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Workspace List */}
-            <div className="max-h-72 overflow-y-auto space-y-0.5">
-              {workspaces.map((ws) => {
-                const isCurrent = ws.id === currentWorkspace.id
-                const roleInfo = roleConfig[ws.role as keyof typeof roleConfig] || roleConfig.member
+            <ScrollArea className="max-h-64">
+              <div className="p-1.5 space-y-0.5">
+                {displayedWorkspaces.length === 0 ? (
+                  <div className="px-3 py-6 text-center">
+                    <p className="text-sm text-muted-foreground">No workspaces found</p>
+                    {searchQuery && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Try a different search term
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  displayedWorkspaces.map((ws) => {
+                    const isCurrent = ws.id === currentWorkspace.id
+                    const roleInfo = roleConfig[ws.role as keyof typeof roleConfig] || roleConfig.member
 
-                return (
-                  <DropdownMenuItem key={ws.id} asChild className="p-0 focus:bg-transparent">
-                    <Link
-                      href={`/w/${ws.slug}/dashboard`}
-                      className={cn(
-                        "flex items-center gap-3 p-2.5 rounded-lg cursor-pointer w-full transition-colors",
-                        isCurrent 
-                          ? "bg-primary/10 border border-primary/20" 
-                          : "hover:bg-muted border border-transparent"
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "h-10 w-10 rounded-lg flex items-center justify-center text-white font-semibold text-sm shrink-0 bg-gradient-to-br shadow-sm",
-                          getWorkspaceGradient(ws.name)
-                        )}
-                      >
-                        {getInitials(ws.name)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-foreground truncate">{ws.name}</p>
-                          {isCurrent && (
-                            <Check className="h-4 w-4 text-primary shrink-0" />
+                    return (
+                      <DropdownMenuItem key={ws.id} asChild className="p-0 focus:bg-transparent">
+                        <Link
+                          href={`/w/${ws.slug}/dashboard`}
+                          className={cn(
+                            "flex items-center gap-2.5 p-2 rounded-lg cursor-pointer w-full transition-colors",
+                            isCurrent 
+                              ? "bg-primary/10 border border-primary/20" 
+                              : "hover:bg-muted border border-transparent"
                           )}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <roleInfo.icon className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">{roleInfo.label}</span>
-                        </div>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-                )
-              })}
-            </div>
+                        >
+                          <div
+                            className={cn(
+                              "h-8 w-8 rounded-lg flex items-center justify-center text-white font-semibold text-xs shrink-0 bg-gradient-to-br shadow-sm",
+                              getWorkspaceGradient(ws.name)
+                            )}
+                          >
+                            {getInitials(ws.name)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium text-sm text-foreground truncate">{ws.name}</p>
+                              {isCurrent && (
+                                <Check className="h-3.5 w-3.5 text-primary shrink-0" />
+                              )}
+                              {ws.is_partner_admin_access && (
+                                <ExternalLink className="h-3 w-3 text-purple-500 shrink-0" />
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <roleInfo.icon className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">{roleInfo.label}</span>
+                              {ws.is_partner_admin_access && ws.owner_email && (
+                                <>
+                                  <span className="text-muted-foreground/50">•</span>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[100px]">
+                                    {ws.owner_email}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </Link>
+                      </DropdownMenuItem>
+                    )
+                  })
+                )}
 
-            <DropdownMenuSeparator className="my-2" />
+                {/* Show "View all" if there are more workspaces */}
+                {showViewAll && filteredWorkspaces.length > MAX_DROPDOWN_WORKSPACES && (
+                  <div className="px-2 pt-1">
+                    <Link
+                      href="/select-workspace"
+                      className="flex items-center justify-center gap-1.5 py-1.5 text-xs text-primary hover:underline"
+                    >
+                      View all {workspaces.length} workspaces
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+
+            <DropdownMenuSeparator className="my-0" />
 
             {/* Actions */}
-            <div className="space-y-0.5">
+            <div className="p-1.5 space-y-0.5">
               {isPartnerAdmin && (
                 <DropdownMenuItem asChild>
                   <Link
                     href="/workspace-onboarding"
-                    className="flex items-center gap-2.5 px-2.5 py-2 cursor-pointer rounded-lg"
+                    className="flex items-center gap-2.5 px-2 py-2 cursor-pointer rounded-lg"
                   >
-                    <div className="h-8 w-8 rounded-lg border-2 border-dashed border-muted-foreground/30 flex items-center justify-center">
-                      <Plus className="h-4 w-4 text-muted-foreground" />
+                    <div className="h-7 w-7 rounded-lg border-2 border-dashed border-muted-foreground/30 flex items-center justify-center">
+                      <Plus className="h-3.5 w-3.5 text-muted-foreground" />
                     </div>
-                    <span className="font-medium">Create workspace</span>
+                    <span className="text-sm font-medium">Create workspace</span>
                   </Link>
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem asChild>
                 <Link
                   href="/select-workspace"
-                  className="flex items-center gap-2.5 px-2.5 py-2 cursor-pointer rounded-lg"
+                  className="flex items-center gap-2.5 px-2 py-2 cursor-pointer rounded-lg"
                 >
-                  <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
-                    <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+                  <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center">
+                    <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
                   </div>
-                  <span className="font-medium">View all workspaces</span>
+                  <span className="text-sm font-medium">View all workspaces</span>
                 </Link>
               </DropdownMenuItem>
             </div>
