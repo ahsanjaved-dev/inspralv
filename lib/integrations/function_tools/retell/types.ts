@@ -1,6 +1,7 @@
 /**
  * Retell Tool Type Definitions
  * Type definitions for Retell's tool format
+ * Reference: https://docs.retellai.com/api-references/create-retell-llm
  */
 
 import type { ToolParameterSchema } from '../types'
@@ -21,32 +22,77 @@ export interface RetellParameterSchema {
 }
 
 // ============================================================================
-// RETELL GENERAL TOOL
+// RETELL TRANSFER DESTINATION
 // ============================================================================
 
 /**
- * Retell General Tool - Custom function tool format
- * Reference: https://docs.retellai.com/api-references/llm/create-llm
+ * Transfer destination configuration
  */
-export type RetellTransferDestination =
-  | {
-      type: 'predefined'
-      number: string
-    }
+export interface RetellTransferDestination {
+  type: 'predefined'
+  number: string
+  /** If true, bypass E.164 phone number format validation */
+  ignore_e164_validation?: boolean
+}
 
+/**
+ * Transfer call options
+ */
+export interface RetellTransferOption {
+  type: 'cold_transfer' | 'warm_transfer'
+  /** If true, show the transferee as the caller */
+  show_transferee_as_caller?: boolean
+}
+
+// ============================================================================
+// RETELL GENERAL TOOLS
+// Reference: https://docs.retellai.com/api-references/create-retell-llm
+// ============================================================================
+
+/**
+ * End Call Tool - Ends the call gracefully
+ */
 export interface RetellEndCallTool {
   type: 'end_call'
   name: string
   description: string
 }
 
+/**
+ * Transfer Call Tool - Transfers the call to another number
+ */
 export interface RetellTransferCallTool {
   type: 'transfer_call'
   name: string
   description: string
   transfer_destination: RetellTransferDestination
+  transfer_option?: RetellTransferOption
 }
 
+/**
+ * Press Digits Tool - Sends DTMF tones
+ */
+export interface RetellPressDigitsTool {
+  type: 'press_digit'
+  name: string
+  description: string
+}
+
+/**
+ * Check Availability Cal Tool - Check calendar availability on Cal.com
+ */
+export interface RetellCheckAvailabilityCalTool {
+  type: 'check_availability_cal'
+  name: string
+  description: string
+  cal_api_key: string
+  event_type_id: number
+  timezone: string
+}
+
+/**
+ * Book Appointment Cal Tool - Book appointment on Cal.com
+ */
 export interface RetellBookAppointmentCalTool {
   type: 'book_appointment_cal'
   name: string
@@ -56,27 +102,38 @@ export interface RetellBookAppointmentCalTool {
   timezone: string
 }
 
-export interface RetellCustomFunctionTool {
-  /** Tool type for webhook-based function calls */
-  type: 'custom_function'
+/**
+ * Send SMS Tool - Send SMS message (requires Twilio integration)
+ */
+export interface RetellSendSmsTool {
+  type: 'send_sms'
   name: string
   description: string
-  parameters: RetellParameterSchema
-  url?: string
-  execution_timeout_ms?: number
-  speak_during_execution?: boolean
-  speak_on_send?: string
-  speak_on_error?: string
+  /** Twilio phone number to send SMS from */
+  from_number?: string
 }
 
 /**
- * Retell General Tool - union of supported `general_tools`.
+ * Retell General Tool - union of all supported `general_tools`.
  */
 export type RetellGeneralTool =
   | RetellEndCallTool
   | RetellTransferCallTool
+  | RetellPressDigitsTool
+  | RetellCheckAvailabilityCalTool
   | RetellBookAppointmentCalTool
-  | RetellCustomFunctionTool
+  | RetellSendSmsTool
+
+/**
+ * Retell Tool Type - string literal types
+ */
+export type RetellToolType =
+  | 'end_call'
+  | 'transfer_call'
+  | 'press_digit'
+  | 'check_availability_cal'
+  | 'book_appointment_cal'
+  | 'send_sms'
 
 // ============================================================================
 // RETELL LLM PAYLOAD

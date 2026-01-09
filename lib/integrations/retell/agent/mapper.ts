@@ -128,19 +128,46 @@ export {
 // MAPPER: Internal Schema → Retell LLM
 // ============================================================================
 
+/**
+ * Maps model provider to Retell model name
+ * Reference: https://docs.retellai.com/api-references/create-retell-llm
+ * 
+ * Available models:
+ * - OpenAI: gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-5, gpt-5-mini, gpt-5-nano
+ * - Anthropic: claude-4.5-sonnet, claude-4.5-haiku
+ * - Google: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3.0-flash
+ */
+const MODEL_MAP: Record<string, string> = {
+  // OpenAI models
+  openai: "gpt-4.1",
+  "gpt-4": "gpt-4.1",
+  "gpt-4o": "gpt-4.1",
+  "gpt-4o-mini": "gpt-4.1-mini",
+  "gpt-3.5-turbo": "gpt-4.1-mini",
+  // Anthropic models
+  anthropic: "claude-4.5-sonnet",
+  "claude-3-5-sonnet": "claude-4.5-sonnet",
+  "claude-3-opus": "claude-4.5-sonnet",
+  "claude-3-haiku": "claude-4.5-haiku",
+  // Google models
+  google: "gemini-2.5-flash",
+  "gemini-pro": "gemini-2.5-flash",
+  "gemini-1.5-pro": "gemini-2.5-flash",
+  "gemini-1.5-flash": "gemini-2.5-flash-lite",
+  // Groq (maps to fastest available)
+  groq: "gpt-4.1-mini",
+  "llama-3.1-70b": "gpt-4.1",
+}
+
 export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
   const config = agent.config || {}
 
-  // Map model provider to Retell model name
-  const modelMap: Record<string, string> = {
-    openai: "gpt-4o",
-    anthropic: "claude-3-5-sonnet",
-    google: "gemini-1.5-pro",
-    groq: "llama-3.1-70b",
-  }
+  // Map model to Retell model name
+  const modelKey = agent.model_provider || (config as any).model || "openai"
+  const model = MODEL_MAP[modelKey] || MODEL_MAP["openai"]
 
   const payload: RetellLLMPayload = {
-    model: modelMap[agent.model_provider || "openai"] || "gpt-4o",
+    model: model as string,
   }
 
   // System prompt
@@ -153,15 +180,18 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
     payload.begin_message = config.first_message
   }
 
-  // Add tools to LLM configuration using the new function_tools mapper
+  // Add tools to LLM configuration using the function_tools mapper
+  // Tools are mapped from internal FunctionTool format to Retell GeneralTool format
   if (config.tools && config.tools.length > 0) {
-    const retellTools = mapFunctionToolsToRetell(config.tools, config.tools_server_url)
+    const retellTools = mapFunctionToolsToRetell(config.tools)
     if (retellTools.length > 0) {
       payload.general_tools = retellTools
     }
   }
 
   // Set webhook URL for tool calls
+  // This is the default URL that Retell will call when a tool is triggered
+  // Individual tools can override this with their own URL
   if (config.tools_server_url) {
     payload.webhook_url = config.tools_server_url
   }
@@ -204,6 +234,12 @@ export function mapToRetellAgent(agent: AIAgent, llmId: string): RetellAgentPayl
   // Call duration
   if (config.max_duration_seconds) {
     payload.max_call_duration_ms = config.max_duration_seconds * 1000
+  }
+
+  // Set webhook URL at agent level for call events (call_ended, etc)
+  // This is separate from LLM webhook_url which handles function calls
+  if (config.tools_server_url) {
+    payload.webhook_url = config.tools_server_url
   }
 
   return payload

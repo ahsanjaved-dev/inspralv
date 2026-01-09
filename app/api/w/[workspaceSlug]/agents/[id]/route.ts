@@ -196,6 +196,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         ...validation.data.config,
         system_prompt: baseSystemPrompt + knowledgeBaseContent,
       }
+    } else if (validation.data.config && updateData.config === undefined) {
+      // Ensure config is always included if provided in the request
+      updateData.config = validation.data.config
     }
 
     // If key is being assigned or changed, mark for sync
@@ -272,11 +275,31 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         const syncResult = await safeVapiSync(typedAgent, "update")
         if (syncResult.success && syncResult.agent) {
           syncedAgent = syncResult.agent
+        } else if (!syncResult.success) {
+          // Update sync status to error
+          await ctx.adminClient
+            .from("ai_agents")
+            .update({ 
+              sync_status: "error", 
+              last_sync_error: syncResult.error,
+              needs_resync: true,
+            })
+            .eq("id", id)
         }
       } else if (typedAgent.provider === "retell" && shouldSyncToRetell(typedAgent)) {
         const syncResult = await safeRetellSync(typedAgent, "update")
         if (syncResult.success && syncResult.agent) {
           syncedAgent = syncResult.agent
+        } else if (!syncResult.success) {
+          // Update sync status to error
+          await ctx.adminClient
+            .from("ai_agents")
+            .update({ 
+              sync_status: "error", 
+              last_sync_error: syncResult.error,
+              needs_resync: true,
+            })
+            .eq("id", id)
         }
       }
     }

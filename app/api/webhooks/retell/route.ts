@@ -1,14 +1,15 @@
 /**
  * POST /api/webhooks/retell
- * Retell AI webhook handler for call events
+ * Retell AI webhook handler for call events AND custom function execution
  *
- * Handles call completion events and processes usage billing.
- * Called by Retell when calls start, end, or are analyzed.
+ * Handles two types of requests:
+ * 1. Call Events (call_started, call_ended, call_analyzed)
+ *    - Processes usage billing
  *
- * Important events:
- * - call_ended: Call completed, process billing
- * - call_started: Call started (optional tracking)
- * - call_analyzed: Call analysis completed (optional)
+ * 2. Custom Function Execution (function/tool calls)
+ *    - When agent needs to execute a custom function tool
+ *    - Payload has 'function' field with function name and parameters
+ *    - We execute it and return the result
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -23,7 +24,7 @@ export const dynamic = "force-dynamic"
 // TYPES (Based on Retell webhook payload structure)
 // =============================================================================
 
-interface RetellWebhookPayload {
+interface RetellCallEvent {
   event: string // "call_started", "call_ended", "call_analyzed"
   call: {
     call_id: string
@@ -58,6 +59,15 @@ interface RetellWebhookPayload {
   }
 }
 
+interface RetellFunctionCall {
+  function: string
+  call_id?: string
+  agent_id?: string
+  parameters?: Record<string, unknown>
+}
+
+type RetellWebhookPayload = RetellCallEvent | RetellFunctionCall
+
 // =============================================================================
 // WEBHOOK HANDLER
 // =============================================================================
@@ -68,27 +78,46 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const payload = body as RetellWebhookPayload
 
-    console.log(`[Retell Webhook] Received event: ${payload.event}`)
+    console.log("[Retell Webhook] ========================================")
+    console.log("[Retell Webhook] 🔔 WEBHOOK RECEIVED AT:", new Date().toISOString())
+    console.log("[Retell Webhook] Payload:", JSON.stringify(payload, null, 2))
+    console.log("[Retell Webhook] ========================================")
 
-    // 2. Handle different event types
-    switch (payload.event) {
-      case "call_ended":
-        await handleCallEnded(payload)
-        break
+    // 2. Determine request type: Call Event or Function Call
+    if ("event" in payload) {
+      // Call Event
+      const callPayload = payload as RetellCallEvent
+      console.log(`[Retell Webhook] Call event: ${callPayload.event}`)
 
-      case "call_started":
-        await handleCallStarted(payload)
-        break
+      switch (callPayload.event) {
+        case "call_ended":
+          await handleCallEnded(callPayload)
+          break
 
-      case "call_analyzed":
-        await handleCallAnalyzed(payload)
-        break
+        case "call_started":
+          await handleCallStarted(callPayload)
+          break
 
-      default:
-        console.log(`[Retell Webhook] Unhandled event type: ${payload.event}`)
+        case "call_analyzed":
+          await handleCallAnalyzed(callPayload)
+          break
+
+        default:
+          console.log(`[Retell Webhook] Unhandled event type: ${callPayload.event}`)
+      }
+
+      return NextResponse.json({ received: true })
+    } else if ("function" in payload) {
+      // Function Call
+      const funcPayload = payload as RetellFunctionCall
+      console.log(`[Retell Webhook] Function call: ${funcPayload.function}`)
+
+      const result = await handleFunctionCall(funcPayload)
+      return NextResponse.json(result)
+    } else {
+      console.warn("[Retell Webhook] Unknown payload type")
+      return NextResponse.json({ error: "Unknown payload type" }, { status: 400 })
     }
-
-    return NextResponse.json({ received: true })
   } catch (error) {
     console.error("[Retell Webhook] Error processing webhook:", error)
     // Return 200 to prevent Retell from retrying (we've logged the error)
@@ -100,10 +129,58 @@ export async function POST(request: NextRequest) {
 // EVENT HANDLERS
 // =============================================================================
 
-async function handleCallEnded(payload: RetellWebhookPayload) {
+/**
+ * Handle custom function tool execution
+ * Called when Retell agent needs to execute a custom function
+ */
+async function handleFunctionCall(payload: RetellFunctionCall): Promise<Record<string, unknown>> {
+  const { function: functionName, parameters = {} } = payload
+
+  console.log(`[Retell Webhook] Executing function: ${functionName}`)
+  console.log(`[Retell Webhook] Parameters:`, parameters)
+
+  try {
+    // Here you would implement your custom function logic
+    // For now, we'll return a mock response to prevent Retell errors
+
+    // TODO: Implement custom function execution based on functionName
+    // Examples:
+    // - "create_support_ticket": Create a ticket in your system
+    // - "book_appointment": Book an appointment in your calendar
+    // - Any other custom function your agent needs
+
+    // Mock response structure (adjust based on your actual needs)
+    const result = {
+      success: true,
+      function: functionName,
+      result: `Function '${functionName}' executed successfully`,
+      // Return any data the agent needs
+      data: {}
+    }
+
+    console.log(`[Retell Webhook] Function result:`, result)
+    return result
+  } catch (error) {
+    console.error(`[Retell Webhook] Function execution error for '${functionName}':`, error)
+    return {
+      success: false,
+      function: functionName,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
+  }
+}
+
+async function handleCallEnded(payload: RetellCallEvent) {
   const { call } = payload
 
-  console.log(`[Retell Webhook] Call ended: ${call.call_id}`)
+  console.log(`[Retell Webhook] ========================================`)
+  console.log(`[Retell Webhook] CALL ENDED EVENT RECEIVED`)
+  console.log(`[Retell Webhook] ========================================`)
+  console.log(`[Retell Webhook] Call ID: ${call.call_id}`)
+  console.log(`[Retell Webhook] Agent ID: ${call.agent_id}`)
+  console.log(`[Retell Webhook] Duration: ${call.end_timestamp && call.start_timestamp ? (call.end_timestamp - call.start_timestamp) / 1000 : 'N/A'}s`)
+  console.log(`[Retell Webhook] Transcript Preview: ${call.transcript?.substring(0, 100)}...`)
+  console.log(`[Retell Webhook] ========================================`)
 
   if (!prisma) {
     console.error("[Retell Webhook] Prisma not configured")
@@ -170,17 +247,17 @@ async function handleCallEnded(payload: RetellWebhookPayload) {
 
   if (result.success) {
     console.log(
-      `[Retell Webhook] Billing processed for call ${call.call_id}: ` +
+      `[Retell Webhook] ✅ Billing processed for call ${call.call_id}: ` +
         `${result.minutesAdded} minutes, $${(result.amountDeducted || 0) / 100} deducted`
     )
   } else {
     console.error(
-      `[Retell Webhook] Billing failed for call ${call.call_id}: ${result.error || result.reason}`
+      `[Retell Webhook] ❌ Billing failed for call ${call.call_id}: ${result.error || result.reason}`
     )
   }
 }
 
-async function handleCallStarted(payload: RetellWebhookPayload) {
+async function handleCallStarted(payload: RetellCallEvent) {
   const { call } = payload
 
   console.log(`[Retell Webhook] Call started: ${call.call_id}`)
@@ -208,7 +285,7 @@ async function handleCallStarted(payload: RetellWebhookPayload) {
   }
 }
 
-async function handleCallAnalyzed(payload: RetellWebhookPayload) {
+async function handleCallAnalyzed(payload: RetellCallEvent) {
   const { call } = payload
 
   console.log(`[Retell Webhook] Call analyzed: ${call.call_id}`)

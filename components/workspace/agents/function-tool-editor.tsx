@@ -54,7 +54,6 @@ import {
   Puzzle,
   CalendarCheck,
   CalendarSearch,
-  Info,
   AlertTriangle,
   TerminalSquare,
   Star,
@@ -178,7 +177,7 @@ function createToolFromDefinition(def: BuiltInToolDefinition): FunctionTool {
     case "apiRequest":
       return { ...baseTool, method: "POST", url: "", speak_during_execution: true, execution_message: "Processing your request..." }
     case "function":
-      return { ...baseTool, server_url: "", speak_during_execution: true, execution_message: "Let me check that for you..." }
+      return { ...baseTool, speak_during_execution: true, execution_message: "Let me check that for you..." }
     case "code":
       return { ...baseTool, runtime: "node18", code: "" }
     case "dtmf":
@@ -278,7 +277,6 @@ function ToolFields({ tool, onChange, disabled }: ToolFieldsProps) {
       case 'function':
         return [
           ...baseFields,
-          { key: 'server_url', label: 'Webhook URL', type: 'text', required: true, placeholder: 'https://your-server.com/webhook' },
           { key: 'async', label: 'Async Execution', type: 'switch', required: false },
           ...messageFields,
         ]
@@ -323,7 +321,6 @@ function ToolFields({ tool, onChange, disabled }: ToolFieldsProps) {
       default:
         return [
           ...baseFields,
-          { key: 'server_url', label: 'Webhook URL', type: 'text', required: false, placeholder: 'https://your-server.com/webhook' },
           ...messageFields,
         ]
     }
@@ -544,9 +541,24 @@ function ToolCard({ tool, onChange, onRemove, disabled, provider }: ToolCardProp
   
   const toolDef = VAPI_TOOL_REGISTRY[tool.tool_type as keyof typeof VAPI_TOOL_REGISTRY]
   const Icon = toolDef ? getToolIcon(toolDef.icon || 'Wrench') : Wrench
+  
+  // Check tool compatibility with provider
   const isCompatible =
     provider === "retell"
-      ? ["end_call", "transfer_call", "book_appointment_cal"].includes(tool.tool_type || "")
+      ? [
+          // Pre-built Retell tools
+          "end_call",
+          "endCall",
+          "transfer_call",
+          "transferCall",
+          "press_digit",
+          "press_digits",
+          "dtmf",
+          "check_availability_cal",
+          "book_appointment_cal",
+          "send_sms",
+          "smsSend",
+        ].includes(tool.tool_type || "")
       : true
 
   const copyJson = () => {
@@ -694,6 +706,7 @@ function ToolPickerDialog({
   }
 
   const handleShowCustom = () => {
+    if (provider === "retell") return
     setShowCustom(true)
     setSelectedDef(null)
     setIsEditingExisting(false)
@@ -769,32 +782,34 @@ function ToolPickerDialog({
             {/* Left Sidebar - Tool List */}
             <div className="w-[340px] flex flex-col border-r bg-muted/20">
               {/* Custom Function Card */}
-              <div className="p-5 border-b">
-                <button
-                  type="button"
-                  onClick={handleShowCustom}
-                  className={cn(
-                    "w-full flex items-center gap-4 p-4 rounded-xl text-left transition-all duration-200",
-                    showCustom 
-                      ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30" 
-                      : "bg-background border-2 border-dashed border-muted-foreground/20 hover:border-blue-500/50 hover:bg-blue-500/5"
-                  )}
-                >
-                  <div className={cn(
-                    "h-11 w-11 rounded-xl flex items-center justify-center",
-                    showCustom ? "bg-white/20" : "bg-blue-500/10"
-                  )}>
-                    <Code className={cn("h-5 w-5", showCustom ? "text-white" : "text-blue-500")} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-semibold">Custom Function</div>
-                    <div className={cn("text-sm", showCustom ? "text-white/70" : "text-muted-foreground")}>
-                      Build your own webhook
+              {provider !== "retell" && (
+                <div className="p-5 border-b">
+                  <button
+                    type="button"
+                    onClick={handleShowCustom}
+                    className={cn(
+                      "w-full flex items-center gap-4 p-4 rounded-xl text-left transition-all duration-200",
+                      showCustom 
+                        ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30" 
+                        : "bg-background border-2 border-dashed border-muted-foreground/20 hover:border-blue-500/50 hover:bg-blue-500/5"
+                    )}
+                  >
+                    <div className={cn(
+                      "h-11 w-11 rounded-xl flex items-center justify-center",
+                      showCustom ? "bg-white/20" : "bg-blue-500/10"
+                    )}>
+                      <Code className={cn("h-5 w-5", showCustom ? "text-white" : "text-blue-500")} />
                     </div>
-                  </div>
-                  <Plus className={cn("h-5 w-5", showCustom ? "text-white/70" : "text-muted-foreground")} />
-                </button>
-              </div>
+                    <div className="flex-1">
+                      <div className="font-semibold">Custom Function</div>
+                      <div className={cn("text-sm", showCustom ? "text-white/70" : "text-muted-foreground")}>
+                        Build your own webhook
+                      </div>
+                    </div>
+                    <Plus className={cn("h-5 w-5", showCustom ? "text-white/70" : "text-muted-foreground")} />
+                  </button>
+                </div>
+              )}
 
               {/* Search */}
               <div className="p-4 border-b">
@@ -985,7 +1000,7 @@ function ToolPickerDialog({
                     </div>
                     <h3 className="text-lg font-semibold text-muted-foreground mb-2">Select a Tool</h3>
                     <p className="text-sm text-muted-foreground/70 leading-relaxed">
-                      Choose a built-in tool from the list on the left, or create a custom webhook function.
+                      Choose a built-in tool from the list on the left.
                     </p>
                 </div>
               </div>
@@ -1049,7 +1064,6 @@ function ToolFieldsCustom({ tool, onChange, disabled }: ToolFieldsCustomProps) {
       case 'function':
         return [
           ...baseFields,
-          { key: 'server_url', label: 'Webhook URL', type: 'text', required: true, placeholder: 'https://your-server.com/webhook' },
           { key: 'async', label: 'Async Execution', type: 'switch', required: false },
           ...messageFields,
         ]
@@ -1062,7 +1076,6 @@ function ToolFieldsCustom({ tool, onChange, disabled }: ToolFieldsCustomProps) {
       default:
         return [
           ...baseFields,
-          { key: 'server_url', label: 'Webhook URL', type: 'text', required: false, placeholder: 'https://your-server.com/webhook' },
           ...messageFields,
         ]
     }
@@ -1243,35 +1256,11 @@ export function FunctionToolEditor({
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1">
-          {onServerUrlChange && (
-            <div className="flex items-center gap-2">
-              <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
-              <Input
-                value={serverUrl || ""}
-                onChange={(e) => onServerUrlChange(e.target.value)}
-                placeholder="Default webhook URL for all tools"
-                disabled={disabled}
-                className="flex-1"
-              />
-            </div>
-          )}
-        </div>
+      <div className="flex items-center justify-end">
         <Button variant="outline" onClick={() => setShowAddDialog(true)} disabled={disabled}>
           <Plus className="h-4 w-4 mr-2" /> Add Tool
         </Button>
       </div>
-
-      {/* Provider Info */}
-      {provider === "retell" && (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
-          <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-          <div className="text-blue-700 dark:text-blue-300">
-            <strong>Retell Provider:</strong> Supported tools: End Call, Transfer Call, Book Calendar (Cal.com).
-          </div>
-        </div>
-      )}
 
       {/* Tools List */}
       {tools.length === 0 ? (

@@ -1648,20 +1648,24 @@ export interface FunctionToolParameters {
  * - 'mcp': Model Context Protocol integration
  */
 export type FunctionToolType =
-  // Call Control
+  // Call Control (VAPI)
   | 'endCall'
   | 'transferCall'
   | 'dtmf'
   | 'handoff'
-  // Retell Pre-built Tools (general_tools)
+  // Call Control (Retell)
   | 'end_call'
   | 'transfer_call'
-  | 'press_digits'
+  | 'press_digit'   // Retell uses singular form
+  | 'press_digits'  // Legacy/alias
+  // Calendar Integration (Retell)
   | 'check_availability_cal'
   | 'book_appointment_cal'
+  // Communication (Retell)
   | 'send_sms'
   // API Integration
-  | 'function'
+  | 'function'        // Custom webhook function
+  | 'custom_function' // Retell explicit custom function
   | 'apiRequest'
   // Code Execution
   | 'code'
@@ -1674,7 +1678,7 @@ export type FunctionToolType =
   | 'googleCalendarCreateEvent'
   | 'googleCalendarCheckAvailability'
   | 'googleSheetsRowAppend'
-  // Communication
+  // Communication (VAPI)
   | 'slackSendMessage'
   | 'smsSend'
   // GoHighLevel
@@ -1799,9 +1803,20 @@ export interface FunctionTool {
   transfer_destination?: {
     type: 'predefined'
     number: string
+    /** If true, bypass E.164 phone number format validation */
+    ignore_e164_validation?: boolean
   }
 
-  /** Digits to press (for press_digits). */
+  /**
+   * Retell transfer options (for transfer_call).
+   */
+  transfer_option?: {
+    type: 'cold_transfer' | 'warm_transfer'
+    /** If true, show the transferee as the caller */
+    show_transferee_as_caller?: boolean
+  }
+
+  /** Digits to press (for press_digit / press_digits). */
   digits?: string
 
   /** Cal.com API key (for check_availability_cal / book_appointment_cal). */
@@ -1810,6 +1825,18 @@ export interface FunctionTool {
   event_type_id?: number
   /** Timezone (for check_availability_cal / book_appointment_cal). */
   timezone?: string
+
+  /** From number for send_sms (Twilio integration). */
+  from_number?: string
+
+  // ============================================================================
+  // CUSTOM FUNCTION TOOL PROPERTIES (Retell custom_function)
+  // ============================================================================
+
+  /** Message to speak when the webhook succeeds */
+  success_message?: string
+  /** Message to speak when the webhook fails */
+  error_message?: string
 
   // ============================================================================
   // EXTERNAL SYNC
@@ -1842,20 +1869,24 @@ export const functionToolParametersSchema = z.object({
 })
 
 export const functionToolTypeSchema = z.enum([
-  // Call Control
+  // Call Control (VAPI)
   'endCall',
   'transferCall',
   'dtmf',
   'handoff',
-  // Retell (LLM general_tools)
+  // Call Control (Retell)
   'end_call',
   'transfer_call',
+  'press_digit',
   'press_digits',
+  // Calendar Integration (Retell)
   'check_availability_cal',
   'book_appointment_cal',
+  // Communication (Retell)
   'send_sms',
   // API Integration
   'function',
+  'custom_function',
   'apiRequest',
   // Code Execution
   'code',
@@ -1868,7 +1899,7 @@ export const functionToolTypeSchema = z.enum([
   'googleCalendarCreateEvent',
   'googleCalendarCheckAvailability',
   'googleSheetsRowAppend',
-  // Communication
+  // Communication (VAPI)
   'slackSendMessage',
   'smsSend',
   // GoHighLevel

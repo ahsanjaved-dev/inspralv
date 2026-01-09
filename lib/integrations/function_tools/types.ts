@@ -46,18 +46,36 @@ export type VapiToolType =
 // ============================================================================
 
 /**
- * Retell pre-built tool types (general_tools).
+ * Retell tool types (general_tools).
+ * Reference: https://docs.retellai.com/api-references/create-retell-llm
  *
- * Note: Retell also supports custom functions, but we represent those internally
- * as the shared `function` tool type and map them to Retell's `custom_function`.
+ * Call Control:
+ * - 'end_call': End the call
+ * - 'transfer_call': Transfer to another number
+ * - 'press_digit': Send DTMF tones
+ *
+ * Calendar Integration (Cal.com):
+ * - 'check_availability_cal': Check calendar availability
+ * - 'book_appointment_cal': Book an appointment
+ *
+ * Communication:
+ * - 'send_sms': Send SMS message
+ *
+ * Custom Integration:
+ * - 'custom_function': Call external webhook/API
  */
 export type RetellToolType =
+  // Call Control
   | 'end_call'
   | 'transfer_call'
-  | 'press_digits'
+  | 'press_digit'
+  // Calendar Integration
   | 'check_availability_cal'
   | 'book_appointment_cal'
+  // Communication
   | 'send_sms'
+  // Custom Integration
+  | 'custom_function'
 
 // ============================================================================
 // TOOL CATEGORIES

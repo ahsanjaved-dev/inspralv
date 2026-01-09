@@ -16,7 +16,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Loader2, Key, Lock, Globe, AlertCircle, ExternalLink, Check, AlertTriangle, CloudOff, Wrench, Phone, PhoneCall, PhoneOff, Copy } from "lucide-react"
+import { Loader2, Key, Lock, Globe, AlertCircle, ExternalLink, Check, AlertTriangle, CloudOff, Wrench, Phone, PhoneCall, PhoneOff, Copy, Info } from "lucide-react"
 import type { AIAgent, FunctionTool } from "@/types/database.types"
 import type { CreateWorkspaceAgentInput } from "@/types/api.types"
 import Link from "next/link"
@@ -763,6 +763,54 @@ export function WorkspaceAgentForm({
         </CardContent>
       </Card>
 
+      {/* Webhook URL Configuration - Only for Retell */}
+      {selectedProvider === "retell" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              Webhook URL
+            </CardTitle>
+            <CardDescription>
+              Your server endpoint that receives tool execution requests and call data.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Input
+                  id="tools-server-url"
+                  placeholder="https://your-server.com/webhook"
+                  value={toolsServerUrl}
+                  onChange={(e) => setToolsServerUrl(e.target.value)}
+                  disabled={isSubmitting}
+                  className="pr-10"
+                />
+                {toolsServerUrl && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Check className="h-4 w-4 text-green-600" />
+                  </div>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={!toolsServerUrl || isSubmitting}
+                onClick={() => {
+                  if (toolsServerUrl) {
+                    navigator.clipboard.writeText(toolsServerUrl)
+                    toast.success("Copied!")
+                  }
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Function Tools Card */}
       <Card>
         <CardHeader>
@@ -771,8 +819,7 @@ export function WorkspaceAgentForm({
             Function Tools
           </CardTitle>
           <CardDescription>
-            Add custom function tools to extend your agent's capabilities.
-            Tools allow your agent to perform actions like booking appointments, looking up customer data, or transferring calls.
+            Add tools to extend your agent's capabilities like booking appointments, looking up data, or transferring calls.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -780,7 +827,6 @@ export function WorkspaceAgentForm({
             tools={tools}
             onChange={setTools}
             serverUrl={toolsServerUrl}
-            onServerUrlChange={setToolsServerUrl}
             disabled={isSubmitting}
             provider={selectedProvider}
           />

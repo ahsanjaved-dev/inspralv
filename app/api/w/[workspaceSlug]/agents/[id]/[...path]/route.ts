@@ -21,8 +21,10 @@ interface RouteContext {
   params: Promise<{ workspaceSlug: string; id: string; path: string[] }>
 }
 
-function makeCtx(workspaceSlug: string, id: string) {
-  return { params: Promise.resolve({ workspaceSlug, id }) } as any
+function makeCtx(workspaceSlug: string, id: string): any {
+  return {
+    params: Promise.resolve({ workspaceSlug, id })
+  }
 }
 
 export async function GET(request: NextRequest, { params }: RouteContext) {
@@ -43,8 +45,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 export async function POST(request: NextRequest, { params }: RouteContext) {
   const { workspaceSlug, id, path } = await params
   const segment = path?.[0]
+  console.log(`[CatchAll] POST request for segment: ${segment}, path: ${JSON.stringify(path)}`)
 
   if (segment === "test-call") {
+    console.log("[CatchAll] Routing to testCallPOST")
     return testCallPOST(request, makeCtx(workspaceSlug, id))
   }
 

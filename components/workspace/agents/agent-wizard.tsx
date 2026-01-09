@@ -38,6 +38,7 @@ import {
   Scroll,
   FileQuestion,
   AlertCircle,
+  Globe,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { functionToolsArraySchema, type CreateWorkspaceAgentInput } from "@/types/api.types"
@@ -806,6 +807,28 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
             </CardContent>
           </Card>
 
+          {/* Webhook URL - Only for Retell */}
+          {formData.provider === "retell" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="w-5 h-5" />
+                  Webhook URL
+                </CardTitle>
+                <CardDescription>
+                  Your server endpoint that receives tool execution requests and call data.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Input
+                  placeholder="https://your-server.com/webhook"
+                  value={formData.toolsServerUrl}
+                  onChange={(e) => updateFormData("toolsServerUrl", e.target.value)}
+                />
+              </CardContent>
+            </Card>
+          )}
+
           {/* Tools Section */}
           <Card>
             <CardHeader>
@@ -814,8 +837,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 Function Tools
               </CardTitle>
               <CardDescription>
-                Add custom function tools to extend your agent's capabilities.
-                Tools allow your agent to perform actions like booking appointments, looking up data, or transferring calls.
+                Add tools to extend your agent's capabilities.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -823,7 +845,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 tools={formData.tools}
                 onChange={(tools) => updateFormData("tools", tools)}
                 serverUrl={formData.toolsServerUrl}
-                onServerUrlChange={(url) => updateFormData("toolsServerUrl", url)}
                 provider={formData.provider}
               />
             </CardContent>
