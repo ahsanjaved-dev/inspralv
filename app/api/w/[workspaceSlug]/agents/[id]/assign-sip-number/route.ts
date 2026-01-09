@@ -210,9 +210,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       const errorMsg = createResult.error || ""
       const existingIdMatch = errorMsg.match(/Existing Phone Number ([a-f0-9-]+)/i)
       
-      if (existingIdMatch) {
+      const existingPhoneNumberId = existingIdMatch?.[1]
+      if (existingPhoneNumberId) {
         // Phone number already exists in Vapi - use the existing one
-        phoneNumberId = existingIdMatch[1]
+        phoneNumberId = existingPhoneNumberId
         console.log("[AssignSipNumber] Using existing phone number:", phoneNumberId)
       } else {
         // Try to find the phone number by listing all numbers
