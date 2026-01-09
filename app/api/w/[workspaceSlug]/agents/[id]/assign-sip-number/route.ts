@@ -6,6 +6,7 @@ import type { AIAgent, IntegrationApiKeys, AgentConfig, VapiIntegrationConfig } 
 import {
   createByoPhoneNumber,
   attachPhoneNumberToAssistant,
+  listByoPhoneNumbers,
 } from "@/lib/integrations/vapi/phone-numbers"
 import { z } from "zod"
 
@@ -184,12 +185,14 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       )
     }
 
-    // Create BYO phone number in Vapi
+    // Try to create BYO phone number in Vapi
     console.log("[AssignSipNumber] Creating BYO phone number:", {
       phoneNumber,
       credentialId: sipTrunkCredentialId,
       agentId: typedAgent.id,
     })
+
+    let phoneNumberId: string
 
     const createResult = await createByoPhoneNumber({
       apiKey: secretKey,
@@ -199,15 +202,47 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       numberE164CheckEnabled: false,
     })
 
-    if (!createResult.success || !createResult.data) {
-      return apiError(
-        createResult.error || "Failed to create phone number in Vapi",
-        500
-      )
-    }
+    if (createResult.success && createResult.data) {
+      phoneNumberId = createResult.data.id
+      console.log("[AssignSipNumber] Phone number created:", phoneNumberId)
+    } else {
+      // Check if error is "already exists" - parse the existing phone number ID
+      const errorMsg = createResult.error || ""
+      const existingIdMatch = errorMsg.match(/Existing Phone Number ([a-f0-9-]+)/i)
+      
+      if (existingIdMatch) {
+        // Phone number already exists in Vapi - use the existing one
+        phoneNumberId = existingIdMatch[1]
+        console.log("[AssignSipNumber] Using existing phone number:", phoneNumberId)
+      } else {
+        // Try to find the phone number by listing all numbers
+        console.log("[AssignSipNumber] Create failed, searching for existing number...")
+        const listResult = await listByoPhoneNumbers({
+          apiKey: secretKey,
+          credentialId: sipTrunkCredentialId,
+        })
 
-    const phoneNumberId = createResult.data.id
-    console.log("[AssignSipNumber] Phone number created:", phoneNumberId)
+        if (listResult.success && listResult.data) {
+          const existingNumber = listResult.data.find(
+            (n) => n.number === phoneNumber || n.number === phoneNumber.replace("+", "")
+          )
+          if (existingNumber) {
+            phoneNumberId = existingNumber.id
+            console.log("[AssignSipNumber] Found existing phone number:", phoneNumberId)
+          } else {
+            return apiError(
+              createResult.error || "Failed to create phone number in Vapi",
+              500
+            )
+          }
+        } else {
+          return apiError(
+            createResult.error || "Failed to create phone number in Vapi",
+            500
+          )
+        }
+      }
+    }
 
     // Attach the phone number to the agent's assistant (for inbound routing)
     const attachResult = await attachPhoneNumberToAssistant({

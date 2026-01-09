@@ -21,6 +21,7 @@ import type { AIAgent, FunctionTool } from "@/types/database.types"
 import type { CreateWorkspaceAgentInput } from "@/types/api.types"
 import Link from "next/link"
 import { useParams } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import { useAllIntegrationsWithDetails } from "@/lib/hooks/use-workspace-integrations"
 import { useState, useEffect } from "react"
 import { FunctionToolEditor } from "./function-tool-editor"
@@ -92,6 +93,7 @@ export function WorkspaceAgentForm({
 }: WorkspaceAgentFormProps) {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
   const [showKeyChangeWarning, setShowKeyChangeWarning] = useState(false)
   
   // Function tools state
@@ -119,6 +121,16 @@ export function WorkspaceAgentForm({
   const [sipNumberInput, setSipNumberInput] = useState("")
   const [isAssigningSipNumber, setIsAssigningSipNumber] = useState(false)
   const [sipDialUri, setSipDialUri] = useState<string | null>(null)
+
+  // Sync phone number state with initialData when it changes (e.g., after cache invalidation)
+  const initialPhoneNumber = initialData?.external_phone_number || null
+  const initialPhoneNumberId = (initialData?.config as any)?.telephony?.vapi_phone_number_id || null
+  
+  useEffect(() => {
+    // Update state when initialData changes (happens after React Query refetch)
+    setPhoneNumber(initialPhoneNumber)
+    setPhoneNumberId(initialPhoneNumberId)
+  }, [initialPhoneNumber, initialPhoneNumberId])
 
   // Fetch phone number details on mount if we have an ID but no number
   useEffect(() => {
@@ -844,6 +856,8 @@ export function WorkspaceAgentForm({
                           setPhoneNumber(null)
                           setPhoneNumberId(null)
                           setSipDialUri(null)
+                          // Invalidate agent cache so data persists on page revisit
+                          queryClient.invalidateQueries({ queryKey: ["workspace-agent", workspaceSlug, initialData.id] })
                           toast.success("Phone number released")
                         } catch (error: any) {
                           toast.error(error.message || "Failed to release phone number")
@@ -1078,6 +1092,8 @@ export function WorkspaceAgentForm({
                               setPhoneNumberId(data.phoneNumberId)
                               setSipDialUri(data.sipUri)
                               setSipNumberInput("")
+                              // Invalidate agent cache so data persists on page revisit
+                              queryClient.invalidateQueries({ queryKey: ["workspace-agent", workspaceSlug, initialData.id] })
                               toast.success(
                                 <div>
                                   <p>SIP number assigned!</p>
@@ -1141,6 +1157,8 @@ export function WorkspaceAgentForm({
                             
                             if (newPhoneNumberId) {
                               setPhoneNumberId(newPhoneNumberId)
+                              // Invalidate agent cache so data persists on page revisit
+                              queryClient.invalidateQueries({ queryKey: ["workspace-agent", workspaceSlug, initialData.id] })
                               if (newPhoneNumber && newPhoneNumber !== "Activating...") {
                                 setPhoneNumber(newPhoneNumber)
                                 toast.success(`SIP number provisioned: ${newPhoneNumber}`)
