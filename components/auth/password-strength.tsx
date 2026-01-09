@@ -2,7 +2,7 @@
 
 /**
  * Password Strength Indicator Component
- * Phase 2.1.3: Visual feedback for password security
+ * Visual feedback for password security - Theme compatible
  */
 
 import { useMemo } from "react"
@@ -40,10 +40,7 @@ export function PasswordStrengthIndicator({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Password strength</span>
-          <span
-            className="font-medium"
-            style={{ color: strengthInfo.color }}
-          >
+          <span className="font-medium" style={{ color: strengthInfo.color }}>
             {strengthInfo.label}
           </span>
         </div>
@@ -66,11 +63,11 @@ export function PasswordStrengthIndicator({
               key={req.id}
               className={cn(
                 "flex items-center gap-2 transition-colors",
-                req.met ? "text-green-600" : "text-muted-foreground"
+                req.met ? "text-green-600 dark:text-green-500" : "text-muted-foreground"
               )}
             >
               {req.met ? (
-                <Check className="h-4 w-4 text-green-600" />
+                <Check className="h-4 w-4 text-green-600 dark:text-green-500" />
               ) : (
                 <X className="h-4 w-4 text-muted-foreground" />
               )}
@@ -115,4 +112,3 @@ export function PasswordStrengthBar({ strength, className }: PasswordStrengthBar
     </div>
   )
 }
-

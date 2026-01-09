@@ -6,15 +6,8 @@ import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { ArrowLeft, Mail, CheckCircle2 } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { ArrowLeft, Mail, CheckCircle2, Loader2 } from "lucide-react"
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
@@ -34,10 +27,10 @@ export default function ForgotPasswordPage() {
       })
 
       if (error) throw error
-
       setSuccess(true)
-    } catch (error: any) {
-      setError(error.message || "Failed to send reset email")
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to send reset email"
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -46,49 +39,50 @@ export default function ForgotPasswordPage() {
   if (success) {
     return (
       <Card>
-        <CardHeader className="text-center">
-          <div className="mx-auto w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-4">
-            <CheckCircle2 className="h-6 w-6 text-green-600" />
+        <CardContent className="text-center py-12">
+          <div className="mx-auto w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mb-6">
+            <CheckCircle2 className="h-8 w-8 text-green-500" />
           </div>
-          <CardTitle>Check your email</CardTitle>
-          <CardDescription>
-            We've sent a password reset link to <strong>{email}</strong>
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-center space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Didn't receive the email? Check your spam folder or try again.
+          <h2 className="text-2xl font-bold mb-2">Check your email</h2>
+          <p className="text-muted-foreground mb-6">
+            We've sent a password reset link to <span className="font-medium text-foreground">{email}</span>
+          </p>
+          <p className="text-sm text-muted-foreground mb-6">
+            Didn't receive the email? Check your spam folder.
           </p>
           <Button variant="outline" onClick={() => setSuccess(false)}>
             Try another email
           </Button>
+          <div className="mt-6">
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to sign in
+            </Link>
+          </div>
         </CardContent>
-        <CardFooter className="justify-center">
-          <Link
-            href="/login"
-            className="text-sm text-blue-600 hover:underline flex items-center gap-1"
-          >
-            <ArrowLeft className="h-3 w-3" />
-            Back to login
-          </Link>
-        </CardFooter>
       </Card>
     )
   }
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="text-center pb-2">
         <CardTitle>Forgot password?</CardTitle>
-        <CardDescription>Enter your email and we'll send you a reset link</CardDescription>
+        <CardDescription>
+          Enter your email and we'll send you a reset link
+        </CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit}>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-md text-sm">
-              {error}
-            </div>
-          )}
+      <CardContent>
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm mb-4">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email address</Label>
             <div className="relative">
@@ -100,25 +94,34 @@ export default function ForgotPasswordPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="pl-10"
                 disabled={loading}
+                className="pl-10"
               />
             </div>
           </div>
-        </CardContent>
-        <CardFooter className="flex flex-col space-y-4">
+
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Sending..." : "Send reset link"}
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              "Send reset link"
+            )}
           </Button>
+        </form>
+
+        <div className="text-center mt-4">
           <Link
             href="/login"
-            className="text-sm text-muted-foreground hover:underline flex items-center gap-1"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
           >
-            <ArrowLeft className="h-3 w-3" />
-            Back to login
+            <ArrowLeft className="h-4 w-4" />
+            Back to sign in
           </Link>
-        </CardFooter>
-      </form>
+        </div>
+      </CardContent>
     </Card>
   )
 }

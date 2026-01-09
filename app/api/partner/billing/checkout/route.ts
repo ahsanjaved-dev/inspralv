@@ -2,21 +2,22 @@
  * POST /api/partner/billing/checkout
  * Creates a Stripe Checkout Session for partner subscription
  * 
- * For white-label partners: Uses the assigned variant's Stripe price ID
- * For regular partners: Uses the legacy plan-based pricing
+ * Partner billing uses the assigned WhiteLabelVariant's Stripe price.
+ * Partners must have a variant assigned by super admin during provisioning.
+ * 
+ * NOTE: This is for AGENCY partner billing only.
+ * Direct users (Free/Pro) subscribe at the workspace level via /api/w/[slug]/subscription
  */
 
 import { NextRequest } from "next/server"
 import { z } from "zod"
 import { getPartnerAuthContext, isPartnerAdmin } from "@/lib/api/auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
-import { getStripe, getOrCreateCustomer, getPriceIdForPlan } from "@/lib/stripe"
+import { getStripe, getOrCreateCustomer } from "@/lib/stripe"
 import { env } from "@/lib/env"
 import { prisma } from "@/lib/prisma"
 
 const checkoutSchema = z.object({
-  // Optional: legacy plan-based checkout (for backwards compatibility)
-  plan: z.enum(["pro", "agency"]).optional(),
   successUrl: z.string().url().optional(),
   cancelUrl: z.string().url().optional(),
 })
@@ -35,13 +36,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Parse and validate request body
-    const body = await request.json()
+    const body = await request.json().catch(() => ({}))
     const parsed = checkoutSchema.safeParse(body)
     if (!parsed.success) {
       return apiError(parsed.error.issues[0]?.message || "Invalid request")
     }
 
-    const { plan, successUrl, cancelUrl } = parsed.data
+    const { successUrl, cancelUrl } = parsed.data
 
     if (!prisma) {
       return serverError("Database not configured")
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
         stripeSubscriptionId: true,
         subscriptionStatus: true,
         isBillingExempt: true,
+        isPlatformPartner: true,
         whiteLabelVariantId: true,
         whiteLabelVariant: {
           select: {
@@ -65,6 +67,7 @@ export async function POST(request: NextRequest) {
             slug: true,
             stripePriceId: true,
             monthlyPriceCents: true,
+            maxWorkspaces: true,
           },
         },
       },
@@ -74,39 +77,41 @@ export async function POST(request: NextRequest) {
       return apiError("Partner not found", 404)
     }
 
-    // 5. Check if partner is billing-exempt (e.g., Genius365 / platform partner)
-    if (partner.isBillingExempt) {
-      return apiError("This organization is exempt from platform billing.")
+    // 5. Check if partner is billing-exempt (platform partner)
+    if (partner.isBillingExempt || partner.isPlatformPartner) {
+      return apiError(
+        "This organization is exempt from platform billing. " +
+        "End users subscribe to plans at the workspace level."
+      )
     }
 
     // 6. Check if partner already has an active subscription
     if (partner.stripeSubscriptionId && partner.subscriptionStatus === "active") {
-      return apiError("Partner already has an active subscription. Use the customer portal to change plans.")
+      return apiError(
+        "Partner already has an active subscription. " +
+        "Use the billing portal to manage your subscription."
+      )
     }
 
-    // 7. Determine the Stripe price ID
-    let priceId: string | null = null
-    let planTier: string = "partner"
-
-    // If partner has an assigned white-label variant, use that price
-    if (partner.whiteLabelVariant?.stripePriceId) {
-      priceId = partner.whiteLabelVariant.stripePriceId
-      planTier = partner.whiteLabelVariant.slug
-    } else if (plan) {
-      // Legacy: use plan-based pricing
-      priceId = getPriceIdForPlan(plan)
-      planTier = plan
+    // 7. Require an assigned variant
+    if (!partner.whiteLabelVariant) {
+      return apiError(
+        "No plan tier assigned to this partner. " +
+        "Please contact the platform administrator to assign a plan."
+      )
     }
 
-    if (!priceId) {
-      // If no variant assigned and no plan specified
-      if (partner.whiteLabelVariantId) {
-        return apiError("Your plan variant does not have a Stripe price configured. Please contact support.")
-      }
-      return apiError("No plan specified and no variant assigned. Please contact support.")
+    const variant = partner.whiteLabelVariant
+
+    // 8. Require variant has Stripe price configured
+    if (!variant.stripePriceId) {
+      return apiError(
+        "Your plan tier does not have billing configured yet. " +
+        "Please contact the platform administrator."
+      )
     }
 
-    // 8. Get or create Stripe customer
+    // 9. Get or create Stripe customer
     const customer = await getOrCreateCustomer(
       partner.id,
       auth.user.email,
@@ -114,7 +119,7 @@ export async function POST(request: NextRequest) {
       partner.stripeCustomerId
     )
 
-    // 9. Update partner with Stripe customer ID if new
+    // 10. Update partner with Stripe customer ID if new
     if (!partner.stripeCustomerId) {
       await prisma.partner.update({
         where: { id: partner.id },
@@ -122,7 +127,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 10. Create Checkout Session on platform Stripe account
+    // 11. Create Checkout Session on platform Stripe account
     const stripe = getStripe()
     const baseUrl = env.appUrl
 
@@ -131,7 +136,7 @@ export async function POST(request: NextRequest) {
       mode: "subscription",
       line_items: [
         {
-          price: priceId,
+          price: variant.stripePriceId,
           quantity: 1,
         },
       ],
@@ -139,14 +144,16 @@ export async function POST(request: NextRequest) {
       cancel_url: cancelUrl || `${baseUrl}/org/billing?checkout=cancelled`,
       metadata: {
         partner_id: partner.id,
-        plan_tier: planTier,
-        white_label_variant_id: partner.whiteLabelVariantId || "",
+        plan_tier: variant.slug,
+        white_label_variant_id: variant.id,
+        variant_name: variant.name,
       },
       subscription_data: {
         metadata: {
           partner_id: partner.id,
-          plan_tier: planTier,
-          white_label_variant_id: partner.whiteLabelVariantId || "",
+          plan_tier: variant.slug,
+          white_label_variant_id: variant.id,
+          variant_name: variant.name,
         },
       },
     })
@@ -154,10 +161,16 @@ export async function POST(request: NextRequest) {
     return apiResponse({
       sessionId: session.id,
       url: session.url,
+      variant: {
+        id: variant.id,
+        name: variant.name,
+        slug: variant.slug,
+        monthlyPriceCents: variant.monthlyPriceCents,
+        maxWorkspaces: variant.maxWorkspaces,
+      },
     })
   } catch (error) {
     console.error("POST /api/partner/billing/checkout error:", error)
     return serverError((error as Error).message)
   }
 }
-

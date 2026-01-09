@@ -141,19 +141,19 @@ export function useBillingInfo() {
 }
 
 /**
- * Create checkout session mutation
- * For white-label partners: uses assigned variant (no plan param needed)
- * For legacy partners: uses plan param
+ * Create checkout session mutation for partner billing
+ * Uses the assigned WhiteLabelVariant's Stripe price.
+ * Partners must have a variant assigned by super admin during provisioning.
  */
 export function useCheckout() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (plan?: "pro" | "agency") => {
+    mutationFn: async () => {
       const response = await fetch("/api/partner/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(plan ? { plan } : {}),
+        body: JSON.stringify({}),
       })
 
       if (!response.ok) {
@@ -284,11 +284,15 @@ export function useTopupIntent() {
 }
 
 // =============================================================================
-// PLAN CHANGE HOOKS
+// PLAN CHANGE HOOKS (LEGACY - Partner plans are now managed via WhiteLabelVariants)
 // =============================================================================
 
+// NOTE: Partner plan changes are now handled by super admin assigning different variants.
+// Partners cannot self-service change their plan tier.
+// These hooks are deprecated but kept for backwards compatibility.
+
 /**
- * Preview plan change with proration details
+ * @deprecated Partner plan changes are managed via WhiteLabelVariants assigned by super admin
  */
 export function usePlanChangePreview(newPlan: string | null) {
   return useQuery({
@@ -297,35 +301,25 @@ export function usePlanChangePreview(newPlan: string | null) {
       apiFetch<PlanChangePreview>(
         `/api/partner/billing/change-plan?newPlan=${newPlan}`
       ),
-    enabled: !!newPlan,
-    staleTime: 1000 * 60, // 1 minute
+    enabled: false, // Disabled - partner plan changes not supported
+    staleTime: 1000 * 60,
   })
 }
 
 /**
- * Change subscription plan mutation
+ * @deprecated Partner plan changes are managed via WhiteLabelVariants assigned by super admin
  */
 export function useChangePlan() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (newPlan: "pro" | "agency") => {
-      const response = await fetch("/api/partner/billing/change-plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newPlan }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to change plan")
-      }
-
-      const result = await response.json()
-      return result.data as PlanChangeResponse
+    mutationFn: async (_newPlan: string) => {
+      throw new Error(
+        "Partner plan changes are managed by the platform administrator. " +
+        "Please contact support to change your plan tier."
+      )
     },
     onSuccess: () => {
-      // Invalidate billing info after plan change
       queryClient.invalidateQueries({ queryKey: billingKeys.info() })
     },
   })

@@ -60,10 +60,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     })
 
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/e7abe0ce-adad-4c04-8933-7a7770164db8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'subscription/route.ts:GET',message:'Subscription fetched',data:{found:!!subscription,status:subscription?.status,planName:subscription?.plan?.name,workspaceId:context.workspace.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B-C'})}).catch(()=>{});
-    // #endregion
-
     if (!subscription) {
       return apiResponse({
         hasSubscription: false,
@@ -170,17 +166,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return notFound("Subscription plan")
     }
 
-    // Get partner's Connect account
+    // Get partner details including platform partner flag
     const partner = await prisma.partner.findUnique({
       where: { id: context.workspace.partner_id },
-      select: { id: true, name: true, settings: true },
+      select: { id: true, name: true, settings: true, isPlatformPartner: true },
     })
 
     if (!partner) {
       return serverError("Partner not found")
     }
 
-    const connectAccountId = getConnectAccountId(partner.settings as Record<string, unknown>)
+    const isPlatformPartner = partner.isPlatformPartner
+    const connectAccountId = isPlatformPartner 
+      ? null // Platform partner uses main Stripe account
+      : getConnectAccountId(partner.settings as Record<string, unknown>)
 
     // If plan is free, create subscription directly
     if (plan.monthlyPriceCents === 0) {
@@ -221,7 +220,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Paid plan - need Stripe checkout
-    if (!connectAccountId) {
+    // Non-platform partners need Connect accounts for payments
+    if (!isPlatformPartner && !connectAccountId) {
       return apiError("Partner has not set up payment processing. Contact your partner.")
     }
 
@@ -231,23 +231,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const stripe = getStripe()
 
-    // Get or create workspace customer on Connect account
+    // Get or create workspace customer
+    // Platform partner: use main Stripe account
+    // Other partners: use Connect account
     let stripeCustomerId = existingSubscription?.stripeCustomerId
 
     if (!stripeCustomerId) {
-      // Create customer on Connect account
-      const customer = await stripe.customers.create(
-        {
-          email: context.user?.email,
-          name: context.workspace.name,
-          metadata: {
-            workspace_id: context.workspace.id,
-            workspace_slug: context.workspace.slug,
-            partner_id: context.workspace.partner_id,
-          },
+      const customerParams = {
+        email: context.user?.email,
+        name: context.workspace.name,
+        metadata: {
+          workspace_id: context.workspace.id,
+          workspace_slug: context.workspace.slug,
+          partner_id: context.workspace.partner_id,
+          is_platform_partner: isPlatformPartner?.toString() || "false",
         },
-        { stripeAccount: connectAccountId }
-      )
+      }
+
+      const customer = connectAccountId
+        ? await stripe.customers.create(customerParams, { stripeAccount: connectAccountId })
+        : await stripe.customers.create(customerParams)
+      
       stripeCustomerId = customer.id
     }
 
@@ -256,12 +260,47 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const defaultSuccessUrl = `${baseUrl}/w/${workspaceSlug}/billing?subscription=success`
     const defaultCancelUrl = `${baseUrl}/w/${workspaceSlug}/billing?subscription=canceled`
 
-    // Create Checkout Session on Connect account with platform fee
-    // The platform takes a % cut from each subscription payment
-    const platformFeePercent = env.stripeConnectPlatformFeePercent || 10
-    
-    const session = await stripe.checkout.sessions.create(
-      {
+    // Create Checkout Session
+    // For Connect accounts: include platform fee
+    // For platform partner: direct checkout on main account
+    let session
+
+    if (connectAccountId) {
+      // Connect account checkout with platform fee
+      const platformFeePercent = env.stripeConnectPlatformFeePercent || 10
+      
+      session = await stripe.checkout.sessions.create(
+        {
+          customer: stripeCustomerId,
+          mode: "subscription",
+          payment_method_types: ["card"],
+          line_items: [
+            {
+              price: plan.stripePriceId,
+              quantity: 1,
+            },
+          ],
+          success_url: successUrl || defaultSuccessUrl,
+          cancel_url: cancelUrl || defaultCancelUrl,
+          subscription_data: {
+            application_fee_percent: platformFeePercent,
+            metadata: {
+              workspace_id: context.workspace.id,
+              plan_id: plan.id,
+              partner_id: context.workspace.partner_id,
+            },
+          },
+          metadata: {
+            workspace_id: context.workspace.id,
+            plan_id: plan.id,
+            type: "workspace_subscription",
+          },
+        },
+        { stripeAccount: connectAccountId }
+      )
+    } else {
+      // Platform partner: direct checkout on main Stripe account
+      session = await stripe.checkout.sessions.create({
         customer: stripeCustomerId,
         mode: "subscription",
         payment_method_types: ["card"],
@@ -274,22 +313,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         success_url: successUrl || defaultSuccessUrl,
         cancel_url: cancelUrl || defaultCancelUrl,
         subscription_data: {
-          // Platform fee: this % of each invoice goes to the platform account
-          application_fee_percent: platformFeePercent,
           metadata: {
             workspace_id: context.workspace.id,
             plan_id: plan.id,
             partner_id: context.workspace.partner_id,
+            type: "workspace_subscription",
+            is_platform_partner: "true",
           },
         },
         metadata: {
           workspace_id: context.workspace.id,
           plan_id: plan.id,
           type: "workspace_subscription",
+          is_platform_partner: "true",
         },
-      },
-      { stripeAccount: connectAccountId }
-    )
+      })
+    }
 
     // Create/update subscription record as incomplete
     await prisma.workspaceSubscription.upsert({
@@ -375,13 +414,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return notFound("New subscription plan")
     }
 
-    // Get partner's Connect account
+    // Get partner details including platform partner flag
     const partner = await prisma.partner.findUnique({
       where: { id: context.workspace.partner_id },
-      select: { settings: true },
+      select: { settings: true, isPlatformPartner: true },
     })
 
-    const connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown>)
+    const isPlatformPartner = partner?.isPlatformPartner || false
+    const connectAccountId = isPlatformPartner
+      ? null
+      : getConnectAccountId(partner?.settings as Record<string, unknown>)
 
     // Handle free plan changes locally (no Stripe involved)
     if (subscription.plan.monthlyPriceCents === 0 && newPlan.monthlyPriceCents === 0) {
@@ -404,9 +446,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return apiError("To upgrade to a paid plan, please cancel and subscribe to the new plan.")
     }
 
-    // Paid plan changes require Stripe
-    if (!connectAccountId || !subscription.stripeSubscriptionId) {
+    // Paid plan changes require Stripe subscription
+    // For non-platform partners: need Connect account
+    // For platform partner: use main Stripe account
+    if (!subscription.stripeSubscriptionId) {
       return apiError("Cannot change plan: Stripe subscription not found")
+    }
+
+    if (!isPlatformPartner && !connectAccountId) {
+      return apiError("Cannot change plan: Partner has not set up payment processing")
     }
 
     if (!newPlan.stripePriceId) {
@@ -416,10 +464,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const stripe = getStripe()
 
     // Get current Stripe subscription
-    const stripeSubscription = await stripe.subscriptions.retrieve(
-      subscription.stripeSubscriptionId,
-      { stripeAccount: connectAccountId }
-    )
+    // Platform partner uses main account, others use Connect
+    const stripeSubscription = connectAccountId
+      ? await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId, { stripeAccount: connectAccountId })
+      : await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId)
 
     const subscriptionItemId = stripeSubscription.items.data[0]?.id
     if (!subscriptionItemId) {
@@ -436,24 +484,24 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       : "none"
 
     // Update the subscription with proration
-    const updatedSubscription = await stripe.subscriptions.update(
-      subscription.stripeSubscriptionId,
-      {
-        items: [
-          {
-            id: subscriptionItemId,
-            price: newPlan.stripePriceId,
-          },
-        ],
-        proration_behavior: prorationBehavior,
-        metadata: {
-          workspace_id: context.workspace.id,
-          plan_id: newPlanId,
-          partner_id: context.workspace.partner_id,
+    const updateParams = {
+      items: [
+        {
+          id: subscriptionItemId,
+          price: newPlan.stripePriceId,
         },
+      ],
+      proration_behavior: prorationBehavior,
+      metadata: {
+        workspace_id: context.workspace.id,
+        plan_id: newPlanId,
+        partner_id: context.workspace.partner_id,
       },
-      { stripeAccount: connectAccountId }
-    )
+    }
+
+    const updatedSubscription = connectAccountId
+      ? await stripe.subscriptions.update(subscription.stripeSubscriptionId, updateParams, { stripeAccount: connectAccountId })
+      : await stripe.subscriptions.update(subscription.stripeSubscriptionId, updateParams)
 
     // Update local subscription record
     await prisma.workspaceSubscription.update({
@@ -519,22 +567,31 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     if (subscription.stripeSubscriptionId) {
       const partner = await prisma.partner.findUnique({
         where: { id: subscription.plan.partnerId },
-        select: { settings: true },
+        select: { settings: true, isPlatformPartner: true },
       })
 
-      const connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown>)
+      const isPlatformPartner = partner?.isPlatformPartner || false
+      const connectAccountId = isPlatformPartner
+        ? null
+        : getConnectAccountId(partner?.settings as Record<string, unknown>)
 
-      if (connectAccountId) {
-        try {
-          const stripe = getStripe()
+      try {
+        const stripe = getStripe()
+        if (connectAccountId) {
           await stripe.subscriptions.update(
             subscription.stripeSubscriptionId,
             { cancel_at_period_end: true },
             { stripeAccount: connectAccountId }
           )
-        } catch (stripeError) {
-          console.error("Failed to cancel Stripe subscription:", stripeError)
+        } else {
+          // Platform partner: use main Stripe account
+          await stripe.subscriptions.update(
+            subscription.stripeSubscriptionId,
+            { cancel_at_period_end: true }
+          )
         }
+      } catch (stripeError) {
+        console.error("Failed to cancel Stripe subscription:", stripeError)
       }
     }
 

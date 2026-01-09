@@ -165,13 +165,21 @@ export function useDeletePartnerRequest() {
   })
 }
 
+export interface ProvisionPartnerInput {
+  requestId: string
+  /** Required: The white-label variant to assign to this partner */
+  variantId: string
+}
+
 export function useProvisionPartner() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (requestId: string) => {
+    mutationFn: async ({ requestId, variantId }: ProvisionPartnerInput) => {
       const res = await fetch(`/api/super-admin/partner-requests/${requestId}/provision`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variant_id: variantId }),
       })
       if (!res.ok) {
         const error = await res.json()

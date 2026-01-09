@@ -7,15 +7,8 @@ import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Loader2 } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Loader2, CheckCircle2, AlertCircle, ArrowRight } from "lucide-react"
 
 function LoginForm() {
   const router = useRouter()
@@ -36,59 +29,64 @@ function LoginForm() {
 
     try {
       const supabase = createClient()
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
       if (error) throw error
 
-      // Redirect to original destination or workspace
       if (redirectTo) {
         router.push(redirectTo)
       } else if (workspaceSlug) {
-        // If coming from signup with subscription, redirect to workspace dashboard
         router.push(`/w/${workspaceSlug}/dashboard${subscriptionStatus === 'success' ? '?subscription=success' : ''}`)
       } else {
         router.push("/select-workspace")
       }
       router.refresh()
-    } catch (error: any) {
-      setError(error.message || "Failed to login")
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to login"
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <Card className="shadow-xl">
-      <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Welcome back</CardTitle>
+    <Card>
+      <CardHeader className="text-center pb-2">
+        <CardTitle>Welcome back</CardTitle>
         <CardDescription>
           {subscriptionStatus === 'success'
-            ? 'Payment successful! Sign in to access your workspace.'
+            ? 'Payment successful! Sign in to continue.'
             : subscriptionStatus === 'canceled'
             ? 'Payment was canceled. Sign in to try again.'
             : 'Sign in to your account to continue'}
         </CardDescription>
       </CardHeader>
-      <form onSubmit={handleLogin}>
-        <CardContent className="space-y-4">
-          {subscriptionStatus === 'success' && (
-            <div className="bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 p-3 rounded-lg text-sm">
-              ✓ Your subscription is active! Please sign in to access your workspace.
-            </div>
-          )}
-          {subscriptionStatus === 'canceled' && (
-            <div className="bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 p-3 rounded-lg text-sm">
-              Payment was canceled. You can try again after signing in.
-            </div>
-          )}
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
+      <CardContent>
+        {/* Status Messages */}
+        {subscriptionStatus === 'success' && (
+          <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400 px-4 py-3 rounded-lg text-sm mb-4">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>Your subscription is active! Sign in to access your workspace.</span>
+          </div>
+        )}
+
+        {subscriptionStatus === 'canceled' && (
+          <div className="flex items-center gap-3 bg-orange-500/10 border border-orange-500/20 text-orange-600 dark:text-orange-400 px-4 py-3 rounded-lg text-sm mb-4">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>Payment was canceled. You can try again after signing in.</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm mb-4">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -101,8 +99,17 @@ function LoginForm() {
               disabled={loading}
             />
           </div>
+
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Link 
+                href="/forgot-password" 
+                className="text-xs text-muted-foreground hover:text-primary transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <Input
               id="password"
               type="password"
@@ -113,13 +120,7 @@ function LoginForm() {
               disabled={loading}
             />
           </div>
-          <div className="text-right">
-            <Link href="/forgot-password" className="text-sm text-primary hover:underline">
-              Forgot password?
-            </Link>
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col space-y-4">
+
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? (
               <>
@@ -127,21 +128,24 @@ function LoginForm() {
                 Signing in...
               </>
             ) : (
-              "Sign in"
+              <>
+                Sign in
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </>
             )}
           </Button>
+        </form>
 
-          <p className="text-sm text-muted-foreground text-center">
-            Don't have an account?{" "}
-            <Link
-              href={redirectTo ? `/signup?redirect=${encodeURIComponent(redirectTo)}` : "/signup"}
-              className="text-primary hover:underline"
-            >
-              Create one
-            </Link>
-          </p>
-        </CardFooter>
-      </form>
+        <p className="text-center text-sm text-muted-foreground mt-4">
+          Don't have an account?{" "}
+          <Link
+            href={redirectTo ? `/signup?redirect=${encodeURIComponent(redirectTo)}` : "/pricing"}
+            className="text-primary hover:underline"
+          >
+            Get started
+          </Link>
+        </p>
+      </CardContent>
     </Card>
   )
 }
@@ -150,9 +154,9 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <Card className="shadow-xl">
-          <CardContent className="flex justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin" />
+        <Card>
+          <CardContent className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </CardContent>
         </Card>
       }

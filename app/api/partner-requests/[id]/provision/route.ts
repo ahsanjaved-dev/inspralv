@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import { z } from "zod"
 import { getSuperAdminContext } from "@/lib/api/super-admin-auth"
 import { apiResponse, apiError, unauthorized, serverError } from "@/lib/api/helpers"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -9,6 +10,11 @@ import { getFullSubdomainUrl, getLoginUrl } from "@/lib/utils/subdomain"
 interface RouteContext {
   params: Promise<{ id: string }>
 }
+
+// Request body schema - variant_id is required
+const provisionSchema = z.object({
+  variant_id: z.string().uuid("Invalid variant ID"),
+})
 
 // Generate random password
 function generatePassword(length = 16): string {
@@ -26,7 +32,31 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (!context) return unauthorized()
 
     const { id } = await params
+
+    // Parse and validate request body
+    const body = await request.json().catch(() => ({}))
+    const parsed = provisionSchema.safeParse(body)
+    if (!parsed.success) {
+      return apiError("A white-label variant must be selected to provision the partner", 400)
+    }
+    const { variant_id } = parsed.data
+
     const adminClient = createAdminClient()
+
+    // Validate the variant exists and is active
+    const { data: variant, error: variantError } = await adminClient
+      .from("white_label_variants")
+      .select("id, name, slug, monthly_price_cents, max_workspaces, is_active")
+      .eq("id", variant_id)
+      .single()
+
+    if (variantError || !variant) {
+      return apiError("Selected variant not found", 404)
+    }
+
+    if (!variant.is_active) {
+      return apiError("Selected variant is not active", 400)
+    }
 
     // Get the partner request
     const { data: partnerRequest, error: fetchError } = await adminClient
@@ -52,14 +82,15 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const fullPlatformHostname = getFullSubdomainUrl(platformSubdomain)
     const loginUrl = getLoginUrl(platformSubdomain)
 
-    // Step 1: Create partner record with platform subdomain
+    // Step 1: Create partner record with platform subdomain and assigned variant
     const { data: partner, error: partnerError } = await adminClient
       .from("partners")
       .insert({
         name: partnerRequest.company_name,
         slug: platformSubdomain,
         branding: partnerRequest.branding_data || {},
-        plan_tier: partnerRequest.selected_plan || "enterprise",
+        // All agency partners have "partner" plan tier; the variant determines pricing/limits
+        plan_tier: "partner",
         features: {
           white_label: true,
           custom_domain: true,
@@ -68,16 +99,19 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           advanced_analytics: true,
         },
         resource_limits: {
-          max_workspaces: -1, // Unlimited
+          // Use workspace limit from variant
+          max_workspaces: variant.max_workspaces,
           max_users_per_workspace: -1,
           max_agents_per_workspace: -1,
         },
-        subscription_status: "active",
+        // Not active until they complete checkout
+        subscription_status: "pending",
         is_platform_partner: false,
+        is_billing_exempt: false,
         onboarding_status: "provisioning",
         request_id: id,
-        // Platform subdomain is stored in the slug field
-        // Custom domain (if any) will be added later during onboarding
+        // Assign the white-label variant
+        white_label_variant_id: variant_id,
       })
       .select()
       .single()
@@ -191,6 +225,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         slug: partner.slug,
         platform_subdomain: platformSubdomain,
         domain: fullPlatformHostname,
+      },
+      variant: {
+        id: variant.id,
+        name: variant.name,
+        slug: variant.slug,
+        maxWorkspaces: variant.max_workspaces,
+        monthlyPriceCents: variant.monthly_price_cents,
       },
       owner: {
         email: partnerRequest.contact_email,

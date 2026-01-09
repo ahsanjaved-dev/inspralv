@@ -8,16 +8,17 @@ import {
   ExternalLink,
   Check,
   Loader2,
-  Zap,
   Building2,
   ArrowRight,
   Link2,
   CheckCircle2,
   AlertCircle,
   XCircle,
-  ShieldCheck
+  ShieldCheck,
+  Package,
+  Info
 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import {
   useBillingInfo,
@@ -28,7 +29,6 @@ import {
   useCredits
 } from "@/lib/hooks/use-billing"
 import { CreditsCard } from "@/components/billing/credits-card"
-import { ChangePlanDialog } from "@/components/billing/change-plan-dialog"
 import { toast } from "sonner"
 
 export default function OrgBillingPage() {
@@ -40,19 +40,6 @@ export default function OrgBillingPage() {
   const connectOnboarding = useConnectOnboarding()
 
   const { refetch: refetchCredits } = useCredits()
-
-  // Plan change dialog state
-  const [changePlanDialog, setChangePlanDialog] = useState<{
-    open: boolean
-    plan: "pro" | "agency" | null
-    planName: string
-    planPrice: number | null
-  }>({
-    open: false,
-    plan: null,
-    planName: "",
-    planPrice: null,
-  })
 
   // Handle callback messages from URL params
   useEffect(() => {
@@ -84,49 +71,13 @@ export default function OrgBillingPage() {
   // Variant-based checkout (for white-label partners)
   const handleVariantCheckout = async () => {
     try {
-      // No plan param needed - uses assigned variant (pass undefined)
+      // No plan param needed - uses assigned variant
       const result = await checkout.mutateAsync(undefined)
       if (result.url) {
         window.location.href = result.url
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to start checkout")
-    }
-  }
-
-  const handleCheckout = async (plan: "pro" | "agency") => {
-    try {
-      const result = await checkout.mutateAsync(plan)
-      if (result.url) {
-        window.location.href = result.url
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to start checkout")
-    }
-  }
-
-  const handlePlanSelection = (
-    plan: "pro" | "agency",
-    planName: string,
-    planPrice: number | null
-  ) => {
-    const current = subscription?.planTier
-    const isCurrent =
-      plan === "pro"
-        ? current === "pro" || current === "starter" || current === "professional"
-        : current === "agency" || current === "enterprise"
-
-    // If they have an active subscription, show change plan dialog
-    if (hasActiveSubscription && !isCurrent) {
-      setChangePlanDialog({
-        open: true,
-        plan,
-        planName,
-        planPrice,
-      })
-    } else if (!hasActiveSubscription) {
-      // If no subscription, go directly to checkout
-      handleCheckout(plan)
     }
   }
 
@@ -172,7 +123,7 @@ export default function OrgBillingPage() {
         <div>
           <h1 className="text-3xl font-bold">Billing</h1>
           <p className="text-muted-foreground mt-1">
-            Manage your subscription and billing settings
+            Manage your organization billing and payment settings
           </p>
         </div>
         {hasActiveSubscription && subscription?.hasStripeCustomer && !isBillingExempt && (
@@ -187,327 +138,243 @@ export default function OrgBillingPage() {
         )}
       </div>
 
-      {/* Billing Exempt Banner */}
+      {/* ============================================================ */}
+      {/* BILLING EXEMPT PARTNER (Platform Partner)                    */}
+      {/* ============================================================ */}
       {isBillingExempt && (
-        <Card className="border-green-500/30 bg-green-500/5">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-green-500/20 flex items-center justify-center">
-                <ShieldCheck className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="font-medium text-green-700 dark:text-green-400">
-                  Platform Partner - Billing Exempt
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Your organization is exempt from platform billing fees.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Current Plan Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
-                Current Plan
-              </CardTitle>
-              <CardDescription>Your organization&apos;s subscription</CardDescription>
-            </div>
-            <Badge 
-              variant={isBillingExempt ? "default" : subscription?.status === "active" ? "default" : "secondary"}
-              className="capitalize"
-            >
-              {isBillingExempt ? "Exempt" : subscription?.status || "No subscription"}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-baseline gap-2 mb-4">
-            <span className="text-4xl font-bold">{subscription?.planName || "Free"}</span>
-            {!isBillingExempt && subscription?.planPrice != null && subscription.planPrice > 0 && (
-              <span className="text-xl text-muted-foreground">
-                ${subscription.planPrice}/month
-              </span>
-            )}
-            {isBillingExempt && (
-              <span className="text-xl text-muted-foreground">
-                (Platform Partner)
-              </span>
-            )}
-          </div>
-
-          {/* Show variant details if assigned */}
-          {whiteLabelVariant && (
-            <div className="mb-4 p-3 rounded-lg bg-muted/50">
-              <p className="text-sm font-medium">Plan Details</p>
-              <p className="text-sm text-muted-foreground">
-                {whiteLabelVariant.description || `${whiteLabelVariant.name} plan`}
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Workspace limit: {whiteLabelVariant.maxWorkspaces === -1 ? "Unlimited" : whiteLabelVariant.maxWorkspaces}
-              </p>
-            </div>
-          )}
-
-          {/* Plan Features */}
-          {billingInfo?.features_list && (
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              {billingInfo.features_list.map((feature, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
-                  {feature}
+        <>
+          <Card className="border-green-500/30 bg-green-500/5">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                  <ShieldCheck className="h-5 w-5 text-green-600" />
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Credits Card */}
-      <CreditsCard />
-
-      {/* Plan Selection - Show variant checkout for white-label, or legacy plan selection */}
-      {!isBillingExempt && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="h-5 w-5" />
-              {hasActiveSubscription ? "Subscription" : whiteLabelVariant ? "Activate Subscription" : "Choose a Plan"}
-            </CardTitle>
-            <CardDescription>
-              {hasActiveSubscription 
-                ? "Manage your subscription" 
-                : whiteLabelVariant 
-                  ? `Complete checkout to activate your ${whiteLabelVariant.name} plan`
-                  : "Select a plan to get started"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/* White-label variant checkout (assigned by super admin) */}
-            {whiteLabelVariant && !hasActiveSubscription && (
-              <div className="border-2 border-primary rounded-xl p-6 bg-primary/5">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-xl font-semibold">{whiteLabelVariant.name}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {whiteLabelVariant.description || "Your assigned plan"}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-3xl font-bold">
-                      ${(whiteLabelVariant.monthlyPriceCents / 100).toFixed(0)}
-                      <span className="text-sm font-normal text-muted-foreground">/mo</span>
-                    </p>
-                  </div>
-                </div>
-                <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
-                  <li className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-green-500" />
-                    {whiteLabelVariant.maxWorkspaces === -1 
-                      ? "Unlimited workspaces" 
-                      : `Up to ${whiteLabelVariant.maxWorkspaces} workspaces`}
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-green-500" /> White-label platform access
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-green-500" /> Stripe Connect for payments
-                  </li>
-                </ul>
-                <Button
-                  className="w-full"
-                  onClick={handleVariantCheckout}
-                  disabled={checkout.isPending}
-                >
-                  {checkout.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      Complete Checkout
-                      <ArrowRight className="h-4 w-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
-
-            {/* Legacy plan selection (for partners without assigned variant) */}
-            {!whiteLabelVariant && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Free Plan */}
-                <div className={`relative border rounded-xl p-6 transition-all ${
-                  !hasActiveSubscription || subscription?.planTier === "free"
-                    ? "border-primary bg-primary/5"
-                    : "hover:border-primary/50"
-                }`}>
-                  {(!hasActiveSubscription || subscription?.planTier === "free") && (
-                    <Badge className="absolute -top-2 right-4">Current</Badge>
-                  )}
-                  <div className="mb-4">
-                    <h3 className="text-xl font-semibold">Free</h3>
-                    <p className="text-3xl font-bold mt-2">
-                      $0<span className="text-sm font-normal text-muted-foreground">/mo</span>
-                    </p>
-                  </div>
-                  <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
-                    <li className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-green-500" /> Get started with the basics
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-green-500" /> Upgrade anytime
-                    </li>
-                  </ul>
-                  <Button className="w-full" variant="outline" disabled>
-                    Included
-                  </Button>
-                </div>
-
-                {/* Pro Plan */}
-                <div className={`relative border-2 rounded-xl p-6 transition-all ${
-                  subscription?.planTier === "pro" || subscription?.planTier === "starter" || subscription?.planTier === "professional"
-                    ? "border-primary bg-primary/5"
-                    : "border-primary hover:shadow-lg"
-                }`}>
-                  <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary">
-                    {subscription?.planTier === "pro" || subscription?.planTier === "starter" || subscription?.planTier === "professional"
-                      ? "Current"
-                      : "Most Popular"}
-                  </Badge>
-                  <div className="mb-4">
-                    <h3 className="text-xl font-semibold">Pro</h3>
-                    <p className="text-3xl font-bold mt-2">
-                      $99<span className="text-sm font-normal text-muted-foreground">/mo</span>
-                    </p>
-                  </div>
-                  <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
-                    <li className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-green-500" /> More usage & higher limits
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-green-500" /> Priority support
-                    </li>
-                  </ul>
-                  <Button
-                    className="w-full"
-                    onClick={() => handlePlanSelection("pro", "Pro", 99)}
-                    disabled={
-                      checkout.isPending ||
-                      subscription?.planTier === "pro" ||
-                      subscription?.planTier === "starter" ||
-                      subscription?.planTier === "professional"
-                    }
-                  >
-                    {checkout.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : subscription?.planTier === "pro" ||
-                      subscription?.planTier === "starter" ||
-                      subscription?.planTier === "professional" ? (
-                      "Current Plan"
-                    ) : hasActiveSubscription ? (
-                      "Change to Pro"
-                    ) : (
-                      <>Select <ArrowRight className="h-4 w-4 ml-2" /></>
-                    )}
-                  </Button>
-                </div>
-
-                {/* Agency Plan */}
-                <div className={`relative border rounded-xl p-6 transition-all ${
-                  subscription?.planTier === "agency" || subscription?.planTier === "enterprise"
-                    ? "border-primary bg-primary/5"
-                    : "hover:border-primary/50"
-                }`}>
-                  {(subscription?.planTier === "agency" || subscription?.planTier === "enterprise") && (
-                    <Badge className="absolute -top-2 right-4">Current</Badge>
-                  )}
-                  <div className="mb-4">
-                    <h3 className="text-xl font-semibold">Agency</h3>
-                    <p className="text-3xl font-bold mt-2">Custom</p>
-                  </div>
-                  <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
-                    <li className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-green-500" /> White-label & advanced controls
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-green-500" /> Dedicated support
-                    </li>
-                  </ul>
-                  <Button
-                    className="w-full"
-                    variant="outline"
-                    onClick={() => handlePlanSelection("agency", "Agency", null)}
-                    disabled={checkout.isPending || subscription?.planTier === "agency" || subscription?.planTier === "enterprise"}
-                  >
-                    {checkout.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : subscription?.planTier === "agency" || subscription?.planTier === "enterprise" ? (
-                      "Current Plan"
-                    ) : hasActiveSubscription ? (
-                      "Change to Agency"
-                    ) : (
-                      <>Select <ArrowRight className="h-4 w-4 ml-2" /></>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Active subscription with variant */}
-            {whiteLabelVariant && hasActiveSubscription && (
-              <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
                 <div>
-                  <p className="font-medium">Your subscription is active</p>
+                  <p className="font-medium text-green-700 dark:text-green-400">
+                    Platform Partner - Billing Exempt
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    {whiteLabelVariant.name} - ${(whiteLabelVariant.monthlyPriceCents / 100).toFixed(0)}/month
+                    Your organization is exempt from platform billing fees. End users subscribe to plans at the workspace level.
                   </p>
                 </div>
-                <Button variant="outline" onClick={handleManageBilling} disabled={portal.isPending}>
-                  {portal.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                  )}
-                  Manage
-                </Button>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* Info card for platform partners */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Info className="h-5 w-5" />
+                How Billing Works
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm text-muted-foreground">
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-xs font-bold text-primary">1</span>
+                </div>
+                <p>
+                  <strong className="text-foreground">End User Subscriptions:</strong> Your end users subscribe to Free or Pro plans at the workspace level via their workspace billing page.
+                </p>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-xs font-bold text-primary">2</span>
+                </div>
+                <p>
+                  <strong className="text-foreground">Stripe Connect (Optional):</strong> Set up Stripe Connect below if you want to process payments through your own merchant account.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </>
       )}
 
-      {/* Payment Method */}
-      {hasActiveSubscription && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5" />
-              Payment Method
-            </CardTitle>
-            <CardDescription>Manage your payment details</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground mb-4">
-              Update your payment method, view invoices, and manage billing details through the Stripe Customer Portal.
-            </p>
-            <Button variant="outline" onClick={handleManageBilling} disabled={portal.isPending}>
-              {portal.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+      {/* ============================================================ */}
+      {/* AGENCY PARTNER (with assigned variant)                       */}
+      {/* ============================================================ */}
+      {!isBillingExempt && (
+        <>
+          {/* Current Plan Card */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
+                    Current Plan
+                  </CardTitle>
+                  <CardDescription>Your organization&apos;s assigned plan tier</CardDescription>
+                </div>
+                <Badge 
+                  variant={subscription?.status === "active" ? "default" : "secondary"}
+                  className="capitalize"
+                >
+                  {subscription?.status || "No subscription"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {whiteLabelVariant ? (
+                <>
+                  <div className="flex items-baseline gap-2 mb-4">
+                    <span className="text-4xl font-bold">{whiteLabelVariant.name}</span>
+                    {whiteLabelVariant.monthlyPriceCents > 0 && (
+                      <span className="text-xl text-muted-foreground">
+                        ${(whiteLabelVariant.monthlyPriceCents / 100).toFixed(0)}/month
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Variant details */}
+                  <div className="mb-4 p-3 rounded-lg bg-muted/50">
+                    {whiteLabelVariant.description && (
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {whiteLabelVariant.description}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="flex items-center gap-2">
+                        <Package className="h-4 w-4 text-muted-foreground" />
+                        <span>
+                          {whiteLabelVariant.maxWorkspaces === -1 
+                            ? "Unlimited workspaces" 
+                            : `${whiteLabelVariant.maxWorkspaces} workspaces included`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Plan features */}
+                  <ul className="space-y-2 text-sm text-muted-foreground">
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> White-label platform access
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> Custom branding & domain
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> Stripe Connect for workspace billing
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> Create custom plans for your workspaces
+                    </li>
+                  </ul>
+                </>
               ) : (
-                <ExternalLink className="h-4 w-4 mr-2" />
+                <div className="text-center py-8">
+                  <div className="h-12 w-12 rounded-full bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
+                    <AlertCircle className="h-6 w-6 text-yellow-500" />
+                  </div>
+                  <p className="font-medium">No Plan Assigned</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Your organization does not have a plan tier assigned yet. Please contact the platform administrator.
+                  </p>
+                </div>
               )}
-              Open Billing Portal
-            </Button>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* Subscription Activation Card - Only show if variant assigned but not subscribed */}
+          {whiteLabelVariant && !hasActiveSubscription && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5" />
+                  Activate Your Subscription
+                </CardTitle>
+                <CardDescription>
+                  Complete checkout to activate your {whiteLabelVariant.name} plan
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="border-2 border-primary rounded-xl p-6 bg-background">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-xl font-semibold">{whiteLabelVariant.name}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {whiteLabelVariant.description || "Your assigned agency plan"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold">
+                        ${(whiteLabelVariant.monthlyPriceCents / 100).toFixed(0)}
+                        <span className="text-sm font-normal text-muted-foreground">/mo</span>
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="space-y-2 mb-6 text-sm text-muted-foreground">
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" />
+                      {whiteLabelVariant.maxWorkspaces === -1 
+                        ? "Unlimited workspaces" 
+                        : `Up to ${whiteLabelVariant.maxWorkspaces} workspaces`}
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> Full white-label platform access
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" /> Stripe Connect for payments
+                    </li>
+                  </ul>
+                  <Button
+                    className="w-full"
+                    onClick={handleVariantCheckout}
+                    disabled={checkout.isPending}
+                  >
+                    {checkout.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        Complete Checkout
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Active subscription management */}
+          {whiteLabelVariant && hasActiveSubscription && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5" />
+                  Subscription Management
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
+                  <div>
+                    <p className="font-medium">Your subscription is active</p>
+                    <p className="text-sm text-muted-foreground">
+                      {whiteLabelVariant.name} - ${(whiteLabelVariant.monthlyPriceCents / 100).toFixed(0)}/month
+                    </p>
+                  </div>
+                  <Button variant="outline" onClick={handleManageBilling} disabled={portal.isPending}>
+                    {portal.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                    )}
+                    Manage
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Credits Card - For agency partners */}
+          <CreditsCard />
+        </>
       )}
 
-      {/* Stripe Connect - For billing workspaces */}
+      {/* ============================================================ */}
+      {/* STRIPE CONNECT - Available for all partners                  */}
+      {/* ============================================================ */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -515,7 +382,9 @@ export default function OrgBillingPage() {
             Stripe Connect
           </CardTitle>
           <CardDescription>
-            Connect your Stripe account to receive payments from your workspaces
+            {isBillingExempt 
+              ? "Connect your Stripe account to process payments from your workspaces"
+              : "Connect your Stripe account to receive payments from your workspaces and customers"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -628,21 +497,6 @@ export default function OrgBillingPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Plan Change Dialog */}
-      {changePlanDialog.plan && (
-        <ChangePlanDialog
-          open={changePlanDialog.open}
-          onOpenChange={(open) =>
-            setChangePlanDialog((prev) => ({ ...prev, open }))
-          }
-          currentPlan={subscription?.planTier || ""}
-          newPlan={changePlanDialog.plan}
-          planName={changePlanDialog.planName}
-          planPrice={changePlanDialog.planPrice}
-        />
-      )}
     </div>
   )
 }
-

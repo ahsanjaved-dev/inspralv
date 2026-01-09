@@ -1,6 +1,9 @@
 "use client"
 
 import { useEffect } from "react"
+import Link from "next/link"
+import { Mic } from "lucide-react"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import type { ResolvedPartner } from "@/lib/api/partner"
 
 interface Props {
@@ -11,7 +14,6 @@ interface Props {
 export function AuthLayoutClient({ partner, children }: Props) {
   const branding = partner.branding
   const companyName = branding.company_name || partner.name
-  const primaryColor = branding.primary_color || "#7c3aed"
 
   // Apply partner branding to document
   useEffect(() => {
@@ -25,7 +27,7 @@ export function AuthLayoutClient({ partner, children }: Props) {
     }
 
     // Update title
-    document.title = `${companyName} | Sign In`
+    document.title = `${companyName} | AI Voice Platform`
 
     // Update favicon
     if (branding.favicon_url) {
@@ -45,25 +47,47 @@ export function AuthLayoutClient({ partner, children }: Props) {
   }, [branding, companyName])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-      <div className="w-full max-w-md p-8">
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      {/* Background Pattern */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/10 rounded-full blur-[100px] opacity-50" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[300px] bg-primary/5 rounded-full blur-[80px] opacity-50" />
+      </div>
+
+      {/* Header */}
+      <header className="relative z-10 p-4 flex justify-end">
+        <ThemeToggle />
+      </header>
+
+      {/* Content */}
+      <div className="relative flex-1 flex flex-col items-center justify-center px-4 py-8">
         {/* Partner Logo/Name */}
-        <div className="text-center mb-8">
+        <Link href="/" className="flex flex-col items-center mb-8">
           {branding.logo_url ? (
-            <img src={branding.logo_url} alt={companyName} className="h-12 mx-auto mb-4" />
+            <img 
+              src={branding.logo_url} 
+              alt={companyName} 
+              className="h-12 mb-4" 
+            />
           ) : (
-            <div
-              className="h-14 w-14 mx-auto mb-4 rounded-xl flex items-center justify-center text-white font-bold text-2xl shadow-lg"
-              style={{ backgroundColor: primaryColor }}
-            >
-              {companyName[0]}
+            <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
+              <Mic className="h-7 w-7 text-primary-foreground" />
             </div>
           )}
-          <h1 className="text-3xl font-bold">{companyName}</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">AI Voice Platform</p>
+          <h1 className="text-2xl font-bold tracking-tight">{companyName}</h1>
+          <p className="text-muted-foreground text-sm mt-1">AI Voice Platform</p>
+        </Link>
+
+        {/* Form Container */}
+        <div className="w-full max-w-md">
+          {children}
         </div>
-        {children}
       </div>
+
+      {/* Footer */}
+      <footer className="relative py-6 text-center text-sm text-muted-foreground">
+        <p>© {new Date().getFullYear()} {companyName}. All rights reserved.</p>
+      </footer>
     </div>
   )
 }
