@@ -306,7 +306,7 @@ async function createPlanCheckoutSession(
   let connectAccountId: string | null = null
 
   if (!isPlatformPartner) {
-    connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown> | null)
+    connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown> | null) ?? null
 
     if (!connectAccountId) {
       console.error(`[Signup Checkout] Non-platform partner ${partnerId} has no Stripe Connect account`)

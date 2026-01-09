@@ -101,6 +101,9 @@ importers:
       html2canvas:
         specifier: ^1.4.1
         version: 1.4.1
+      import-in-the-middle:
+        specifier: ^2.0.1
+        version: 2.0.1
       jspdf:
         specifier: ^2.5.2
         version: 2.5.2
@@ -131,6 +134,9 @@ importers:
       recharts:
         specifier: ^3.5.1
         version: 3.5.1(@types/react@19.2.7)(react-dom@19.2.1(react@19.2.1))(react-is@16.13.1)(react@19.2.1)(redux@5.0.1)
+      require-in-the-middle:
+        specifier: ^8.0.1
+        version: 8.0.1
       resend:
         specifier: ^6.6.0
         version: 6.6.0(@react-email/render@2.0.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1))
