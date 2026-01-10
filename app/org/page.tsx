@@ -58,6 +58,7 @@ import {
 } from "@/lib/hooks/use-partner-team"
 import { usePartnerWorkspaces, type PartnerWorkspace } from "@/lib/hooks/use-partner-workspaces"
 import { AssignWorkspaceDialog } from "@/components/org/assign-workspace-dialog"
+import { WorkspaceIntegrationsDialog } from "@/components/org/integrations/workspace-integrations-dialog"
 import { useAuthContext } from "@/lib/hooks/use-auth"
 import {
   Users,
@@ -80,6 +81,7 @@ import {
   FolderPlus,
   Plus,
   Eye,
+  Plug,
 } from "lucide-react"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
@@ -148,6 +150,7 @@ export default function OrgOverviewPage() {
   const [selectedRole, setSelectedRole] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(new Set())
+  const [integrationsWorkspace, setIntegrationsWorkspace] = useState<PartnerWorkspace | null>(null)
 
   const { data: authContext } = useAuthContext()
   const { data: members, isLoading: membersLoading, refetch: refetchMembers } = usePartnerTeam()
@@ -571,6 +574,7 @@ export default function OrgOverviewPage() {
                       workspace={workspace}
                       expanded={expandedWorkspaces.has(workspace.id)}
                       onToggle={() => toggleWorkspace(workspace.id)}
+                      onManageIntegrations={() => setIntegrationsWorkspace(workspace)}
                       members={members?.filter((m) =>
                         m.workspace_access.some((wa) => wa.workspace_id === workspace.id)
                       ) || []}
@@ -688,6 +692,13 @@ export default function OrgOverviewPage() {
         onOpenChange={(open) => !open && setAssignMember(null)}
         member={assignMember}
       />
+
+      {/* Workspace Integrations Dialog */}
+      <WorkspaceIntegrationsDialog
+        open={!!integrationsWorkspace}
+        onOpenChange={(open) => !open && setIntegrationsWorkspace(null)}
+        workspace={integrationsWorkspace}
+      />
     </div>
   )
 }
@@ -697,11 +708,13 @@ function WorkspaceRow({
   workspace,
   expanded,
   onToggle,
+  onManageIntegrations,
   members,
 }: {
   workspace: PartnerWorkspace
   expanded: boolean
   onToggle: () => void
+  onManageIntegrations: () => void
   members: PartnerTeamMember[]
 }) {
   const gradientClass = getWorkspaceGradient(workspace.name)
@@ -816,6 +829,10 @@ function WorkspaceRow({
 
               {/* Quick Actions */}
               <div className="flex gap-2 mt-4">
+                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onManageIntegrations(); }}>
+                  <Plug className="h-4 w-4 mr-2" />
+                  Manage Integrations
+                </Button>
                 <Button variant="outline" size="sm" asChild>
                   <Link href={`/w/${workspace.slug}/members`}>
                     <Users className="h-4 w-4 mr-2" />

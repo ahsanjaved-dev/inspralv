@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
-import type { AIAgent, IntegrationApiKeys, AgentConfig, VapiIntegrationConfig } from "@/types/database.types"
+import type { AIAgent, AgentConfig, VapiIntegrationConfig } from "@/types/database.types"
 import {
   listPhoneNumbers,
   createFreeUsPhoneNumber,
@@ -47,7 +47,12 @@ async function getVapiIntegrationDetails(agent: AIAgent): Promise<VapiIntegratio
     (key) => key.provider === "vapi" && key.is_active
   )
 
-  // Need to fetch from workspace_integrations
+  if (legacySecretKey?.key) {
+    console.log("[PhoneNumber] Using legacy agent-level key")
+    return { secretKey: legacySecretKey.key, config: {} }
+  }
+
+  // NEW ORG-LEVEL FLOW: Fetch from workspace_integration_assignments -> partner_integrations
   if (!agent.workspace_id) {
     console.error("[PhoneNumber] Agent has no workspace_id")
     return null
@@ -56,62 +61,76 @@ async function getVapiIntegrationDetails(agent: AIAgent): Promise<VapiIntegratio
   try {
     const supabase = getSupabaseAdmin()
 
-    const { data: integration, error } = await supabase
-      .from("workspace_integrations")
-      .select("api_keys, config")
+    // Get workspace to find partner_id
+    const { data: workspace, error: workspaceError } = await supabase
+      .from("workspaces")
+      .select("partner_id")
+      .eq("id", agent.workspace_id)
+      .single()
+
+    if (workspaceError || !workspace?.partner_id) {
+      console.error("[PhoneNumber] Failed to fetch workspace:", workspaceError)
+      return null
+    }
+
+    // Check for assigned integration
+    const { data: assignment, error: assignmentError } = await supabase
+      .from("workspace_integration_assignments")
+      .select(`
+        partner_integration:partner_integrations (
+          id,
+          api_keys,
+          config,
+          is_active
+        )
+      `)
       .eq("workspace_id", agent.workspace_id)
       .eq("provider", "vapi")
+      .single()
+
+    if (!assignmentError && assignment?.partner_integration) {
+      const partnerIntegration = assignment.partner_integration as any
+      if (partnerIntegration.is_active) {
+        const apiKeys = partnerIntegration.api_keys as any
+        const vapiConfig = (partnerIntegration.config as VapiIntegrationConfig) || {}
+        console.log(`[PhoneNumber] Using assigned org-level integration, secretKey: ${apiKeys?.default_secret_key ? 'found' : 'not found'}`)
+        if (apiKeys?.default_secret_key) {
+          return { secretKey: apiKeys.default_secret_key, config: vapiConfig }
+        }
+      }
+    }
+
+    // If no assignment, try to find the default integration
+    console.log("[PhoneNumber] No assignment found, checking for default integration...")
+    const { data: defaultIntegration, error: defaultError } = await supabase
+      .from("partner_integrations")
+      .select("id, api_keys, config, is_active")
+      .eq("partner_id", workspace.partner_id)
+      .eq("provider", "vapi")
+      .eq("is_default", true)
       .eq("is_active", true)
       .single()
 
-    if (error || !integration) {
-      console.error("[PhoneNumber] Failed to fetch VAPI integration:", error)
-      // If we have a legacy key, return it without config
-      if (legacySecretKey?.key) {
-        return { secretKey: legacySecretKey.key, config: {} }
-      }
-      return null
-    }
+    if (!defaultError && defaultIntegration) {
+      // Auto-create the assignment
+      await supabase
+        .from("workspace_integration_assignments")
+        .insert({
+          workspace_id: agent.workspace_id,
+          provider: "vapi",
+          partner_integration_id: defaultIntegration.id,
+        })
 
-    const apiKeys = integration.api_keys as IntegrationApiKeys
-    const vapiConfig = (integration.config as VapiIntegrationConfig) || {}
-    const apiKeyConfig = agent.config?.api_key_config
-
-    // Determine the secret key to use
-    let secretKey: string | null = null
-
-    // If legacy key exists, use it
-    if (legacySecretKey?.key) {
-      secretKey = legacySecretKey.key
-    }
-    // NEW FLOW: Check assigned_key_id first
-    else if (apiKeyConfig?.assigned_key_id) {
-      const keyId = apiKeyConfig.assigned_key_id
-
-      if (keyId === "default") {
-        secretKey = apiKeys.default_secret_key || null
-      } else {
-        const additionalKey = apiKeys.additional_keys?.find((k) => k.id === keyId)
-        secretKey = additionalKey?.secret_key || null
+      const apiKeys = defaultIntegration.api_keys as any
+      const vapiConfig = (defaultIntegration.config as VapiIntegrationConfig) || {}
+      console.log(`[PhoneNumber] Using default org-level integration, secretKey: ${apiKeys?.default_secret_key ? 'found' : 'not found'}`)
+      if (apiKeys?.default_secret_key) {
+        return { secretKey: apiKeys.default_secret_key, config: vapiConfig }
       }
     }
-    // LEGACY FLOW: Check secret_key.type
-    else if (!apiKeyConfig?.secret_key || apiKeyConfig.secret_key.type === "none") {
-      secretKey = apiKeys.default_secret_key || null
-    } else if (apiKeyConfig.secret_key.type === "default") {
-      secretKey = apiKeys.default_secret_key || null
-    } else if (apiKeyConfig.secret_key.type === "additional") {
-      const additionalKey = apiKeys.additional_keys?.find(
-        (k) => k.id === apiKeyConfig.secret_key?.additional_key_id
-      )
-      secretKey = additionalKey?.secret_key || null
-    }
 
-    if (!secretKey) {
-      return null
-    }
-
-    return { secretKey, config: vapiConfig }
+    console.log("[PhoneNumber] No integration found")
+    return null
   } catch (error) {
     console.error("[PhoneNumber] Error fetching integration details:", error)
     return null

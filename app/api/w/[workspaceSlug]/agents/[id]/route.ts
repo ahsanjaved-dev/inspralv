@@ -12,6 +12,7 @@ import { updateWorkspaceAgentSchema } from "@/types/api.types"
 import { safeVapiSync, shouldSyncToVapi } from "@/lib/integrations/vapi/agent/sync"
 import { safeRetellSync, shouldSyncToRetell } from "@/lib/integrations/retell/agent/sync"
 import type { AIAgent } from "@/types/database.types"
+import { prisma } from "@/lib/prisma"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string; id: string }>
@@ -123,7 +124,31 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
     const existingAgent = existing as AIAgent
     
-    // Detect API key changes
+    // NEW ORG-LEVEL FLOW: Check if workspace has an assigned integration
+    let hasAssignedIntegration = false
+    if (prisma) {
+      const assignment = await prisma.workspaceIntegrationAssignment.findFirst({
+        where: {
+          workspaceId: ctx.workspace.id,
+          provider: existingAgent.provider,
+        },
+        include: {
+          partnerIntegration: {
+            select: {
+              isActive: true,
+              apiKeys: true,
+            },
+          },
+        },
+      })
+      
+      if (assignment?.partnerIntegration?.isActive) {
+        const apiKeys = assignment.partnerIntegration.apiKeys as any
+        hasAssignedIntegration = !!apiKeys?.default_secret_key
+      }
+    }
+    
+    // Legacy: Detect API key changes from old config-based flow
     const oldKeyId = getAssignedKeyId(existingAgent.config)
     const newConfig = validation.data.config
     const newKeyId = newConfig ? getAssignedKeyId(newConfig) : oldKeyId
@@ -134,7 +159,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     
     let warningMessage: string | null = null
     
-    // Warn if changing API keys
+    // Warn if changing API keys (legacy flow)
     if (isKeyBeingChanged) {
       warningMessage = "Warning: Changing API keys may affect call logs. Ensure the new key is from the same provider account to preserve call history."
     }
@@ -226,23 +251,32 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       return apiError("Failed to update agent")
     }
 
-    // Sync with external provider if API key was assigned or changed
+    // Sync with external provider 
+    // NEW ORG-LEVEL FLOW: Sync if workspace has assigned integration
     let syncedAgent = agent as AIAgent
     const typedAgent = agent as AIAgent
     
-    const shouldSync = isKeyBeingAssigned || isKeyBeingChanged
+    // Determine if we should sync:
+    // 1. Legacy: API key being assigned/changed via config
+    // 2. New: Workspace has org-level assigned integration AND agent not synced OR needs update
+    const shouldSyncLegacy = isKeyBeingAssigned || isKeyBeingChanged
+    const needsFirstSync = !existingAgent.external_agent_id && hasAssignedIntegration
+    const shouldUpdateSync = existingAgent.external_agent_id && hasAssignedIntegration && !isKeyBeingRemoved
+    
+    const shouldSync = shouldSyncLegacy || needsFirstSync || shouldUpdateSync
 
     if (shouldSync) {
-      console.log(`[AgentUpdate] API key ${isKeyBeingAssigned ? 'assigned' : 'changed'}, triggering sync...`)
-      
       // Determine sync operation
       const operation = existingAgent.external_agent_id ? "update" : "create"
+      
+      console.log(`[AgentUpdate] Triggering ${operation} sync, hasAssignedIntegration: ${hasAssignedIntegration}, existingExtId: ${!!existingAgent.external_agent_id}`)
       
       if (typedAgent.provider === "vapi" && shouldSyncToVapi(typedAgent)) {
         const syncResult = await safeVapiSync(typedAgent, operation)
         if (syncResult.success && syncResult.agent) {
           syncedAgent = syncResult.agent
         } else if (!syncResult.success) {
+          console.error("[AgentUpdate] VAPI sync failed:", syncResult.error)
           // Update sync status to error
           await ctx.adminClient
             .from("ai_agents")
@@ -258,39 +292,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         if (syncResult.success && syncResult.agent) {
           syncedAgent = syncResult.agent
         } else if (!syncResult.success) {
-          // Update sync status to error
-          await ctx.adminClient
-            .from("ai_agents")
-            .update({ 
-              sync_status: "error", 
-              last_sync_error: syncResult.error,
-              needs_resync: true,
-            })
-            .eq("id", id)
-        }
-      }
-    } else if (existingAgent.external_agent_id && !isKeyBeingRemoved) {
-      // Agent was already synced and key wasn't changed - just update if configured
-      if (typedAgent.provider === "vapi" && shouldSyncToVapi(typedAgent)) {
-        const syncResult = await safeVapiSync(typedAgent, "update")
-        if (syncResult.success && syncResult.agent) {
-          syncedAgent = syncResult.agent
-        } else if (!syncResult.success) {
-          // Update sync status to error
-          await ctx.adminClient
-            .from("ai_agents")
-            .update({ 
-              sync_status: "error", 
-              last_sync_error: syncResult.error,
-              needs_resync: true,
-            })
-            .eq("id", id)
-        }
-      } else if (typedAgent.provider === "retell" && shouldSyncToRetell(typedAgent)) {
-        const syncResult = await safeRetellSync(typedAgent, "update")
-        if (syncResult.success && syncResult.agent) {
-          syncedAgent = syncResult.agent
-        } else if (!syncResult.success) {
+          console.error("[AgentUpdate] Retell sync failed:", syncResult.error)
           // Update sync status to error
           await ctx.adminClient
             .from("ai_agents")

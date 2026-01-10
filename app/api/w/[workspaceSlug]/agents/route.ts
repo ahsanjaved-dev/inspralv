@@ -4,6 +4,9 @@ import { apiResponse, apiError, unauthorized, forbidden, serverError, getValidat
 import { createWorkspaceAgentSchema } from "@/types/api.types"
 import { createAuditLog, getRequestMetadata } from "@/lib/audit"
 import type { AgentProvider, AIAgent } from "@/types/database.types"
+import { safeVapiSync } from "@/lib/integrations/vapi/agent/sync"
+import { safeRetellSync } from "@/lib/integrations/retell/agent/sync"
+import { prisma } from "@/lib/prisma"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string }>
@@ -119,8 +122,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       }
     }
 
-    // NEW FLOW: Build config WITHOUT auto-assigning API keys
-    // Agent starts with no API key assigned and sync_status = "not_synced"
+    // NEW ORG-LEVEL FLOW: Check if workspace has an assigned integration for this provider
     const inputConfig = validation.data.config || {}
     
     // If knowledge base content exists, append it to the system prompt
@@ -128,23 +130,41 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       ? (inputConfig.system_prompt || "") + knowledgeBaseContent
       : inputConfig.system_prompt
 
-    const configWithoutDefaultKeys = {
-      ...inputConfig,
-      system_prompt: systemPromptWithKnowledge,
-      api_key_config: {
-        // No keys assigned by default - admin will configure later
-        secret_key: { type: "none" as const },
-        public_key: { type: "none" as const },
-        assigned_key_id: null,
-      },
+    // Check if workspace has an assigned integration for the provider
+    let hasAssignedIntegration = false
+    if (prisma) {
+      const assignment = await prisma.workspaceIntegrationAssignment.findFirst({
+        where: {
+          workspaceId: ctx.workspace.id,
+          provider: validation.data.provider,
+        },
+        include: {
+          partnerIntegration: {
+            select: {
+              isActive: true,
+              apiKeys: true,
+            },
+          },
+        },
+      })
+      
+      if (assignment?.partnerIntegration?.isActive) {
+        const apiKeys = assignment.partnerIntegration.apiKeys as any
+        hasAssignedIntegration = !!apiKeys?.default_secret_key
+      }
     }
 
-    console.log(`[AgentCreate] Creating agent with provider: ${validation.data.provider}, NO API keys assigned (not_synced)`)
+    const agentConfig = {
+      ...inputConfig,
+      system_prompt: systemPromptWithKnowledge,
+    }
+
+    console.log(`[AgentCreate] Creating agent with provider: ${validation.data.provider}, hasAssignedIntegration: ${hasAssignedIntegration}`)
     if (knowledgeDocumentIds.length > 0) {
       console.log(`[AgentCreate] Linking ${knowledgeDocumentIds.length} knowledge documents`)
     }
 
-    // Create agent WITHOUT syncing - sync will happen when admin assigns API key
+    // Create agent with pending sync status if integration is assigned
     const { data: agent, error } = await ctx.adminClient
       .from("ai_agents")
       .insert({
@@ -156,12 +176,12 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         voice_provider: validation.data.voice_provider,
         model_provider: validation.data.model_provider,
         transcriber_provider: validation.data.transcriber_provider,
-        config: configWithoutDefaultKeys,
+        config: agentConfig,
         agent_secret_api_key: [],
         agent_public_api_key: [],
         is_active: validation.data.is_active ?? true,
-        // NEW: Set sync_status to not_synced - no sync on creation
-        sync_status: "not_synced",
+        // Set sync status based on whether workspace has assigned integration
+        sync_status: hasAssignedIntegration ? "pending" : "not_synced",
         needs_resync: false,
       })
       .select()
@@ -189,8 +209,37 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       }
     }
 
-    // NEW FLOW: DO NOT sync on creation
-    // Sync will happen when admin assigns API key via PATCH
+    // NEW ORG-LEVEL FLOW: Auto-sync if workspace has an assigned integration
+    let syncedAgent = agent
+    if (hasAssignedIntegration) {
+      console.log(`[AgentCreate] Auto-syncing agent with assigned ${validation.data.provider} integration`)
+      
+      if (validation.data.provider === "vapi") {
+        const syncResult = await safeVapiSync(agent as AIAgent, "create")
+        if (syncResult.success && syncResult.agent) {
+          syncedAgent = syncResult.agent as any
+        } else if (!syncResult.success) {
+          console.error("[AgentCreate] VAPI sync failed:", syncResult.error)
+          // Update sync status to error
+          await ctx.adminClient
+            .from("ai_agents")
+            .update({ sync_status: "error", sync_error: syncResult.error })
+            .eq("id", agent.id)
+        }
+      } else if (validation.data.provider === "retell") {
+        const syncResult = await safeRetellSync(agent as AIAgent, "create")
+        if (syncResult.success && syncResult.agent) {
+          syncedAgent = syncResult.agent as any
+        } else if (!syncResult.success) {
+          console.error("[AgentCreate] Retell sync failed:", syncResult.error)
+          // Update sync status to error
+          await ctx.adminClient
+            .from("ai_agents")
+            .update({ sync_status: "error", sync_error: syncResult.error })
+            .eq("id", agent.id)
+        }
+      }
+    }
 
     // Audit log
     const { ipAddress, userAgent } = getRequestMetadata(request)
@@ -201,17 +250,18 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       entityType: "ai_agent",
       entityId: agent.id,
       newValues: {
-        name: agent.name,
-        provider: agent.provider,
+        name: syncedAgent.name,
+        provider: syncedAgent.provider,
         workspace_id: ctx.workspace.id,
-        sync_status: "not_synced",
+        sync_status: syncedAgent.sync_status,
+        external_agent_id: syncedAgent.external_agent_id,
         knowledge_document_count: knowledgeDocumentIds.length,
       },
       ipAddress,
       userAgent,
     })
 
-    return apiResponse(agent, 201)
+    return apiResponse(syncedAgent, 201)
   } catch (error) {
     console.error("POST /api/w/[slug]/agents error:", error)
     return serverError()

@@ -15,7 +15,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js"
-import type { AIAgent, IntegrationApiKeys } from "@/types/database.types"
+import type { AIAgent } from "@/types/database.types"
 import { mapToRetellLLM, mapToRetellAgent } from "./mapper"
 import {
   createRetellLLMWithKey,
@@ -64,43 +64,20 @@ export function shouldSyncToRetell(agent: AIAgent): boolean {
     return false
   }
 
-  // NEW FLOW: Check if an API key is assigned via assigned_key_id
-  const apiKeyConfig = agent.config?.api_key_config
-  if (apiKeyConfig?.assigned_key_id) {
-    return true
-  }
-
-  // Legacy: Check if secret_key type is configured (not "none")
-  const secretKeyConfig = apiKeyConfig?.secret_key
-  if (secretKeyConfig && secretKeyConfig.type !== "none") {
-    return true
-  }
-
-  // Legacy: Check legacy keys stored directly on agent
-  const hasLegacySecretKey = agent.agent_secret_api_key?.some(
-    (key) => key.provider === "retell" && key.is_active
-  )
-
-  return hasLegacySecretKey || false
+  // NEW ORG-LEVEL FLOW: Always return true for Retell agents
+  // The actual API key will be fetched from workspace's assigned integration
+  // If no key is assigned, sync will fail gracefully with an error message
+  return true
 }
 
 // ============================================================================
-// GET API KEY FOR AGENT
+// GET API KEY FOR AGENT (NEW ORG-LEVEL FLOW)
 // ============================================================================
 
 async function getRetellApiKeyForAgent(
   agent: AIAgent
 ): Promise<string | null> {
-  // Check legacy keys first
-  const legacyKey = agent.agent_secret_api_key?.find(
-    (key) => key.provider === "retell" && key.is_active
-  )
-
-  if (legacyKey?.key) {
-    return legacyKey.key
-  }
-
-  // Need to fetch from workspace_integrations
+  // Need workspace_id to fetch the assigned integration
   if (!agent.workspace_id) {
     console.error("[RetellSync] Agent has no workspace_id, cannot fetch integration keys")
     return null
@@ -109,66 +86,38 @@ async function getRetellApiKeyForAgent(
   try {
     const supabase = getSupabaseAdmin()
 
-    const { data: integration, error } = await supabase
-      .from("workspace_integrations")
-      .select("api_keys")
+    // NEW ORG-LEVEL FLOW: Fetch from workspace_integration_assignments -> partner_integrations
+    const { data: assignment, error: assignmentError } = await supabase
+      .from("workspace_integration_assignments")
+      .select(`
+        partner_integration:partner_integrations (
+          id,
+          api_keys,
+          is_active
+        )
+      `)
       .eq("workspace_id", agent.workspace_id)
       .eq("provider", "retell")
-      .eq("is_active", true)
       .single()
 
-    if (error || !integration) {
-      console.error("[RetellSync] Failed to fetch Retell integration:", error)
+    if (assignmentError || !assignment?.partner_integration) {
+      console.log("[RetellSync] No Retell integration assigned to workspace")
       return null
     }
 
-    const apiKeys = integration.api_keys as IntegrationApiKeys
-    const apiKeyConfig = agent.config?.api_key_config
-
-    // NEW FLOW: Check assigned_key_id first
-    if (apiKeyConfig?.assigned_key_id) {
-      const keyId = apiKeyConfig.assigned_key_id
-      
-      // Check if it's the default key
-      if (keyId === "default" && apiKeys.default_secret_key) {
-        return apiKeys.default_secret_key
-      }
-      
-      // Check additional keys
-      const additionalKey = apiKeys.additional_keys?.find((k) => k.id === keyId)
-      if (additionalKey?.secret_key) {
-        return additionalKey.secret_key
-      }
-      
-      console.error("[RetellSync] Assigned key not found:", keyId)
+    const partnerIntegration = assignment.partner_integration as any
+    if (!partnerIntegration.is_active) {
+      console.log("[RetellSync] Assigned Retell integration is not active")
       return null
     }
 
-    // Legacy flow: Check secret_key.type
-    if (!apiKeyConfig?.secret_key || apiKeyConfig.secret_key.type === "none") {
-      // No key configured
+    const apiKeys = partnerIntegration.api_keys as any
+    if (!apiKeys?.default_secret_key) {
+      console.error("[RetellSync] Assigned integration has no secret key")
       return null
     }
 
-    if (apiKeyConfig.secret_key.type === "default") {
-      return apiKeys.default_secret_key || null
-    }
-
-    if (apiKeyConfig.secret_key.type === "additional") {
-      const additionalKeyId = apiKeyConfig.secret_key.additional_key_id
-      const additionalKey = apiKeys.additional_keys?.find(
-        (k) => k.id === additionalKeyId
-      )
-
-      if (!additionalKey) {
-        console.error("[RetellSync] Additional key not found:", additionalKeyId)
-        return null
-      }
-
-      return additionalKey.secret_key || null
-    }
-
-    return null
+    return apiKeys.default_secret_key
   } catch (error) {
     console.error("[RetellSync] Error fetching API keys for agent:", error)
     return null

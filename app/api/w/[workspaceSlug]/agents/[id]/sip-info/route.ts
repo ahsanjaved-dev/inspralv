@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, serverError } from "@/lib/api/helpers"
-import type { AIAgent, IntegrationApiKeys, VapiIntegrationConfig } from "@/types/database.types"
+import type { AIAgent, VapiIntegrationConfig } from "@/types/database.types"
 import { getPhoneNumber } from "@/lib/integrations/vapi/phone-numbers"
 
 interface RouteContext {
@@ -38,6 +38,10 @@ async function getVapiIntegrationDetails(agent: AIAgent): Promise<VapiIntegratio
     (key) => key.provider === "vapi" && key.is_active
   )
 
+  if (legacySecretKey?.key) {
+    return { secretKey: legacySecretKey.key, config: {} }
+  }
+
   if (!agent.workspace_id) {
     return null
   }
@@ -45,53 +49,56 @@ async function getVapiIntegrationDetails(agent: AIAgent): Promise<VapiIntegratio
   try {
     const supabase = getSupabaseAdmin()
 
-    const { data: integration, error } = await supabase
-      .from("workspace_integrations")
-      .select("api_keys, config")
+    // Get workspace to find partner_id
+    const { data: workspace } = await supabase
+      .from("workspaces")
+      .select("partner_id")
+      .eq("id", agent.workspace_id)
+      .single()
+
+    if (!workspace?.partner_id) {
+      return null
+    }
+
+    // Check for assigned integration
+    const { data: assignment } = await supabase
+      .from("workspace_integration_assignments")
+      .select(`
+        partner_integration:partner_integrations (
+          id, api_keys, config, is_active
+        )
+      `)
       .eq("workspace_id", agent.workspace_id)
       .eq("provider", "vapi")
+      .single()
+
+    if (assignment?.partner_integration) {
+      const pi = assignment.partner_integration as any
+      if (pi.is_active && pi.api_keys?.default_secret_key) {
+        return { secretKey: pi.api_keys.default_secret_key, config: pi.config || {} }
+      }
+    }
+
+    // Try default integration
+    const { data: defaultInt } = await supabase
+      .from("partner_integrations")
+      .select("id, api_keys, config")
+      .eq("partner_id", workspace.partner_id)
+      .eq("provider", "vapi")
+      .eq("is_default", true)
       .eq("is_active", true)
       .single()
 
-    if (error || !integration) {
-      if (legacySecretKey?.key) {
-        return { secretKey: legacySecretKey.key, config: {} }
-      }
-      return null
+    if (defaultInt?.api_keys?.default_secret_key) {
+      await supabase.from("workspace_integration_assignments").insert({
+        workspace_id: agent.workspace_id,
+        provider: "vapi",
+        partner_integration_id: defaultInt.id,
+      })
+      return { secretKey: (defaultInt.api_keys as any).default_secret_key, config: defaultInt.config || {} }
     }
 
-    const apiKeys = integration.api_keys as IntegrationApiKeys
-    const vapiConfig = (integration.config as VapiIntegrationConfig) || {}
-    const apiKeyConfig = agent.config?.api_key_config
-
-    let secretKey: string | null = null
-
-    if (legacySecretKey?.key) {
-      secretKey = legacySecretKey.key
-    } else if (apiKeyConfig?.assigned_key_id) {
-      const keyId = apiKeyConfig.assigned_key_id
-      if (keyId === "default") {
-        secretKey = apiKeys.default_secret_key || null
-      } else {
-        const additionalKey = apiKeys.additional_keys?.find((k) => k.id === keyId)
-        secretKey = additionalKey?.secret_key || null
-      }
-    } else if (!apiKeyConfig?.secret_key || apiKeyConfig.secret_key.type === "none") {
-      secretKey = apiKeys.default_secret_key || null
-    } else if (apiKeyConfig.secret_key.type === "default") {
-      secretKey = apiKeys.default_secret_key || null
-    } else if (apiKeyConfig.secret_key.type === "additional") {
-      const additionalKey = apiKeys.additional_keys?.find(
-        (k) => k.id === apiKeyConfig.secret_key?.additional_key_id
-      )
-      secretKey = additionalKey?.secret_key || null
-    }
-
-    if (!secretKey) {
-      return null
-    }
-
-    return { secretKey, config: vapiConfig }
+    return null
   } catch (error) {
     console.error("[SipInfo] Error fetching integration details:", error)
     return null

@@ -218,6 +218,7 @@ model Partner {
   billingCredits     BillingCredits?
   subscriptionPlans  WorkspaceSubscriptionPlan[]
   whiteLabelVariant  WhiteLabelVariant?  @relation(fields: [whiteLabelVariantId], references: [id])
+  integrations       PartnerIntegration[]
 
   @@map("partners")
   @@schema("public")
@@ -357,17 +358,18 @@ model Workspace {
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  partner            Partner                @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  members            WorkspaceMember[]
-  invitations        WorkspaceInvitation[]
-  agents             AiAgent[]
-  conversations      Conversation[]
-  usageTracking      UsageTracking[]
-  integrations       WorkspaceIntegration[]
-  knowledgeDocuments KnowledgeDocument[]
-  leads              Lead[]
-  workspaceCredits   WorkspaceCredits?
-  subscription       WorkspaceSubscription?
+  partner                  Partner                          @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  members                  WorkspaceMember[]
+  invitations              WorkspaceInvitation[]
+  agents                   AiAgent[]
+  conversations            Conversation[]
+  usageTracking            UsageTracking[]
+  integrations             WorkspaceIntegration[]           // Legacy - to be deprecated
+  integrationAssignments   WorkspaceIntegrationAssignment[] // New org-level key assignments
+  knowledgeDocuments       KnowledgeDocument[]
+  leads                    Lead[]
+  workspaceCredits         WorkspaceCredits?
+  subscription             WorkspaceSubscription?
 
   @@unique([partnerId, slug])
   @@map("workspaces")
@@ -425,7 +427,7 @@ model WorkspaceInvitation {
 }
 
 // =============================================================================
-// WORKSPACE INTEGRATIONS (API Keys for Providers)
+// WORKSPACE INTEGRATIONS (API Keys for Providers) - LEGACY/DEPRECATED
 // =============================================================================
 
 model WorkspaceIntegration {
@@ -445,6 +447,59 @@ model WorkspaceIntegration {
 
   @@unique([workspaceId, provider])
   @@map("workspace_integrations")
+  @@schema("public")
+}
+
+// =============================================================================
+// PARTNER INTEGRATIONS (Org-Level API Keys for VAPI/Retell/Algolia)
+// =============================================================================
+
+model PartnerIntegration {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId   String    @map("partner_id") @db.Uuid
+  provider    String    @db.VarChar(50) // 'vapi', 'retell', 'algolia'
+  name        String    @db.VarChar(255) // Display name (e.g., "Production VAPI")
+  apiKeys     Json      @default("{}") @map("api_keys") // { default_secret_key, default_public_key, additional_keys }
+  config      Json?     @default("{}") // Provider-specific config
+  isDefault   Boolean   @default(false) @map("is_default") // Auto-assigned to new workspaces
+  isActive    Boolean   @default(true) @map("is_active")
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  partner     Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  creator     User?     @relation("IntegrationCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  assignments WorkspaceIntegrationAssignment[]
+
+  @@index([partnerId])
+  @@index([partnerId, provider])
+  @@map("partner_integrations")
+  @@schema("public")
+}
+
+// =============================================================================
+// WORKSPACE INTEGRATION ASSIGNMENTS (Which key is assigned to which workspace)
+// =============================================================================
+
+model WorkspaceIntegrationAssignment {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId          String    @map("workspace_id") @db.Uuid
+  provider             String    @db.VarChar(50) // 'vapi', 'retell', 'algolia'
+  partnerIntegrationId String    @map("partner_integration_id") @db.Uuid
+  assignedBy           String?   @map("assigned_by") @db.Uuid
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  workspace          Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  partnerIntegration PartnerIntegration @relation(fields: [partnerIntegrationId], references: [id], onDelete: Cascade)
+  assigner           User?              @relation("AssignmentAssigner", fields: [assignedBy], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, provider])
+  @@index([workspaceId])
+  @@index([partnerIntegrationId])
+  @@map("workspace_integration_assignments")
   @@schema("public")
 }
 
@@ -598,6 +653,8 @@ model User {
   updatedDocuments        KnowledgeDocument[] @relation("DocumentUpdater")
   assignedLeads           Lead[]              @relation("AssignedLeads")
   createdLeads            Lead[]              @relation("CreatedLeads")
+  createdIntegrations     PartnerIntegration[] @relation("IntegrationCreator")
+  assignedIntegrations    WorkspaceIntegrationAssignment[] @relation("AssignmentAssigner")
 
   @@map("users")
   @@schema("public")

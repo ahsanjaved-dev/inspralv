@@ -13,7 +13,7 @@ import {
 } from "@/lib/integrations/vapi/calls"
 import { fetchCallSentiment } from "@/lib/integrations/sentiment"
 import { indexCallLogToAlgolia } from "@/lib/algolia/call-logs"
-import type { AIAgent, IntegrationApiKeys } from "@/types/database.types"
+import type { AIAgent } from "@/types/database.types"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string }>
@@ -278,49 +278,87 @@ async function getApiKeyForAgent(
   agent: AIAgent,
   adminClient: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>
 ): Promise<string | null> {
-  // Check legacy keys first
+  // Check legacy keys first (agent-level keys)
   const legacySecretKey = agent.agent_secret_api_key?.find(
     (key) => key.provider === agent.provider && key.is_active
   )
 
   if (legacySecretKey?.key) {
+    console.log("[CallIngest] Using legacy agent-level key")
     return legacySecretKey.key
   }
 
-  // Fetch from workspace_integrations
+  // NEW ORG-LEVEL FLOW: Fetch from workspace_integration_assignments -> partner_integrations
   if (!agent.workspace_id) {
+    console.error("[CallIngest] Agent has no workspace_id")
     return null
   }
 
-  const { data: integration, error } = await adminClient
-    .from("workspace_integrations")
-    .select("api_keys")
-    .eq("workspace_id", agent.workspace_id)
-    .eq("provider", agent.provider)
-    .eq("is_active", true)
+  // Get workspace to find partner_id
+  const { data: workspace, error: workspaceError } = await adminClient
+    .from("workspaces")
+    .select("partner_id")
+    .eq("id", agent.workspace_id)
     .single()
 
-  if (error || !integration) {
+  if (workspaceError || !workspace?.partner_id) {
+    console.error("[CallIngest] Failed to fetch workspace:", workspaceError)
     return null
   }
 
-  const apiKeys = integration.api_keys as IntegrationApiKeys
-  const apiKeyConfig = agent.config?.api_key_config
+  // Check for assigned integration
+  const { data: assignment, error: assignmentError } = await adminClient
+    .from("workspace_integration_assignments")
+    .select(`
+      partner_integration:partner_integrations (
+        id,
+        api_keys,
+        is_active
+      )
+    `)
+    .eq("workspace_id", agent.workspace_id)
+    .eq("provider", agent.provider)
+    .single()
 
-  // NEW FLOW: Check assigned_key_id first
-  if (apiKeyConfig?.assigned_key_id) {
-    const keyId = apiKeyConfig.assigned_key_id
-
-    if (keyId === "default") {
-      return apiKeys.default_secret_key || null
-    } else {
-      const additionalKey = apiKeys.additional_keys?.find((k) => k.id === keyId)
-      return additionalKey?.secret_key || null
+  if (!assignmentError && assignment?.partner_integration) {
+    const partnerIntegration = assignment.partner_integration as any
+    if (partnerIntegration.is_active) {
+      const apiKeys = partnerIntegration.api_keys as any
+      console.log(`[CallIngest] Using assigned org-level integration, secretKey: ${apiKeys?.default_secret_key ? 'found' : 'not found'}`)
+      return apiKeys?.default_secret_key || null
     }
   }
 
-  // Default fallback
-  return apiKeys.default_secret_key || null
+  // If no assignment, try to find the default integration
+  console.log("[CallIngest] No assignment found, checking for default integration...")
+  const { data: defaultIntegration, error: defaultError } = await adminClient
+    .from("partner_integrations")
+    .select("id, api_keys, is_active")
+    .eq("partner_id", workspace.partner_id)
+    .eq("provider", agent.provider)
+    .eq("is_default", true)
+    .eq("is_active", true)
+    .single()
+
+  if (!defaultError && defaultIntegration) {
+    // Auto-create the assignment for future calls
+    await adminClient
+      .from("workspace_integration_assignments")
+      .insert({
+        workspace_id: agent.workspace_id,
+        provider: agent.provider,
+        partner_integration_id: defaultIntegration.id,
+      })
+      .select()
+      .single()
+
+    const apiKeys = defaultIntegration.api_keys as any
+    console.log(`[CallIngest] Using default org-level integration, secretKey: ${apiKeys?.default_secret_key ? 'found' : 'not found'}`)
+    return apiKeys?.default_secret_key || null
+  }
+
+  console.log("[CallIngest] No integration found for agent")
+  return null
 }
 
 async function updateAgentStats(
