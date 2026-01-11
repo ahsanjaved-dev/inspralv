@@ -31,6 +31,9 @@ export const agentKnowledgeBaseConfigSchema = z.object({
   injection_mode: z.enum(["system_prompt"]).optional().default("system_prompt"),
 })
 
+// Agent direction schema
+export const agentDirectionSchema = z.enum(["inbound", "outbound", "bidirectional"] as const)
+
 // Agent schema for workspace context (workspace comes from URL)
 export const createWorkspaceAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -41,6 +44,10 @@ export const createWorkspaceAgentSchema = z.object({
     .optional(),
   model_provider: z.enum(["openai", "anthropic", "google", "groq"] as const).optional(),
   transcriber_provider: z.enum(["deepgram", "assemblyai", "openai"] as const).optional(),
+  // Agent direction and telephony
+  agent_direction: agentDirectionSchema.optional().default("inbound"),
+  allow_outbound: z.boolean().optional(), // For inbound agents, allow outbound campaigns
+  assigned_phone_number_id: z.string().uuid().optional().nullable(),
   config: z
     .object({
       system_prompt: z.string().optional(),

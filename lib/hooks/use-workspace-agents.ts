@@ -161,3 +161,46 @@ export function useDeleteWorkspaceAgent() {
     },
   })
 }
+
+// ============================================================================
+// PHONE NUMBER HOOKS
+// ============================================================================
+
+export interface AvailablePhoneNumber {
+  id: string
+  phone_number: string
+  phone_number_e164: string | null
+  friendly_name: string | null
+  provider: string
+  status: string
+  supports_inbound: boolean
+  supports_outbound: boolean
+  supports_sms: boolean
+  assigned_agent_id: string | null
+  assigned_workspace_id: string | null
+  sip_trunk: {
+    id: string
+    name: string
+  } | null
+  is_available: boolean
+  display_name: string
+}
+
+export function useAvailablePhoneNumbers() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+
+  return useQuery<{ data: AvailablePhoneNumber[]; total: number }>({
+    queryKey: ["available-phone-numbers", workspaceSlug],
+    queryFn: async () => {
+      const res = await fetch(`/api/w/${workspaceSlug}/phone-numbers/available`)
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Failed to fetch available phone numbers")
+      }
+      const json = await res.json()
+      return json.data
+    },
+    enabled: !!workspaceSlug,
+  })
+}

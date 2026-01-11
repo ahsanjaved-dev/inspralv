@@ -28,6 +28,7 @@ import {
   CreditCard,
   Package,
   Plug,
+  Phone,
 } from "lucide-react"
 import { useAuth } from "@/lib/hooks/use-auth"
 import type { PartnerAuthUser, AccessibleWorkspace, PartnerMemberRole } from "@/types/database.types"
@@ -104,6 +105,7 @@ export function OrgDashboardLayout({
   const navigation = [
     { title: "Overview", href: "/org", icon: LayoutGrid },
     { title: "Integrations", href: "/org/integrations", icon: Plug },
+    { title: "Telephony", href: "/org/telephony", icon: Phone },
     // Team invitations for org admins/members
     { title: "Team Invitations", href: "/org/invitations", icon: UserPlus },
     // Client invitations - only for white-label partners

@@ -61,8 +61,8 @@ export default function EditWorkspaceAgentPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
+    <div className="max-w-3xl mx-auto">
+      <div className="flex items-center gap-4 mb-6">
         <Button variant="ghost" size="icon" asChild>
           <Link href={`/w/${workspaceSlug}/agents`}>
             <ArrowLeft className="h-4 w-4" />
@@ -75,7 +75,7 @@ export default function EditWorkspaceAgentPage() {
       </div>
 
       {updateMutation.error && (
-        <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg border border-red-200 dark:border-red-800">
+        <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg border border-red-200 dark:border-red-800 mb-6">
           <p className="font-medium">Failed to update agent</p>
           <p className="text-sm mt-1">Please try again. If the problem continues, contact support.</p>
         </div>

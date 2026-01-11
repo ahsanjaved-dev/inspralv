@@ -212,15 +212,35 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     // Determine which phone number to use for outbound calls:
     // 1. Prefer shared outbound phone number (configured at workspace level)
-    // 2. Fall back to agent's own phone number (if assigned)
+    // 2. Fall back to agent's config telephony phone number
+    // 3. Fall back to agent's assigned_phone_number_id (fetch Vapi ID from DB)
     const sharedOutboundPhoneNumberId = vapiConfig.shared_outbound_phone_number_id
-    const agentPhoneNumberId = typedAgent.config?.telephony?.vapi_phone_number_id
+    let agentPhoneNumberId = typedAgent.config?.telephony?.vapi_phone_number_id
+    
+    // If no phone number in config, check assigned_phone_number_id
+    if (!agentPhoneNumberId && typedAgent.assigned_phone_number_id) {
+      console.log("[OutboundCall] Checking assigned_phone_number_id:", typedAgent.assigned_phone_number_id)
+      
+      // Fetch the phone number from DB to get its Vapi external_id
+      const { data: phoneNumber } = await ctx.adminClient
+        .from("phone_numbers")
+        .select("id, external_id, phone_number")
+        .eq("id", typedAgent.assigned_phone_number_id)
+        .single()
+      
+      if (phoneNumber?.external_id) {
+        agentPhoneNumberId = phoneNumber.external_id
+        console.log("[OutboundCall] Found Vapi phone number ID from assigned number:", agentPhoneNumberId)
+      } else {
+        console.log("[OutboundCall] Assigned phone number not synced to Vapi:", phoneNumber)
+      }
+    }
     
     const outboundPhoneNumberId = sharedOutboundPhoneNumberId || agentPhoneNumberId
 
     if (!outboundPhoneNumberId) {
       return apiError(
-        "No outbound phone number configured. Set up a shared outbound number in integration settings or assign a phone number to the agent.",
+        "No outbound phone number configured. Set up a shared outbound number in integration settings, or assign a synced phone number to the agent.",
         400
       )
     }
@@ -228,6 +248,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     console.log("[OutboundCall] Using phone number:", {
       shared: sharedOutboundPhoneNumberId,
       agent: agentPhoneNumberId,
+      assignedPhoneNumberId: typedAgent.assigned_phone_number_id,
       selected: outboundPhoneNumberId,
     })
 

@@ -23,12 +23,16 @@ import {
   Phone,
   AlertCircle,
   Loader2,
+  PhoneIncoming,
+  PhoneOutgoing,
+  PhoneCall,
 } from "lucide-react"
 import type { AIAgent } from "@/types/database.types"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useState } from "react"
 import { TestCallModal } from "@/components/agents/test-call-modal"
+import { TestOutboundCallModal } from "@/components/agents/test-outbound-call-modal"
 import { useTestCallValidation } from "../../../lib/hooks/use-test-call-validations"
 
 interface WorkspaceAgentCardProps {
@@ -43,13 +47,36 @@ const providerColors: Record<string, string> = {
   synthflow: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
 }
 
+const directionConfig: Record<string, { icon: typeof PhoneIncoming; label: string; color: string }> = {
+  inbound: {
+    icon: PhoneIncoming,
+    label: "Inbound",
+    color: "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300",
+  },
+  outbound: {
+    icon: PhoneOutgoing,
+    label: "Outbound",
+    color: "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300",
+  },
+  bidirectional: {
+    icon: PhoneCall,
+    label: "Both",
+    color: "bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300",
+  },
+}
+
 export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: WorkspaceAgentCardProps) {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
   const baseUrl = `/w/${workspaceSlug}`
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isOutboundModalOpen, setIsOutboundModalOpen] = useState(false)
   
   const validation = useTestCallValidation(agent)
+  
+  // Check if agent can make outbound calls
+  const canMakeOutboundCall = agent.provider === "vapi" && !!agent.external_agent_id
+  const isOutboundAgent = agent.agent_direction === "outbound" || agent.agent_direction === "bidirectional"
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -60,10 +87,20 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
           </div>
           <div>
             <CardTitle className="text-lg font-semibold">{agent.name}</CardTitle>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <Badge variant="outline" className={providerColors[agent.provider] || ""}>
                 {agent.provider}
               </Badge>
+              {/* Direction Badge */}
+              {agent.agent_direction && directionConfig[agent.agent_direction] && (
+                <Badge variant="outline" className={directionConfig[agent.agent_direction].color}>
+                  {(() => {
+                    const DirectionIcon = directionConfig[agent.agent_direction].icon
+                    return <DirectionIcon className="w-3 h-3 mr-1" />
+                  })()}
+                  {directionConfig[agent.agent_direction].label}
+                </Badge>
+              )}
               {agent.is_active ? (
                 <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 hover:bg-green-100">
                   Active
@@ -151,26 +188,50 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
           )}
         </div>
 
+        {/* Phone Number Display */}
+        {agent.external_phone_number && (
+          <div className="mt-3 flex items-center gap-2 text-xs p-2 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+            <Phone className="w-3.5 h-3.5 text-green-600" />
+            <span className="font-mono text-green-700 dark:text-green-300 truncate">
+              {agent.external_phone_number}
+            </span>
+          </div>
+        )}
+
         {/* Buttons Row */}
-        <div className="flex gap-2 mt-4">
+        <div className="flex flex-wrap gap-2 mt-4">
+          {/* Web Call Test (Browser) */}
           <Button
             variant="outline"
             size="sm"
-            className="flex-1"
+            className="flex-1 min-w-[90px]"
             disabled={validation.isLoading || !validation.canCall}
             onClick={() => validation.canCall && setIsModalOpen(true)}
           >
             {validation.isLoading ? (
-              <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+              <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
-              <Phone className="mr-2 h-3 w-3" />
+              <Phone className="h-3 w-3" />
             )}
-            Test Call
+            <span className="ml-1.5 truncate">Web Call</span>
           </Button>
-          <Button variant="outline" size="sm" className="flex-1" asChild>
+          {/* Outbound Phone Call Test */}
+          {isOutboundAgent && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 min-w-[80px]"
+              disabled={!canMakeOutboundCall}
+              onClick={() => setIsOutboundModalOpen(true)}
+            >
+              <PhoneOutgoing className="h-3 w-3" />
+              <span className="ml-1.5 truncate">Call Me</span>
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="flex-1 min-w-[90px]" asChild>
             <Link href={`${baseUrl}/agents/${agent.id}`}>
-              <Pencil className="mr-2 h-3 w-3" />
-              Configure
+              <Pencil className="h-3 w-3" />
+              <span className="ml-1.5 truncate">Configure</span>
             </Link>
           </Button>
         </div>
@@ -187,9 +248,19 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
         )}
       </CardContent>
 
-      {/* Test Call Modal */}
+      {/* Test Call Modal (Web Call) */}
       {validation.canCall && (
         <TestCallModal agent={agent} open={isModalOpen} onOpenChange={setIsModalOpen} />
+      )}
+      
+      {/* Test Outbound Call Modal (Phone Call) */}
+      {canMakeOutboundCall && (
+        <TestOutboundCallModal 
+          agent={agent} 
+          workspaceSlug={workspaceSlug}
+          open={isOutboundModalOpen} 
+          onOpenChange={setIsOutboundModalOpen} 
+        />
       )}
     </Card>
   )

@@ -73,6 +73,10 @@ export type Database = {
           version: number
           voice_provider: Database["public"]["Enums"]["voice_provider"] | null
           workspace_id: string | null
+          // Telephony / Direction fields
+          agent_direction: "inbound" | "outbound" | "bidirectional"
+          allow_outbound: boolean
+          assigned_phone_number_id: string | null
         }
         Insert: {
           agent_public_api_key?: Json[] | null
@@ -104,6 +108,10 @@ export type Database = {
           version?: number
           voice_provider?: Database["public"]["Enums"]["voice_provider"] | null
           workspace_id?: string | null
+          // Telephony / Direction fields
+          agent_direction?: "inbound" | "outbound" | "bidirectional"
+          allow_outbound?: boolean
+          assigned_phone_number_id?: string | null
         }
         Update: {
           agent_public_api_key?: Json[] | null
@@ -135,6 +143,10 @@ export type Database = {
           version?: number
           voice_provider?: Database["public"]["Enums"]["voice_provider"] | null
           workspace_id?: string | null
+          // Telephony / Direction fields
+          agent_direction?: "inbound" | "outbound" | "bidirectional"
+          allow_outbound?: boolean
+          assigned_phone_number_id?: string | null
         }
         Relationships: [
           {
@@ -1294,6 +1306,7 @@ export type Database = {
     }
     Enums: {
       agent_provider: "vapi" | "retell" | "synthflow"
+      agent_direction: "inbound" | "outbound" | "bidirectional"
       call_direction: "inbound" | "outbound"
       call_status:
         | "initiated"
@@ -1310,6 +1323,8 @@ export type Database = {
       lead_status: "new" | "contacted" | "qualified" | "converted" | "lost" | "nurturing"
       model_provider: "openai" | "anthropic" | "google" | "groq"
       partner_request_status: "pending" | "approved" | "rejected" | "provisioning"
+      phone_number_status: "available" | "assigned" | "pending" | "inactive" | "error"
+      phone_number_provider: "sip" | "vapi" | "retell" | "twilio"
       plan_tier: "starter" | "professional" | "enterprise" | "custom"
       resource_type:
         | "voice_minutes"
@@ -2057,6 +2072,130 @@ export const vapiIntegrationConfigSchema = z.object({
   shared_outbound_phone_number_id: z.string().optional(),
   shared_outbound_phone_number: z.string().optional(),
 })
+
+// ============================================================================
+// TELEPHONY TYPES
+// ============================================================================
+
+export type AgentDirection = "inbound" | "outbound" | "bidirectional"
+export type PhoneNumberStatus = "available" | "assigned" | "pending" | "inactive" | "error"
+export type PhoneNumberProvider = "sip" | "vapi" | "retell" | "twilio"
+
+/**
+ * SIP Trunk configuration for partner-level telephony
+ */
+export interface SipTrunk {
+  id: string
+  partner_id: string
+  name: string
+  description: string | null
+  sip_server: string
+  sip_port: number
+  sip_transport: "udp" | "tcp" | "tls"
+  sip_username: string
+  sip_password: string
+  sip_realm: string | null
+  register: boolean
+  registration_expiry: number
+  outbound_proxy: string | null
+  outbound_caller_id: string | null
+  is_active: boolean
+  is_default: boolean
+  last_registration_at: string | null
+  registration_status: string | null
+  registration_error: string | null
+  provider: string | null
+  external_credential_id: string | null
+  config: Record<string, unknown>
+  created_by: string | null
+  deleted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Phone number in the partner's inventory
+ */
+export interface PhoneNumber {
+  id: string
+  partner_id: string
+  phone_number: string
+  phone_number_e164: string | null
+  friendly_name: string | null
+  description: string | null
+  country_code: string | null
+  provider: PhoneNumberProvider
+  external_id: string | null
+  sip_uri: string | null
+  sip_trunk_id: string | null
+  sip_trunk_id_ref: string | null
+  status: PhoneNumberStatus
+  assigned_agent_id: string | null
+  assigned_workspace_id: string | null
+  assigned_at: string | null
+  supports_inbound: boolean
+  supports_outbound: boolean
+  supports_sms: boolean
+  config: Record<string, unknown>
+  created_by: string | null
+  deleted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Zod schemas for telephony validation
+ */
+export const agentDirectionSchema = z.enum(["inbound", "outbound", "bidirectional"])
+export const phoneNumberStatusSchema = z.enum(["available", "assigned", "pending", "inactive", "error"])
+export const phoneNumberProviderSchema = z.enum(["sip", "vapi", "retell", "twilio"])
+
+export const createSipTrunkSchema = z.object({
+  name: z.string().min(1, "Name is required").max(255),
+  description: z.string().max(1000).optional().nullable(),
+  sip_server: z.string().min(1, "SIP server is required").max(255),
+  sip_port: z.number().int().min(1).max(65535).default(5060),
+  sip_transport: z.enum(["udp", "tcp", "tls"]).default("udp"),
+  sip_username: z.string().min(1, "SIP username is required").max(255),
+  sip_password: z.string().min(1, "SIP password is required"),
+  sip_realm: z.string().max(255).optional().nullable(),
+  register: z.boolean().default(true),
+  registration_expiry: z.number().int().min(60).max(86400).default(3600),
+  outbound_proxy: z.string().max(255).optional().nullable(),
+  outbound_caller_id: z.string().max(50).optional().nullable(),
+  is_default: z.boolean().default(false),
+})
+
+export type CreateSipTrunkInput = z.infer<typeof createSipTrunkSchema>
+
+export const updateSipTrunkSchema = createSipTrunkSchema.partial()
+export type UpdateSipTrunkInput = z.infer<typeof updateSipTrunkSchema>
+
+export const createPhoneNumberSchema = z.object({
+  phone_number: z.string().min(1, "Phone number is required").max(50),
+  phone_number_e164: z.string().max(20).optional().nullable(),
+  friendly_name: z.string().max(255).optional().nullable(),
+  description: z.string().max(1000).optional().nullable(),
+  country_code: z.string().max(5).optional().nullable(),
+  provider: phoneNumberProviderSchema.default("sip"),
+  external_id: z.string().max(255).optional().nullable(),
+  sip_uri: z.string().max(500).optional().nullable(),
+  sip_trunk_id_ref: z.string().uuid().optional().nullable(),
+  supports_inbound: z.boolean().default(true),
+  supports_outbound: z.boolean().default(true),
+  supports_sms: z.boolean().default(false),
+  config: z.record(z.string(), z.unknown()).optional().default({}),
+})
+
+export type CreatePhoneNumberInput = z.infer<typeof createPhoneNumberSchema>
+
+export const updatePhoneNumberSchema = createPhoneNumberSchema.partial().extend({
+  status: phoneNumberStatusSchema.optional(),
+  assigned_agent_id: z.string().uuid().optional().nullable(),
+  assigned_workspace_id: z.string().uuid().optional().nullable(),
+})
+
+export type UpdatePhoneNumberInput = z.infer<typeof updatePhoneNumberSchema>
 
 // ============================================================================
 // CONVERSATION TYPES

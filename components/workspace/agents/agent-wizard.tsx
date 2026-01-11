@@ -27,6 +27,9 @@ import {
   Volume2,
   BookOpen,
   Phone,
+  PhoneIncoming,
+  PhoneOutgoing,
+  PhoneCall,
   Briefcase,
   Smile,
   Coffee,
@@ -46,9 +49,10 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { functionToolsArraySchema, type CreateWorkspaceAgentInput } from "@/types/api.types"
-import type { FunctionTool, KnowledgeDocument, KnowledgeDocumentType } from "@/types/database.types"
+import type { FunctionTool, KnowledgeDocument, KnowledgeDocumentType, AgentDirection } from "@/types/database.types"
 import { FunctionToolEditor } from "./function-tool-editor"
 import { useActiveKnowledgeDocuments } from "@/lib/hooks/use-workspace-knowledge-base"
+import { useAvailablePhoneNumbers } from "@/lib/hooks/use-telephony"
 
 // ============================================================================
 // TYPES
@@ -71,12 +75,17 @@ interface WizardFormData {
   // Step 1: Basic Info
   name: string
   description: string
-  provider: "vapi" | "retell" | "synthflow"
+  provider: "vapi" | "retell"
   language: string
+  // Agent Direction
+  agentDirection: AgentDirection
+  allowOutbound: boolean // For inbound agents, allow outbound campaigns
+  // Phone Number Assignment
+  enablePhoneNumber: boolean
+  phoneNumberId: string | null
+  // Knowledge Base
   enableKnowledgeBase: boolean
   knowledgeDocumentIds: string[]
-  enablePhoneNumber: boolean
-  phoneNumber: string
   // Step 2: Voice
   voice: string
   voiceSpeed: number
@@ -121,14 +130,6 @@ const PROVIDERS = [
     badge: "Natural voices",
     color: "bg-blue-100 dark:bg-blue-900/30",
     textColor: "text-blue-600",
-  },
-  {
-    id: "synthflow",
-    name: "Synthflow",
-    description: "High-quality voice synthesis",
-    badge: "Premium quality",
-    color: "bg-green-100 dark:bg-green-900/30",
-    textColor: "text-green-600",
   },
 ]
 
@@ -204,10 +205,12 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     description: "",
     provider: "vapi",
     language: "en-US",
+    agentDirection: "inbound",
+    allowOutbound: false,
+    enablePhoneNumber: false,
+    phoneNumberId: null,
     enableKnowledgeBase: false,
     knowledgeDocumentIds: [],
-    enablePhoneNumber: false,
-    phoneNumber: "",
     voice: "aria",
     voiceSpeed: 1,
     voicePitch: 1,
@@ -221,6 +224,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
   // Fetch knowledge documents for selection
   const { data: knowledgeDocsData, isLoading: isLoadingDocs, error: docsError } = useActiveKnowledgeDocuments()
+  
+  // Fetch available phone numbers for assignment
+  const { data: availablePhoneNumbers, isLoading: isLoadingPhoneNumbers } = useAvailablePhoneNumbers()
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -304,6 +310,10 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       voice_provider: "elevenlabs", // Default
       model_provider: "openai", // Default
       transcriber_provider: "deepgram", // Default
+      // Agent direction and telephony
+      agent_direction: formData.agentDirection,
+      allow_outbound: formData.agentDirection === "inbound" ? formData.allowOutbound : undefined,
+      assigned_phone_number_id: formData.enablePhoneNumber ? formData.phoneNumberId : undefined,
       config: {
         system_prompt: formData.systemPrompt,
         first_message: formData.greeting,
@@ -509,6 +519,177 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
             <Separator />
 
+            {/* Agent Direction Selection */}
+            <div className="space-y-4">
+              <Label>
+                Agent Direction <span className="text-destructive">*</span>
+              </Label>
+              <p className="text-sm text-muted-foreground -mt-2">
+                Choose the primary purpose of this agent
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  {
+                    value: "inbound" as AgentDirection,
+                    label: "Inbound",
+                    description: "Receives incoming calls from customers",
+                    icon: PhoneIncoming,
+                    color: "bg-green-100 dark:bg-green-900/30",
+                    iconColor: "text-green-600",
+                  },
+                  {
+                    value: "outbound" as AgentDirection,
+                    label: "Outbound",
+                    description: "Makes outgoing calls to contacts",
+                    icon: PhoneOutgoing,
+                    color: "bg-blue-100 dark:bg-blue-900/30",
+                    iconColor: "text-blue-600",
+                  },
+                  {
+                    value: "bidirectional" as AgentDirection,
+                    label: "Bidirectional",
+                    description: "Both inbound and outbound calls",
+                    icon: PhoneCall,
+                    color: "bg-purple-100 dark:bg-purple-900/30",
+                    iconColor: "text-purple-600",
+                  },
+                ].map((direction) => {
+                  const Icon = direction.icon
+                  return (
+                    <div
+                      key={direction.value}
+                      onClick={() => {
+                        updateFormData("agentDirection", direction.value)
+                        // Reset phone number if switching to outbound-only
+                        if (direction.value === "outbound") {
+                          updateFormData("enablePhoneNumber", false)
+                          updateFormData("phoneNumberId", null)
+                        }
+                      }}
+                      className={cn(
+                        "relative p-4 rounded-lg border-2 cursor-pointer transition-all",
+                        formData.agentDirection === direction.value
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", direction.color)}>
+                          <Icon className={cn("w-5 h-5", direction.iconColor)} />
+                        </div>
+                        <h4 className="font-semibold">{direction.label}</h4>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{direction.description}</p>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Allow Outbound Toggle for Inbound Agents */}
+              {formData.agentDirection === "inbound" && (
+                <div className="ml-4 pl-4 border-l-2 border-primary/20">
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                    <div>
+                      <Label className="mb-0">Allow Outbound Campaigns</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Enable this agent to also make outbound calls in campaigns
+                      </p>
+                    </div>
+                    <Switch
+                      checked={formData.allowOutbound}
+                      onCheckedChange={(checked) => updateFormData("allowOutbound", checked)}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Phone Number Assignment - For all agent directions */}
+            {(formData.agentDirection === "inbound" || formData.agentDirection === "outbound" || formData.agentDirection === "bidirectional") && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                      <Phone className="w-5 h-5 text-green-600" />
+                    </div>
+                    <div>
+                      <Label className="mb-0">Phone Number</Label>
+                      <p className="text-xs text-muted-foreground">
+                        {formData.agentDirection === "outbound" 
+                          ? "Select caller ID for outbound calls"
+                          : formData.agentDirection === "bidirectional"
+                          ? "Assign a phone number for calls"
+                          : "Assign a phone number for inbound calls"}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={formData.enablePhoneNumber}
+                    onCheckedChange={(checked) => {
+                      updateFormData("enablePhoneNumber", checked)
+                      if (!checked) {
+                        updateFormData("phoneNumberId", null)
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Phone Number Selection */}
+                {formData.enablePhoneNumber && (
+                  <div className="ml-13 pl-4 border-l-2 border-green-500/20">
+                    {isLoadingPhoneNumbers ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : availablePhoneNumbers && availablePhoneNumbers.length > 0 ? (
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">
+                          {formData.agentDirection === "outbound" ? "Select Caller ID" : "Select Phone Number"}
+                        </Label>
+                        <Select
+                          value={formData.phoneNumberId || ""}
+                          onValueChange={(value) => updateFormData("phoneNumberId", value || null)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choose a phone number..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availablePhoneNumbers.map((number) => (
+                              <SelectItem key={number.id} value={number.id}>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono">
+                                    {number.friendly_name || number.phone_number}
+                                  </span>
+                                  {number.country_code && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {number.country_code}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {availablePhoneNumbers.length} number{availablePhoneNumbers.length !== 1 ? "s" : ""} available
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-center p-4 rounded-lg bg-muted/50">
+                        <Phone className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">No phone numbers available</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Add phone numbers in Organization → Telephony
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Separator />
+
             {/* Knowledge Base Toggle */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -619,22 +800,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               )}
             </div>
 
-            {/* Phone Number Toggle */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                  <Phone className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <Label className="mb-0">Phone Number</Label>
-                  <p className="text-xs text-muted-foreground">Assign a phone number for inbound calls</p>
-                </div>
-              </div>
-              <Switch
-                checked={formData.enablePhoneNumber}
-                onCheckedChange={(checked) => updateFormData("enablePhoneNumber", checked)}
-              />
-            </div>
           </CardContent>
         </Card>
       )}
@@ -1031,6 +1196,13 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                   <p className="font-medium capitalize">{formData.provider}</p>
                 </div>
                 <div>
+                  <p className="text-muted-foreground">Direction</p>
+                  <p className="font-medium capitalize">
+                    {formData.agentDirection}
+                    {formData.agentDirection === "inbound" && formData.allowOutbound && " (+outbound)"}
+                  </p>
+                </div>
+                <div>
                   <p className="text-muted-foreground">Language</p>
                   <p className="font-medium">{LANGUAGES.find((l) => l.value === formData.language)?.label || "-"}</p>
                 </div>
@@ -1039,16 +1211,22 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                   <p className="font-medium">{VOICES.find((v) => v.id === formData.voice)?.name || "-"}</p>
                 </div>
                 <div>
+                  <p className="text-muted-foreground">Phone Number</p>
+                  <p className="font-medium">
+                    {formData.enablePhoneNumber && formData.phoneNumberId
+                      ? availablePhoneNumbers?.find(p => p.id === formData.phoneNumberId)?.phone_number || "Selected"
+                      : formData.agentDirection === "outbound"
+                        ? "N/A (Outbound)"
+                        : "Not assigned"}
+                  </p>
+                </div>
+                <div>
                   <p className="text-muted-foreground">Knowledge Base</p>
                   <p className="font-medium">
                     {formData.enableKnowledgeBase
                       ? `${formData.knowledgeDocumentIds.length} document${formData.knowledgeDocumentIds.length !== 1 ? "s" : ""} linked`
                       : "Not configured"}
                   </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Phone Number</p>
-                  <p className="font-medium">{formData.enablePhoneNumber ? formData.phoneNumber || "To be assigned" : "Not assigned"}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Tools</p>

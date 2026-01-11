@@ -180,6 +180,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         agent_secret_api_key: [],
         agent_public_api_key: [],
         is_active: validation.data.is_active ?? true,
+        // Agent direction and telephony
+        agent_direction: validation.data.agent_direction || "inbound",
+        allow_outbound: validation.data.allow_outbound || false,
+        assigned_phone_number_id: validation.data.assigned_phone_number_id || null,
         // Set sync status based on whether workspace has assigned integration
         sync_status: hasAssignedIntegration ? "pending" : "not_synced",
         needs_resync: false,

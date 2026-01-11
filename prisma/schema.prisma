@@ -132,6 +132,33 @@ enum SyncStatus {
   @@schema("public")
 }
 
+enum AgentDirection {
+  inbound
+  outbound
+  bidirectional
+  @@map("agent_direction")
+  @@schema("public")
+}
+
+enum PhoneNumberStatus {
+  available
+  assigned
+  pending
+  inactive
+  error
+  @@map("phone_number_status")
+  @@schema("public")
+}
+
+enum PhoneNumberProvider {
+  sip
+  vapi
+  retell
+  twilio
+  @@map("phone_number_provider")
+  @@schema("public")
+}
+
 enum LeadStatus {
   new
   contacted
@@ -219,6 +246,8 @@ model Partner {
   subscriptionPlans  WorkspaceSubscriptionPlan[]
   whiteLabelVariant  WhiteLabelVariant?  @relation(fields: [whiteLabelVariantId], references: [id])
   integrations       PartnerIntegration[]
+  sipTrunks          SipTrunk[]
+  phoneNumbers       PhoneNumber[]
 
   @@map("partners")
   @@schema("public")
@@ -370,6 +399,7 @@ model Workspace {
   leads                    Lead[]
   workspaceCredits         WorkspaceCredits?
   subscription             WorkspaceSubscription?
+  assignedPhoneNumbers     PhoneNumber[]
 
   @@unique([partnerId, slug])
   @@map("workspaces")
@@ -508,44 +538,52 @@ model WorkspaceIntegrationAssignment {
 // =============================================================================
 
 model AiAgent {
-  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId         String?             @map("workspace_id") @db.Uuid
-  name                String
-  description         String?
-  provider            AgentProvider
-  voiceProvider       VoiceProvider?      @map("voice_provider")
-  modelProvider       ModelProvider?      @map("model_provider")
-  transcriberProvider TranscriberProvider? @map("transcriber_provider")
-  config              Json                @default("{}")
-  agentSecretApiKey   Json[]              @default([]) @map("agent_secret_api_key")
-  agentPublicApiKey   Json[]              @default([]) @map("agent_public_api_key")
-  externalAgentId     String?             @map("external_agent_id")
-  externalPhoneNumber String?             @map("external_phone_number")
-  retellLlmId         String?             @map("retell_llm_id")
-  isActive            Boolean             @default(true) @map("is_active")
-  version             Int                 @default(1)
-  tags                String[]            @default([])
-  totalConversations  Int                 @default(0) @map("total_conversations")
-  totalMinutes        Decimal             @default(0) @map("total_minutes") @db.Decimal
-  totalCost           Decimal             @default(0) @map("total_cost") @db.Decimal
-  lastConversationAt  DateTime?           @map("last_conversation_at") @db.Timestamptz
-  // New sync columns
-  needsResync         Boolean             @default(false) @map("needs_resync")
-  syncStatus          String              @default("not_synced") @map("sync_status") @db.VarChar(20)
-  lastSyncedAt        DateTime?           @map("last_synced_at") @db.Timestamptz
-  lastSyncError       String?             @map("last_sync_error")
-  createdBy           String?             @map("created_by") @db.Uuid
-  deletedAt           DateTime?           @map("deleted_at") @db.Timestamptz
-  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt           DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId           String?             @map("workspace_id") @db.Uuid
+  name                  String
+  description           String?
+  provider              AgentProvider
+  voiceProvider         VoiceProvider?      @map("voice_provider")
+  modelProvider         ModelProvider?      @map("model_provider")
+  transcriberProvider   TranscriberProvider? @map("transcriber_provider")
+  config                Json                @default("{}")
+  agentSecretApiKey     Json[]              @default([]) @map("agent_secret_api_key")
+  agentPublicApiKey     Json[]              @default([]) @map("agent_public_api_key")
+  externalAgentId       String?             @map("external_agent_id")
+  externalPhoneNumber   String?             @map("external_phone_number")
+  retellLlmId           String?             @map("retell_llm_id")
+  isActive              Boolean             @default(true) @map("is_active")
+  version               Int                 @default(1)
+  tags                  String[]            @default([])
+  totalConversations    Int                 @default(0) @map("total_conversations")
+  totalMinutes          Decimal             @default(0) @map("total_minutes") @db.Decimal
+  totalCost             Decimal             @default(0) @map("total_cost") @db.Decimal
+  lastConversationAt    DateTime?           @map("last_conversation_at") @db.Timestamptz
+  // Sync columns
+  needsResync           Boolean             @default(false) @map("needs_resync")
+  syncStatus            String              @default("not_synced") @map("sync_status") @db.VarChar(20)
+  lastSyncedAt          DateTime?           @map("last_synced_at") @db.Timestamptz
+  lastSyncError         String?             @map("last_sync_error")
+  // Direction/Telephony columns
+  agentDirection        AgentDirection      @default(inbound) @map("agent_direction")
+  allowOutbound         Boolean             @default(false) @map("allow_outbound")
+  assignedPhoneNumberId String?             @map("assigned_phone_number_id") @db.Uuid
+  // Audit
+  createdBy             String?             @map("created_by") @db.Uuid
+  deletedAt             DateTime?           @map("deleted_at") @db.Timestamptz
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  workspace          Workspace?               @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  creator            User?                    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
-  conversations      Conversation[]
-  leads              Lead[]
-  knowledgeDocuments AgentKnowledgeDocument[]
+  workspace            Workspace?               @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  creator              User?                    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  assignedPhoneNumber  PhoneNumber?             @relation("AgentPhoneNumber", fields: [assignedPhoneNumberId], references: [id], onDelete: SetNull)
+  conversations        Conversation[]
+  leads                Lead[]
+  knowledgeDocuments   AgentKnowledgeDocument[]
+  assignedPhoneNumbers PhoneNumber[]            @relation("PhoneNumberAgent")
 
+  @@index([assignedPhoneNumberId])
   @@map("ai_agents")
   @@schema("public")
 }
@@ -655,6 +693,8 @@ model User {
   createdLeads            Lead[]              @relation("CreatedLeads")
   createdIntegrations     PartnerIntegration[] @relation("IntegrationCreator")
   assignedIntegrations    WorkspaceIntegrationAssignment[] @relation("AssignmentAssigner")
+  createdSipTrunks        SipTrunk[]          @relation("SipTrunkCreator")
+  createdPhoneNumbers     PhoneNumber[]       @relation("PhoneNumberCreator")
 
   @@map("users")
   @@schema("public")
@@ -828,6 +868,128 @@ model Lead {
   @@index([phone])
   @@index([createdAt])
   @@map("leads")
+  @@schema("public")
+}
+
+// =============================================================================
+// SIP TRUNKS (Partner-level telephony configuration)
+// =============================================================================
+
+model SipTrunk {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId            String    @map("partner_id") @db.Uuid
+  
+  // Display
+  name                 String    @db.VarChar(255)
+  description          String?
+  
+  // SIP Server Configuration
+  sipServer            String    @map("sip_server") @db.VarChar(255)
+  sipPort              Int       @default(5060) @map("sip_port")
+  sipTransport         String    @default("udp") @map("sip_transport") @db.VarChar(10)
+  
+  // Authentication
+  sipUsername          String    @map("sip_username") @db.VarChar(255)
+  sipPassword          String    @map("sip_password")
+  sipRealm             String?   @map("sip_realm") @db.VarChar(255)
+  
+  // Registration
+  register             Boolean   @default(true)
+  registrationExpiry   Int       @default(3600) @map("registration_expiry")
+  
+  // Outbound
+  outboundProxy        String?   @map("outbound_proxy") @db.VarChar(255)
+  outboundCallerId     String?   @map("outbound_caller_id") @db.VarChar(50)
+  
+  // Status
+  isActive             Boolean   @default(true) @map("is_active")
+  isDefault            Boolean   @default(false) @map("is_default")
+  lastRegistrationAt   DateTime? @map("last_registration_at") @db.Timestamptz
+  registrationStatus   String?   @map("registration_status") @db.VarChar(50)
+  registrationError    String?   @map("registration_error")
+  
+  // Provider integration
+  provider             String?   @db.VarChar(50)
+  externalCredentialId String?   @map("external_credential_id") @db.VarChar(255)
+  
+  // Configuration
+  config               Json      @default("{}")
+  
+  // Audit
+  createdBy            String?   @map("created_by") @db.Uuid
+  deletedAt            DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  partner              Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  creator              User?          @relation("SipTrunkCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  phoneNumbers         PhoneNumber[]
+
+  @@index([partnerId])
+  @@index([isActive])
+  @@map("sip_trunks")
+  @@schema("public")
+}
+
+// =============================================================================
+// PHONE NUMBERS (Partner-level phone number inventory)
+// =============================================================================
+
+model PhoneNumber {
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId            String              @map("partner_id") @db.Uuid
+  
+  // Phone number details
+  phoneNumber          String              @map("phone_number") @db.VarChar(50)
+  phoneNumberE164      String?             @map("phone_number_e164") @db.VarChar(20)
+  friendlyName         String?             @map("friendly_name") @db.VarChar(255)
+  description          String?
+  countryCode          String?             @map("country_code") @db.VarChar(5)
+  
+  // Provider information
+  provider             PhoneNumberProvider @default(sip)
+  externalId           String?             @map("external_id") @db.VarChar(255)
+  
+  // SIP configuration
+  sipUri               String?             @map("sip_uri") @db.VarChar(500)
+  sipTrunkId           String?             @map("sip_trunk_id") @db.VarChar(255)
+  sipTrunkIdRef        String?             @map("sip_trunk_id_ref") @db.Uuid
+  
+  // Assignment
+  status               PhoneNumberStatus   @default(available)
+  assignedAgentId      String?             @map("assigned_agent_id") @db.Uuid
+  assignedWorkspaceId  String?             @map("assigned_workspace_id") @db.Uuid
+  assignedAt           DateTime?           @map("assigned_at") @db.Timestamptz
+  
+  // Capabilities
+  supportsInbound      Boolean             @default(true) @map("supports_inbound")
+  supportsOutbound     Boolean             @default(true) @map("supports_outbound")
+  supportsSms          Boolean             @default(false) @map("supports_sms")
+  
+  // Configuration
+  config               Json                @default("{}")
+  
+  // Audit
+  createdBy            String?             @map("created_by") @db.Uuid
+  deletedAt            DateTime?           @map("deleted_at") @db.Timestamptz
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  partner              Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  sipTrunk             SipTrunk?           @relation(fields: [sipTrunkIdRef], references: [id], onDelete: SetNull)
+  assignedAgent        AiAgent?            @relation("PhoneNumberAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  assignedWorkspace    Workspace?          @relation(fields: [assignedWorkspaceId], references: [id], onDelete: SetNull)
+  creator              User?               @relation("PhoneNumberCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  agentsWithThisNumber AiAgent[]           @relation("AgentPhoneNumber")
+
+  @@index([partnerId])
+  @@index([status])
+  @@index([assignedAgentId])
+  @@index([assignedWorkspaceId])
+  @@unique([partnerId, phoneNumber])
+  @@map("phone_numbers")
   @@schema("public")
 }
 
@@ -1053,3 +1215,4 @@ model WorkspaceSubscription {
   @@map("workspace_subscriptions")
   @@schema("public")
 }
+

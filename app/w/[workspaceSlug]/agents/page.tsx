@@ -29,6 +29,7 @@ export default function WorkspaceAgentsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [providerFilter, setProviderFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [directionFilter, setDirectionFilter] = useState<string>("all")
   const [deleteAgent, setDeleteAgent] = useState<AIAgent | null>(null)
 
   const { data, isLoading, error } = useWorkspaceAgents({
@@ -39,9 +40,11 @@ export default function WorkspaceAgentsPage() {
   const deleteMutation = useDeleteWorkspaceAgent()
   const updateMutation = useUpdateWorkspaceAgent()
 
-  const filteredAgents = data?.data?.filter((agent) =>
-    agent.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredAgents = data?.data?.filter((agent) => {
+    const matchesSearch = agent.name.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesDirection = directionFilter === "all" || agent.agent_direction === directionFilter
+    return matchesSearch && matchesDirection
+  })
 
   const handleDelete = (agent: AIAgent) => {
     setDeleteAgent(agent)
@@ -102,7 +105,6 @@ export default function WorkspaceAgentsPage() {
             <SelectItem value="all">All Providers</SelectItem>
             <SelectItem value="vapi">Vapi</SelectItem>
             <SelectItem value="retell">Retell AI</SelectItem>
-            <SelectItem value="synthflow">Synthflow</SelectItem>
           </SelectContent>
         </Select>
 
@@ -115,6 +117,19 @@ export default function WorkspaceAgentsPage() {
             <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Direction Filter */}
+        <Select value={directionFilter} onValueChange={setDirectionFilter}>
+          <SelectTrigger className="w-full sm:w-[150px]">
+            <SelectValue placeholder="All Directions" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Directions</SelectItem>
+            <SelectItem value="inbound">Inbound</SelectItem>
+            <SelectItem value="outbound">Outbound</SelectItem>
+            <SelectItem value="bidirectional">Bidirectional</SelectItem>
           </SelectContent>
         </Select>
       </div>
