@@ -10,7 +10,7 @@ import { z } from "zod"
 import { getPartnerAuthContext } from "@/lib/api/auth"
 import { apiResponse, apiError, unauthorized, forbidden, notFound, serverError } from "@/lib/api/helpers"
 import { prisma } from "@/lib/prisma"
-import { getStripe, getConnectAccountId } from "@/lib/stripe"
+import { getStripe } from "@/lib/stripe"
 
 type RouteParams = { params: Promise<{ planId: string }> }
 
@@ -145,24 +145,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return apiError("Cannot set postpaid minutes limit on a prepaid plan")
     }
 
-    // Update Stripe product name if changed and Stripe is configured
-    if (data.name && existingPlan.stripeProductId) {
+    // Update Stripe product name if changed and Stripe is configured (platform partner only)
+    const partner = await prisma.partner.findUnique({
+      where: { id: auth.partner.id },
+      select: { isPlatformPartner: true },
+    })
+    const isPlatformPartner = partner?.isPlatformPartner ?? false
+    
+    if (data.name && existingPlan.stripeProductId && isPlatformPartner) {
       try {
-        const partner = await prisma.partner.findUnique({
-          where: { id: auth.partner.id },
-          select: { settings: true },
-        })
-        
-        const connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown>)
-        
-        if (connectAccountId) {
-          const stripe = getStripe()
-          await stripe.products.update(
-            existingPlan.stripeProductId,
-            { name: data.name },
-            { stripeAccount: connectAccountId }
-          )
-        }
+        const stripe = getStripe()
+        await stripe.products.update(existingPlan.stripeProductId, { name: data.name })
       } catch (stripeError) {
         console.error("Failed to update Stripe product:", stripeError)
         // Continue - don't fail the update
@@ -262,24 +255,17 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       })
     }
 
-    // Archive Stripe product if exists
-    if (existingPlan.stripeProductId) {
+    // Archive Stripe product if exists (platform partner only)
+    const partnerForDelete = await prisma.partner.findUnique({
+      where: { id: auth.partner.id },
+      select: { isPlatformPartner: true },
+    })
+    const isPlatformPartnerDelete = partnerForDelete?.isPlatformPartner ?? false
+    
+    if (existingPlan.stripeProductId && isPlatformPartnerDelete) {
       try {
-        const partner = await prisma.partner.findUnique({
-          where: { id: auth.partner.id },
-          select: { settings: true },
-        })
-        
-        const connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown>)
-        
-        if (connectAccountId) {
-          const stripe = getStripe()
-          await stripe.products.update(
-            existingPlan.stripeProductId,
-            { active: false },
-            { stripeAccount: connectAccountId }
-          )
-        }
+        const stripe = getStripe()
+        await stripe.products.update(existingPlan.stripeProductId, { active: false })
       } catch (stripeError) {
         console.error("Failed to archive Stripe product:", stripeError)
       }

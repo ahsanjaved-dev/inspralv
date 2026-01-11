@@ -9,7 +9,7 @@ import { z } from "zod"
 import { getPartnerAuthContext } from "@/lib/api/auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import { prisma } from "@/lib/prisma"
-import { getStripe, getConnectAccountId } from "@/lib/stripe"
+import { getStripe } from "@/lib/stripe"
 
 // Billing type enum
 const billingTypeEnum = z.enum(["prepaid", "postpaid"])
@@ -123,54 +123,51 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data
 
-    // Get partner's Stripe Connect account
+    // Get partner info including platform partner flag
     const partner = await prisma.partner.findUnique({
       where: { id: auth.partner.id },
-      select: { id: true, name: true, settings: true },
+      select: { id: true, name: true, settings: true, isPlatformPartner: true },
     })
 
     if (!partner) {
       return unauthorized()
     }
 
-    const connectAccountId = getConnectAccountId(partner.settings as Record<string, unknown>)
+    // Check if this is a platform partner (uses Stripe)
+    // or a white-label partner (handles billing externally)
+    const isPlatformPartner = partner.isPlatformPartner
 
     let stripeProductId: string | undefined
     let stripePriceId: string | undefined
 
-    // Create Stripe product and price if Connect is set up and price > 0
-    if (connectAccountId && data.monthlyPriceCents > 0) {
+    // Only create Stripe products for platform partner
+    // White-label partners handle billing externally
+    if (isPlatformPartner && data.monthlyPriceCents > 0) {
       try {
         const stripe = getStripe()
 
-        // Create product on Connect account
-        const product = await stripe.products.create(
-          {
-            name: data.name,
-            description: data.description || undefined,
-            metadata: {
-              partner_id: auth.partner.id,
-              type: "workspace_subscription",
-            },
+        // Create product on platform Stripe account
+        const product = await stripe.products.create({
+          name: data.name,
+          description: data.description || undefined,
+          metadata: {
+            partner_id: auth.partner.id,
+            type: "workspace_subscription",
           },
-          { stripeAccount: connectAccountId }
-        )
+        })
 
-        // Create recurring price on Connect account
-        const price = await stripe.prices.create(
-          {
-            product: product.id,
-            unit_amount: data.monthlyPriceCents,
-            currency: "usd",
-            recurring: {
-              interval: "month",
-            },
-            metadata: {
-              partner_id: auth.partner.id,
-            },
+        // Create recurring price on platform Stripe account
+        const price = await stripe.prices.create({
+          product: product.id,
+          unit_amount: data.monthlyPriceCents,
+          currency: "usd",
+          recurring: {
+            interval: "month",
           },
-          { stripeAccount: connectAccountId }
-        )
+          metadata: {
+            partner_id: auth.partner.id,
+          },
+        })
 
         stripeProductId = product.id
         stripePriceId = price.id

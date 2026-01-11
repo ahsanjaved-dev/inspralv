@@ -145,7 +145,7 @@ export default function PlansPage() {
                   <TableHead>Billing</TableHead>
                   <TableHead>Price</TableHead>
                   <TableHead>Minutes</TableHead>
-                  <TableHead>Overage Rate</TableHead>
+                  <TableHead>Max Agents</TableHead>
                   <TableHead>Subscribers</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-12"></TableHead>
@@ -189,7 +189,7 @@ export default function PlansPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      ${(plan.overageRateCents / 100).toFixed(2)}/min
+                      {plan.maxAgents ? plan.maxAgents : "∞"}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -274,6 +274,8 @@ function CreatePlanDialog({
     features: [],
     billingType: "prepaid",
     postpaidMinutesLimit: null,
+    maxAgents: null,
+    maxConversationsPerMonth: null,
     isPublic: true,
   })
   const [featureInput, setFeatureInput] = useState("")
@@ -405,6 +407,7 @@ function CreatePlanDialog({
               value={(form.monthlyPriceCents || 0) / 100}
               onChange={(e) => setForm({ ...form, monthlyPriceCents: Math.round(parseFloat(e.target.value || "0") * 100) })}
             />
+            <p className="text-xs text-muted-foreground">Reference price (billed externally)</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="minutes">Included Minutes</Label>
@@ -415,6 +418,33 @@ function CreatePlanDialog({
               value={form.includedMinutes || 0}
               onChange={(e) => setForm({ ...form, includedMinutes: parseInt(e.target.value || "0") })}
             />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="maxAgents">Max Agents</Label>
+            <Input
+              id="maxAgents"
+              type="number"
+              min={1}
+              value={form.maxAgents || ""}
+              onChange={(e) => setForm({ ...form, maxAgents: e.target.value ? parseInt(e.target.value) : null })}
+              placeholder="Unlimited"
+            />
+            <p className="text-xs text-muted-foreground">Leave empty for unlimited</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="maxConversations">Max Conversations/Month</Label>
+            <Input
+              id="maxConversations"
+              type="number"
+              min={1}
+              value={form.maxConversationsPerMonth || ""}
+              onChange={(e) => setForm({ ...form, maxConversationsPerMonth: e.target.value ? parseInt(e.target.value) : null })}
+              placeholder="Unlimited"
+            />
+            <p className="text-xs text-muted-foreground">Leave empty for unlimited</p>
           </div>
         </div>
 
@@ -492,6 +522,8 @@ function EditPlanDialog({ planId, onClose }: { planId: string; onClose: () => vo
     includedMinutes: plan?.includedMinutes || 0,
     overageRateCents: plan?.overageRateCents || 20,
     postpaidMinutesLimit: plan?.postpaidMinutesLimit || null,
+    maxAgents: plan?.maxAgents || null,
+    maxConversationsPerMonth: plan?.maxConversationsPerMonth || null,
     isActive: plan?.isActive ?? true,
     isPublic: plan?.isPublic ?? true,
   })
@@ -584,6 +616,29 @@ function EditPlanDialog({ planId, onClose }: { planId: string; onClose: () => vo
               value={form.overageRateCents / 100} 
               onChange={(e) => setForm({ ...form, overageRateCents: Math.round(parseFloat(e.target.value || "0") * 100) })} 
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Max Agents</Label>
+              <Input
+                type="number"
+                min={1}
+                value={form.maxAgents || ""}
+                onChange={(e) => setForm({ ...form, maxAgents: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="Unlimited"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Max Conversations/Month</Label>
+              <Input
+                type="number"
+                min={1}
+                value={form.maxConversationsPerMonth || ""}
+                onChange={(e) => setForm({ ...form, maxConversationsPerMonth: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="Unlimited"
+              />
+            </div>
           </div>
 
           <div className="flex items-center justify-between">

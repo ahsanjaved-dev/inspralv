@@ -78,6 +78,38 @@ export async function sendPartnerInvitation(
   })
 }
 
+// Client invitation (for partner's clients who get their own workspace)
+export async function sendClientInvitation(
+  recipientEmail: string,
+  partnerName: string,
+  inviterName: string,
+  inviteLink: string,
+  planName: string,
+  expiresAt: string,
+  message?: string,
+  primaryColor?: string,
+  logoUrl?: string
+) {
+  // Use test email in development, real email in production
+  const to = env.isDev ? TEST_EMAIL : recipientEmail
+
+  // Reuse the partner invitation template with client-specific messaging
+  return sendEmail({
+    to,
+    subject: `You've been invited to ${partnerName}`,
+    react: PartnerInvitationEmail({
+      partnerName,
+      inviterName,
+      inviteLink,
+      role: "client",
+      message: message || `You've been invited to join ${partnerName}. Your workspace will be set up with the ${planName} plan.`,
+      expiresAt,
+      primaryColor,
+      logoUrl,
+    }),
+  })
+}
+
 // Workspace invitation
 export async function sendWorkspaceInvitation(
   recipientEmail: string,

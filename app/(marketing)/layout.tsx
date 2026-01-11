@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Mic } from "lucide-react"
 import { getPartnerFromHost } from "@/lib/api/partner"
@@ -6,6 +7,13 @@ import { ThemeToggle } from "@/components/ui/theme-toggle"
 
 export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
   const partner = await getPartnerFromHost()
+  
+  // Marketing pages are only available on platform partner domain
+  // White-label partners should not see marketing content
+  if (!partner.is_platform_partner) {
+    redirect("/login")
+  }
+
   const branding = partner.branding
   const companyName = branding.company_name || partner.name
 

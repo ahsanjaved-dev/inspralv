@@ -21,16 +21,24 @@ function generateSlug(name: string): string {
  * 
  * This endpoint is called after Supabase auth signup to set up the user's account.
  * 
- * Two distinct flows:
+ * Three distinct flows:
  * 
- * 1. SELF-SIGNUP (Business Owners):
- *    - User signs up directly on the platform
+ * 1. SELF-SIGNUP (Business Owners - Platform Partner Only):
+ *    - User signs up directly on the platform partner (genius365.ai)
  *    - Gets added as partner member (member role)
  *    - Gets a DEFAULT WORKSPACE created (they become owner)
  *    - Can then invite their team to their workspace
  * 
- * 2. INVITATION-BASED (Team Members):
- *    - User signs up via an invitation link
+ * 2. CLIENT INVITATION (White-Label Partners):
+ *    - Partner admin invites a client via client-invitations API
+ *    - Client receives invitation with a token
+ *    - Client signs up with the token
+ *    - Gets added as partner member (member role)
+ *    - NEW WORKSPACE created with the plan limits from the invitation
+ *    - Client becomes OWNER of their new workspace
+ * 
+ * 3. TEAM INVITATION (Both Platform and White-Label):
+ *    - User signs up via a team invitation link
  *    - Gets added as partner member (member role)
  *    - NO default workspace is created
  *    - After signup, they complete the invitation acceptance flow
@@ -46,7 +54,8 @@ export async function POST(request: NextRequest) {
       lastName, 
       selectedPlan, 
       signupSource,
-      isInvitation = false  // NEW: Flag to indicate if signup is from an invitation
+      isInvitation = false,  // Flag to indicate if signup is from an invitation
+      invitationToken = null // NEW: Token for client invitations
     } = body
 
     if (!userId || !email) {
@@ -116,15 +125,105 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 5: Create a default workspace for self-signup users (NOT for invitations)
-    // This applies to ALL partners (platform and white-label alike)
+    // Step 5: Create workspace based on signup type
+    // - Platform partner self-signup: Default workspace with default limits
+    // - Client invitation: Workspace with plan limits from invitation
+    // - Team invitation: No workspace (handled by invitation acceptance)
     let defaultWorkspace = null
     let workspaceRedirect: string | null = null
+    let clientInvitationPlan: { id: string; name: string; includedMinutes: number; maxAgents: number | null } | null = null
 
-    // Only create default workspace if this is NOT an invitation-based signup
-    // Both platform partner and white-label partner users get their own workspace
-    if (!isInvitation) {
-      // Create a personal workspace for the user
+    // Check if this is a client invitation (has token)
+    let clientInvitation = null
+    if (invitationToken) {
+      const { data: invitation, error: invError } = await adminClient
+        .from("partner_invitations")
+        .select("id, partner_id, email, metadata, status")
+        .eq("token", invitationToken)
+        .eq("status", "pending")
+        .maybeSingle()
+
+      if (!invError && invitation) {
+        const metadata = invitation.metadata as Record<string, unknown>
+        if (metadata?.invitation_type === "client") {
+          clientInvitation = invitation
+          clientInvitationPlan = {
+            id: metadata.plan_id as string,
+            name: metadata.plan_name as string,
+            includedMinutes: metadata.plan_included_minutes as number || 0,
+            maxAgents: metadata.plan_max_agents as number | null,
+          }
+        }
+      }
+    }
+
+    // Create workspace based on signup type
+    if (clientInvitation && clientInvitationPlan) {
+      // CLIENT INVITATION: Create workspace with plan limits
+      const metadata = clientInvitation.metadata as Record<string, unknown>
+      const workspaceName = (metadata.workspace_name as string) || `${firstName || email.split("@")[0]}'s Workspace`
+      const workspaceSlug = generateSlug(workspaceName) + "-" + Date.now().toString(36)
+
+      const { data: workspace, error: wsError } = await adminClient
+        .from("workspaces")
+        .insert({
+          partner_id: clientInvitation.partner_id,
+          name: workspaceName,
+          slug: workspaceSlug,
+          description: `Workspace on ${clientInvitationPlan.name} plan`,
+          resource_limits: {
+            max_users: 10,
+            max_agents: clientInvitationPlan.maxAgents || 999,
+            max_minutes_per_month: clientInvitationPlan.includedMinutes || 100,
+          },
+          status: "active",
+        })
+        .select()
+        .single()
+
+      if (wsError) {
+        console.error("Failed to create client workspace:", wsError)
+      } else {
+        defaultWorkspace = workspace
+
+        // Add user as workspace owner
+        await adminClient.from("workspace_members").insert({
+          workspace_id: workspace.id,
+          user_id: userId,
+          role: "owner",
+          joined_at: new Date().toISOString(),
+        })
+
+        // Create subscription record for the workspace
+        if (prisma && clientInvitationPlan.id) {
+          try {
+            await prisma.workspaceSubscription.create({
+              data: {
+                workspaceId: workspace.id,
+                planId: clientInvitationPlan.id,
+                status: "active",
+                currentPeriodStart: new Date(),
+                currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+              },
+            })
+          } catch (subError) {
+            console.error("Failed to create subscription:", subError)
+          }
+        }
+
+        // Mark invitation as accepted
+        await adminClient
+          .from("partner_invitations")
+          .update({ 
+            status: "accepted",
+            accepted_at: new Date().toISOString()
+          })
+          .eq("id", clientInvitation.id)
+
+        workspaceRedirect = `/w/${workspace.slug}/dashboard`
+      }
+    } else if (!isInvitation && partner.is_platform_partner) {
+      // PLATFORM PARTNER SELF-SIGNUP: Create default workspace
       const workspaceName = `${firstName || email.split("@")[0]}'s Workspace`
       const workspaceSlug = generateSlug(workspaceName) + "-" + Date.now().toString(36)
 
@@ -134,9 +233,7 @@ export async function POST(request: NextRequest) {
           partner_id: partner.id,
           name: workspaceName,
           slug: workspaceSlug,
-          description: partner.is_platform_partner 
-            ? "Your personal AI voice agent workspace"
-            : `Workspace for ${partner.name}`,
+          description: "Your personal AI voice agent workspace",
           resource_limits: {
             max_users: 5,
             max_agents: 3,
@@ -149,7 +246,6 @@ export async function POST(request: NextRequest) {
 
       if (wsError) {
         console.error("Failed to create default workspace:", wsError)
-        // Continue - user can create workspace later
       } else {
         defaultWorkspace = workspace
 
@@ -164,14 +260,13 @@ export async function POST(request: NextRequest) {
         if (wsMemberError) {
           console.error("Failed to add workspace member:", wsMemberError)
         } else {
-          // Direct redirect to the workspace dashboard
           workspaceRedirect = `/w/${workspace.slug}/dashboard`
         }
       }
     }
 
-    // For invitation signups, don't set a redirect - let the invitation flow handle it
-    if (isInvitation) {
+    // For team invitation signups, don't set a redirect - let the invitation flow handle it
+    if (isInvitation && !clientInvitation) {
       workspaceRedirect = null
     }
 

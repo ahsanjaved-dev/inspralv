@@ -1,9 +1,16 @@
+import { redirect } from "next/navigation"
 import { PartnerRequestForm } from "@/components/marketing/partner-request-form"
 import { getPartnerFromHost } from "@/lib/api/partner"
 import { env } from "@/lib/env"
 
 export default async function RequestPartnerPage() {
   const partner = await getPartnerFromHost()
+  
+  // Only show partner request form on platform partner domain
+  if (!partner.is_platform_partner) {
+    redirect("/login")
+  }
+
   const primaryColor = partner.branding.primary_color || "#7c3aed"
   const platformDomain = env.platformDomain
 

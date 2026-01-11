@@ -62,21 +62,40 @@ export function AuthLayoutClient({ partner, children }: Props) {
       {/* Content */}
       <div className="relative flex-1 flex flex-col items-center justify-center px-4 py-8">
         {/* Partner Logo/Name */}
-        <Link href="/" className="flex flex-col items-center mb-8">
-          {branding.logo_url ? (
-            <img 
-              src={branding.logo_url} 
-              alt={companyName} 
-              className="h-12 mb-4" 
-            />
-          ) : (
-            <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
-              <Mic className="h-7 w-7 text-primary-foreground" />
-            </div>
-          )}
-          <h1 className="text-2xl font-bold tracking-tight">{companyName}</h1>
-          <p className="text-muted-foreground text-sm mt-1">AI Voice Platform</p>
-        </Link>
+        {/* Only link to home for platform partner, partner domains have no marketing site */}
+        {partner.is_platform_partner ? (
+          <Link href="/" className="flex flex-col items-center mb-8">
+            {branding.logo_url ? (
+              <img 
+                src={branding.logo_url} 
+                alt={companyName} 
+                className="h-12 mb-4" 
+              />
+            ) : (
+              <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
+                <Mic className="h-7 w-7 text-primary-foreground" />
+              </div>
+            )}
+            <h1 className="text-2xl font-bold tracking-tight">{companyName}</h1>
+            <p className="text-muted-foreground text-sm mt-1">AI Voice Platform</p>
+          </Link>
+        ) : (
+          <div className="flex flex-col items-center mb-8">
+            {branding.logo_url ? (
+              <img 
+                src={branding.logo_url} 
+                alt={companyName} 
+                className="h-12 mb-4" 
+              />
+            ) : (
+              <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
+                <Mic className="h-7 w-7 text-primary-foreground" />
+              </div>
+            )}
+            <h1 className="text-2xl font-bold tracking-tight">{companyName}</h1>
+            <p className="text-muted-foreground text-sm mt-1">AI Voice Platform</p>
+          </div>
+        )}
 
         {/* Form Container */}
         <div className="w-full max-w-md">

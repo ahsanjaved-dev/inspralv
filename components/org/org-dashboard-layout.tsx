@@ -99,10 +99,15 @@ export function OrgDashboardLayout({
     return styles
   }, [branding])
 
+  const isPlatformPartner = partner.is_platform_partner
+  
   const navigation = [
     { title: "Overview", href: "/org", icon: LayoutGrid },
     { title: "Integrations", href: "/org/integrations", icon: Plug },
-    { title: "Invitations", href: "/org/invitations", icon: UserPlus },
+    // Team invitations for org admins/members
+    { title: "Team Invitations", href: "/org/invitations", icon: UserPlus },
+    // Client invitations - only for white-label partners
+    ...(!isPlatformPartner ? [{ title: "Client Invitations", href: "/org/clients", icon: Users }] : []),
     { title: "Billing", href: "/org/billing", icon: CreditCard },
     { title: "Subscription Plans", href: "/org/plans", icon: Package },
     { title: "Settings", href: "/org/settings", icon: Settings },

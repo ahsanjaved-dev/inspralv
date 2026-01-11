@@ -26,6 +26,14 @@ import { getPartnerAuthCached } from "@/lib/api/get-auth-cached"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 
 export default async function Home() {
+  // Get partner branding first
+  const partner = await getPartnerFromHost()
+  
+  // For white-label partners: redirect to login (marketing site not available)
+  if (!partner.is_platform_partner) {
+    redirect("/login")
+  }
+
   // Check if user is already logged in
   const auth = await getPartnerAuthCached()
 
@@ -37,8 +45,6 @@ export default async function Home() {
     redirect("/select-workspace")
   }
 
-  // Get partner branding
-  const partner = await getPartnerFromHost()
   const branding = partner.branding
   const companyName = branding.company_name || partner.name
 

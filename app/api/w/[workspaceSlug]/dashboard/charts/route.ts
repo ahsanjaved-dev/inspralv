@@ -121,8 +121,8 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       caller_phone_number: call.caller_phone_number,
       call_type: (call.metadata as Record<string, unknown>)?.call_type || "phone",
       agent: {
-        id: (call.ai_agents as { id: string; name: string })?.id,
-        name: (call.ai_agents as { id: string; name: string })?.name || "Unknown Agent",
+        id: (call.ai_agents as { id: string; name: string }[])?.[0]?.id,
+        name: (call.ai_agents as { id: string; name: string }[])?.[0]?.name || "Unknown Agent",
       },
     }))
 

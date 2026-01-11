@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { getPartnerFromHost } from "@/lib/api/partner"
 import { workspacePlans, formatLimit } from "@/config/plans"
 import { Check, Sparkles, Building2, ArrowRight, Zap } from "lucide-react"
@@ -8,6 +9,12 @@ import { Badge } from "@/components/ui/badge"
 
 export default async function PricingPage() {
   const partner = await getPartnerFromHost()
+  
+  // Only platform partner shows pricing - white-label partners handle billing externally
+  if (!partner.is_platform_partner) {
+    redirect("/login")
+  }
+  
   const { free, pro, agency } = workspacePlans
 
   return (

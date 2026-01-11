@@ -9,16 +9,23 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, CheckCircle2, ArrowRight, Sparkles, Gift } from "lucide-react"
+import { Loader2, CheckCircle2, ArrowRight, Sparkles, Gift, Mail, Lock } from "lucide-react"
 import { workspacePlans, type PlanSlug } from "@/config/plans"
 import { PasswordStrengthIndicator } from "@/components/auth/password-strength"
 import { validatePassword } from "@/lib/auth/password"
+import { usePartner, getDisplayName } from "@/lib/hooks/use-partner"
 
 function SignupForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get("redirect")
   const planParam = searchParams.get("plan")
+  const invitationToken = searchParams.get("token")
+
+  // Fetch partner info to check if platform partner
+  const { data: partnerData, isLoading: isLoadingPartner } = usePartner()
+  const isPlatformPartner = partnerData?.partner?.is_platform_partner ?? true
+  const partnerName = getDisplayName(partnerData?.partner)
 
   const selectedPlan = useMemo((): PlanSlug | null => {
     if (!planParam) return null
@@ -30,14 +37,26 @@ function SignupForm() {
   }, [planParam])
 
   const prefilledEmail = searchParams.get("email") || ""
-  const isInvitation = redirectTo?.includes("invitation")
+  const isInvitation = redirectTo?.includes("invitation") || !!invitationToken
 
+  // For platform partner: redirect to pricing if no plan selected (unless invitation)
+  // For non-platform partners: only allow invitation-based signup
   useEffect(() => {
-    if (isInvitation) return
-    if (!selectedPlan || selectedPlan === "agency") {
-      router.replace("/pricing")
+    if (isLoadingPartner) return
+    
+    // For non-platform partners (white-label): require invitation
+    if (!isPlatformPartner && !isInvitation) {
+      // Don't redirect, we'll show the invitation-only message
+      return
     }
-  }, [selectedPlan, isInvitation, router])
+    
+    // For platform partner: require plan selection (unless invitation)
+    if (isPlatformPartner && !isInvitation) {
+      if (!selectedPlan || selectedPlan === "agency") {
+        router.replace("/pricing")
+      }
+    }
+  }, [selectedPlan, isInvitation, router, isPlatformPartner, isLoadingPartner])
 
   const [email, setEmail] = useState(prefilledEmail)
   const [password, setPassword] = useState("")
@@ -84,7 +103,7 @@ function SignupForm() {
             first_name: firstName,
             last_name: lastName,
             selected_plan: selectedPlan || "free",
-            signup_source: "pricing_page",
+            signup_source: isInvitation ? "invitation" : "pricing_page",
           },
         },
       })
@@ -108,6 +127,7 @@ function SignupForm() {
             selectedPlan: selectedPlan || "free",
             signupSource: redirectTo ? "invitation" : selectedPlan ? "pricing_page" : "direct",
             isInvitation: isInvitation,
+            invitationToken: invitationToken || null,
           }),
         })
 
@@ -139,8 +159,51 @@ function SignupForm() {
     }
   }
 
-  // Loading state
-  if (!isInvitation && (!selectedPlan || selectedPlan === "agency")) {
+  // Loading state while checking partner
+  if (isLoadingPartner) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+          <p className="text-muted-foreground text-sm">Loading...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // For non-platform partners: Show invitation-only message if not an invitation
+  if (!isPlatformPartner && !isInvitation) {
+    return (
+      <Card>
+        <CardContent className="text-center py-12">
+          <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6">
+            <Lock className="h-8 w-8 text-primary" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Invitation Required</h2>
+          <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+            Access to <span className="font-medium text-foreground">{partnerName}</span> is by invitation only. 
+            Please contact your administrator for an invitation.
+          </p>
+          <div className="space-y-3">
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Mail className="h-4 w-4" />
+              <span>Check your email for an invitation link</span>
+            </div>
+            <Link 
+              href="/login" 
+              className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+            >
+              Already have an account? Sign in
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // For platform partner: Loading state while redirecting to pricing
+  if (isPlatformPartner && !isInvitation && (!selectedPlan || selectedPlan === "agency")) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-12">
@@ -180,8 +243,8 @@ function SignupForm() {
 
   return (
     <div className="space-y-4">
-      {/* Plan Badge */}
-      {planInfo && !isInvitation && (
+      {/* Plan Badge - Only show for platform partner with plan selected */}
+      {isPlatformPartner && planInfo && !isInvitation && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="flex items-center justify-between p-4">
             <div className="flex items-center gap-3">
@@ -213,13 +276,29 @@ function SignupForm() {
         </Card>
       )}
 
+      {/* Partner Invitation Banner - For non-platform partners */}
+      {!isPlatformPartner && isInvitation && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="flex items-center gap-3 p-4">
+            <CheckCircle2 className="h-5 w-5 text-primary" />
+            <div className="text-sm">
+              <span className="text-muted-foreground">Welcome to </span>
+              <span className="font-medium">{partnerName}</span>
+              <span className="text-muted-foreground">. Complete your account setup below.</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Signup Form */}
       <Card>
         <CardHeader className="text-center pb-2">
           <CardTitle>Create your account</CardTitle>
           <CardDescription>
-            {isPaidPlan
+            {isPlatformPartner && isPaidPlan
               ? "Start your subscription after signing up"
+              : isInvitation
+              ? "Complete your registration"
               : "Get started with free credits"}
           </CardDescription>
         </CardHeader>
@@ -267,7 +346,7 @@ function SignupForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={loading}
+                disabled={loading || (isInvitation && !!prefilledEmail)}
               />
             </div>
 
@@ -315,7 +394,7 @@ function SignupForm() {
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating account...
                 </>
-              ) : isPaidPlan ? (
+              ) : isPlatformPartner && isPaidPlan ? (
                 <>
                   Continue to Payment
                   <ArrowRight className="ml-2 h-4 w-4" />

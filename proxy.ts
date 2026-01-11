@@ -1,161 +1,240 @@
-// proxy.ts
+import { type NextRequest, NextResponse } from "next/server"
 import { updateSession } from "@/lib/supabase/middleware"
-import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
-// Public paths that don't require authentication
-const publicPaths = [
-  "/",
+/**
+ * Partner Domain Access Control Proxy
+ *
+ * This proxy enforces strict access control for white-label partner domains:
+ *
+ * PLATFORM PARTNER (genius365.ai):
+ * - Full access to all routes (marketing, auth, dashboard, etc.)
+ *
+ * WHITE-LABEL PARTNERS (partner subdomains/custom domains):
+ * - Only allowed routes: /login, /signup (with invitation token), /w/*, /org/*, /select-workspace
+ * - All marketing pages return 404
+ * - Public APIs restricted
+ * - Logged-in users on marketing pages → redirect to dashboard
+ * 
+ * @see https://nextjs.org/docs/app/api-reference/file-conventions/proxy
+ */
+
+// Routes that are ALWAYS allowed on partner domains
+const PARTNER_ALLOWED_ROUTES = [
   "/login",
   "/signup",
   "/forgot-password",
   "/reset-password",
   "/accept-partner-invitation",
   "/accept-workspace-invitation",
-  "/pricing",
-  "/request-partner",
-  "/api/health",
-]
-
-const superAdminPaths = ["/super-admin"]
-
-const protectedPaths = [
   "/select-workspace",
+  "/setup-profile",
   "/workspace-onboarding",
-  "/w/",
-  "/org/",
 ]
 
-// Cookie name for storing last visited workspace
-const LAST_WORKSPACE_COOKIE = "genius365_last_workspace"
+// Route prefixes that are ALWAYS allowed on partner domains
+const PARTNER_ALLOWED_PREFIXES = [
+  "/w/", // Workspace dashboard routes
+  "/org/", // Organization dashboard routes
+  "/api/partner/", // Partner API routes
+  "/api/w/", // Workspace API routes
+  "/api/auth/", // Auth API routes
+  "/api/webhooks/", // Webhook routes
+  "/_next/", // Next.js internals
+  "/favicon", // Favicon
+]
+
+// API routes that should be blocked for partners
+const PARTNER_BLOCKED_API_ROUTES = [
+  "/api/partner-requests", // New partner request form
+  "/api/super-admin", // Super admin routes
+]
+
+// Static files and special routes to always allow
+const STATIC_ROUTES = ["/_next", "/favicon.ico", "/robots.txt", "/sitemap.xml", "/manifest.json"]
 
 /**
- * Build Content Security Policy header
- * Updated: Permissive CSP for VAPI, Retell, Daily.co, Krisp, and LiveKit
+ * Check if a route should be allowed for partner domains
  */
-function buildCSP(): string {
-  const policies = [
-    "default-src 'self'",
-    // Scripts: permissive for VAPI/Retell/Daily/Krisp/LiveKit worklets + Stripe
-    // Note: 'unsafe-eval' is required by Daily.co call machine bundle in both dev and prod
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.daily.co https://*.vapi.ai https://*.krisp.ai https://*.retellai.com https://*.livekit.cloud https://js.stripe.com https://*.stripe.com blob: data:",
-    // Styles
-    "style-src 'self' 'unsafe-inline'",
-    // Images - Added Stripe for card brand icons
-    "img-src 'self' data: blob: https://*.supabase.co https://*.googleusercontent.com https://avatars.githubusercontent.com https://*.stripe.com",
-    // Fonts
-    "font-src 'self' https://fonts.gstatic.com",
-    // Connect: all voice provider services + Stripe API + Sentry
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.vapi.ai wss://*.vapi.ai https://*.daily.co wss://*.daily.co https://*.krisp.ai wss://*.krisp.ai https://*.retellai.com wss://*.retellai.com https://*.livekit.cloud wss://*.livekit.cloud https://*.cloudfront.net https://api.stripe.com https://*.stripe.com https://*.sentry.io",
-    // Frame - Added Stripe for 3D Secure and payment elements
-    "frame-src 'self' https://*.daily.co https://*.vapi.ai https://*.retellai.com https://*.livekit.cloud https://js.stripe.com https://*.stripe.com",
-    // Media
-    "media-src 'self' blob: data: https://*.daily.co https://*.vapi.ai https://*.retellai.com https://*.livekit.cloud",
-    // Workers and Child (for audio worklets)
-    "worker-src 'self' blob: data: https://*.daily.co https://*.vapi.ai https://*.krisp.ai https://*.retellai.com https://*.livekit.cloud",
-    "child-src 'self' blob: https://*.daily.co https://*.retellai.com https://*.livekit.cloud",
-    // Frame ancestors
-    "frame-ancestors 'none'",
-    "form-action 'self'",
-    "base-uri 'self'",
-  ]
-  return policies.join("; ")
+function isRouteAllowedForPartner(pathname: string): boolean {
+  // Check exact matches
+  if (PARTNER_ALLOWED_ROUTES.includes(pathname)) {
+    return true
+  }
+
+  // Check prefixes
+  for (const prefix of PARTNER_ALLOWED_PREFIXES) {
+    if (pathname.startsWith(prefix)) {
+      return true
+    }
+  }
+
+  // Check if it's a static file
+  for (const staticRoute of STATIC_ROUTES) {
+    if (pathname.startsWith(staticRoute)) {
+      return true
+    }
+  }
+
+  return false
 }
 
 /**
- * Apply security headers to response
+ * Check if an API route should be blocked for partners
  */
-function applySecurityHeaders(response: NextResponse): void {
-  response.headers.set("X-Content-Type-Options", "nosniff")
-  response.headers.set("X-Frame-Options", "DENY")
-  response.headers.set("X-XSS-Protection", "1; mode=block")
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+function isApiBlockedForPartner(pathname: string): boolean {
+  for (const blockedRoute of PARTNER_BLOCKED_API_ROUTES) {
+    if (pathname.startsWith(blockedRoute)) {
+      return true
+    }
+  }
+  return false
+}
 
-  if (process.env.NODE_ENV === "production") {
-    response.headers.set(
-      "Strict-Transport-Security",
-      "max-age=31536000; includeSubDomains; preload"
+/**
+ * Resolve partner from hostname using Supabase directly
+ * (Can't use the normal partner resolution as it uses server-only headers)
+ */
+async function resolvePartnerFromHostname(
+  hostname: string
+): Promise<{ is_platform_partner: boolean } | null> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error("[Proxy] Supabase credentials not configured")
+    return null
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+  // Try to find partner by hostname in partner_domains
+  const { data: domainMatch } = await supabase
+    .from("partner_domains")
+    .select(
+      `
+      partner:partners!inner(
+        is_platform_partner
+      )
+    `
     )
+    .eq("hostname", hostname)
+    .single()
+
+  if (domainMatch?.partner) {
+    return (domainMatch.partner as { is_platform_partner: boolean }[])?.[0] ?? null
   }
 
-  response.headers.set("Content-Security-Policy", buildCSP())
-  response.headers.set(
-    "Permissions-Policy",
-    "camera=(), microphone=(self), geolocation=(), payment=()"
-  )
-  response.headers.set("X-DNS-Prefetch-Control", "on")
+  // Check if it's a subdomain pattern (for dev mode)
+  const parts = hostname.split(".")
+  if (parts.length >= 2) {
+    const potentialSlug = parts[0]
+
+    // Try to find partner by slug
+    const { data: slugMatch } = await supabase
+      .from("partners")
+      .select("is_platform_partner")
+      .eq("slug", potentialSlug)
+      .is("deleted_at", null)
+      .single()
+
+    if (slugMatch) {
+      return slugMatch
+    }
+  }
+
+  // Fallback to platform partner
+  const { data: platformPartner } = await supabase
+    .from("partners")
+    .select("is_platform_partner")
+    .eq("is_platform_partner", true)
+    .single()
+
+  return platformPartner
 }
 
-// Function named 'proxy' as required by Next.js 16
+/**
+ * Next.js 16 Proxy function (formerly middleware)
+ * Runs on the server before a request is completed
+ * 
+ * @see https://nextjs.org/docs/app/api-reference/file-conventions/proxy
+ */
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+  const hostname =
+    request.headers.get("x-forwarded-host") || request.headers.get("host") || "localhost"
+  const cleanHostname = hostname.split(":")[0]?.toLowerCase() || "localhost"
+
+  // Always allow static files
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    pathname === "/robots.txt"
+  ) {
+    return NextResponse.next()
+  }
+
+  // Update Supabase session
   const { supabaseResponse, user } = await updateSession(request)
-  const { pathname } = request.nextUrl
 
-  const isPublicPath = publicPaths.some(
-    (path) => pathname === path || pathname.startsWith(path + "/")
-  )
-  const isProtectedPath = protectedPaths.some((path) => pathname.startsWith(path))
-  const isSuperAdminPath = superAdminPaths.some((path) => pathname.startsWith(path))
-  const isApiPath = pathname.startsWith("/api/")
-  const isWorkspacePath = pathname.startsWith("/w/")
+  // Resolve partner from hostname
+  const partner = await resolvePartnerFromHostname(cleanHostname)
 
-  // Protected path without user -> redirect to login
-  if (isProtectedPath && !user) {
-    const redirectUrl = new URL("/login", request.url)
-    redirectUrl.searchParams.set("redirect", pathname)
-    const response = NextResponse.redirect(redirectUrl)
-    applySecurityHeaders(response)
-    return response
+  // If we couldn't resolve partner, allow request (fail open for safety)
+  if (!partner) {
+    console.warn(`[Proxy] Could not resolve partner for hostname: ${cleanHostname}`)
+    return supabaseResponse
   }
 
-  const authPaths = ["/login", "/signup"]
-  const isAuthPath = authPaths.some((path) => pathname.startsWith(path))
-  const redirectParam = request.nextUrl.searchParams.get("redirect")
-
-  // Authenticated user on auth page without redirect param -> smart redirect
-  if (isAuthPath && user && !redirectParam) {
-    // Check if user has a last visited workspace stored in cookie
-    const lastWorkspace = request.cookies.get(LAST_WORKSPACE_COOKIE)?.value
-    
-    if (lastWorkspace) {
-      // Redirect to last visited workspace
-      const response = NextResponse.redirect(new URL(`/w/${lastWorkspace}/dashboard`, request.url))
-      applySecurityHeaders(response)
-      return response
-    }
-    
-    // Otherwise go to workspace selector
-    const response = NextResponse.redirect(new URL("/select-workspace", request.url))
-    applySecurityHeaders(response)
-    return response
+  // Platform partner: allow all routes
+  if (partner.is_platform_partner) {
+    return supabaseResponse
   }
 
-  // Track workspace visits for smart redirect
-  if (isWorkspacePath && user) {
-    // Extract workspace slug from path: /w/[slug]/...
-    const pathParts = pathname.split("/")
-    const workspaceSlug = pathParts[2]
-    
-    if (workspaceSlug && workspaceSlug !== "undefined") {
-      // Set cookie to remember last visited workspace
-      const response = supabaseResponse
-      response.cookies.set(LAST_WORKSPACE_COOKIE, workspaceSlug, {
-        path: "/",
-        maxAge: 60 * 60 * 24 * 30, // 30 days
-        httpOnly: false, // Allow client-side access for UX
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-      })
-      applySecurityHeaders(response)
-      return response
-    }
+  // ============================================================================
+  // WHITE-LABEL PARTNER RESTRICTIONS
+  // ============================================================================
+
+  // Check if route is allowed for partners
+  const isAllowed = isRouteAllowedForPartner(pathname)
+
+  // Root path "/" - redirect to login for partners
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL("/login", request.url))
   }
 
-  const response = supabaseResponse
-  applySecurityHeaders(response)
-  return response
+  // If user is logged in and trying to access a restricted route, redirect to dashboard
+  if (user && !isAllowed) {
+    return NextResponse.redirect(new URL("/select-workspace", request.url))
+  }
+
+  // Check blocked API routes
+  if (pathname.startsWith("/api/") && isApiBlockedForPartner(pathname)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
+
+  // If route is not allowed and user is not logged in, return 404
+  if (!isAllowed) {
+    // Create a response that will trigger Next.js 404 page
+    return NextResponse.rewrite(new URL("/404", request.url))
+  }
+
+  // Special handling for /signup - only allow with invitation token for partners
+  // The signup page component handles showing the invitation-only message
+  // if no token is present
+
+  return supabaseResponse
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public files (public folder)
+     */
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 }

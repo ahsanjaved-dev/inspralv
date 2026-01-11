@@ -373,8 +373,10 @@ export default function OrgBillingPage() {
       )}
 
       {/* ============================================================ */}
-      {/* STRIPE CONNECT - Available for all partners                  */}
+      {/* STRIPE CONNECT - Only for Platform Partner                   */}
+      {/* White-label partners handle billing externally               */}
       {/* ============================================================ */}
+      {isBillingExempt && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -382,9 +384,7 @@ export default function OrgBillingPage() {
             Stripe Connect
           </CardTitle>
           <CardDescription>
-            {isBillingExempt 
-              ? "Connect your Stripe account to process payments from your workspaces"
-              : "Connect your Stripe account to receive payments from your workspaces and customers"}
+            Connect your Stripe account to process payments from your workspaces
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -497,6 +497,29 @@ export default function OrgBillingPage() {
           )}
         </CardContent>
       </Card>
+      )}
+
+      {/* Info card for white-label partners about billing */}
+      {!isBillingExempt && (
+        <Card className="bg-muted/50">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-4">
+              <div className="p-2 bg-blue-500/10 rounded-lg">
+                <Info className="h-5 w-5 text-blue-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold mb-1">About Billing</h3>
+                <p className="text-sm text-muted-foreground">
+                  Your organization handles billing through your own payment system. 
+                  You can create subscription plans in the "Subscription Plans" section 
+                  to define resource limits for your clients, while managing actual billing 
+                  externally through your preferred payment processor.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
