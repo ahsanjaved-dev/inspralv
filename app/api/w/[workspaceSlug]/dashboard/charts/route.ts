@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
         duration_seconds,
         total_cost,
         created_at,
-        caller_phone_number,
+        phone_number,
         metadata,
         ai_agents!inner (
           id,
@@ -111,20 +111,24 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     ].filter((o) => o.count > 0)
 
     // Get recent calls (top 5)
-    const recentCalls = (calls || []).slice(0, 5).map((call) => ({
-      id: call.id,
-      status: call.status,
-      direction: call.direction,
-      duration_seconds: call.duration_seconds,
-      total_cost: call.total_cost,
-      created_at: call.created_at,
-      caller_phone_number: call.caller_phone_number,
-      call_type: (call.metadata as Record<string, unknown>)?.call_type || "phone",
-      agent: {
-        id: (call.ai_agents as { id: string; name: string }[])?.[0]?.id,
-        name: (call.ai_agents as { id: string; name: string }[])?.[0]?.name || "Unknown Agent",
-      },
-    }))
+    // Note: ai_agents is returned as a single object (not array) since it's a many-to-one relationship
+    const recentCalls = (calls || []).slice(0, 5).map((call) => {
+      const agent = call.ai_agents as { id: string; name: string } | null
+      return {
+        id: call.id,
+        status: call.status,
+        direction: call.direction,
+        duration_seconds: call.duration_seconds,
+        total_cost: call.total_cost,
+        created_at: call.created_at,
+        caller_phone_number: call.phone_number, // Map DB column 'phone_number' to API field 'caller_phone_number'
+        call_type: (call.metadata as Record<string, unknown>)?.call_type || "phone",
+        agent: {
+          id: agent?.id || "",
+          name: agent?.name || "Unknown Agent",
+        },
+      }
+    })
 
     // Summary stats for the period
     const totalCalls = calls?.length || 0

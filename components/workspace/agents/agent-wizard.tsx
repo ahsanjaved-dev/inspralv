@@ -39,6 +39,10 @@ import {
   FileQuestion,
   AlertCircle,
   Globe,
+  Plus,
+  X,
+  Variable,
+  Info,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { functionToolsArraySchema, type CreateWorkspaceAgentInput } from "@/types/api.types"
@@ -54,6 +58,13 @@ interface AgentWizardProps {
   onSubmit: (data: CreateWorkspaceAgentInput) => Promise<void>
   isSubmitting: boolean
   onCancel: () => void
+}
+
+// Custom variable definition for campaign personalization
+interface CustomVariable {
+  name: string
+  description: string
+  defaultValue: string
 }
 
 interface WizardFormData {
@@ -76,6 +87,8 @@ interface WizardFormData {
   style: "formal" | "friendly" | "casual"
   tools: FunctionTool[]
   toolsServerUrl: string
+  // Custom variables for campaign personalization
+  customVariables: CustomVariable[]
 }
 
 // Knowledge document type icons
@@ -203,6 +216,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     style: "friendly",
     tools: [],
     toolsServerUrl: "",
+    customVariables: [],
   })
 
   // Fetch knowledge documents for selection
@@ -307,6 +321,14 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               document_ids: formData.knowledgeDocumentIds,
               injection_mode: "system_prompt",
             }
+          : undefined,
+        // Include custom variables for campaign personalization
+        custom_variables: formData.customVariables.length > 0
+          ? formData.customVariables.map(v => ({
+              name: v.name,
+              description: v.description,
+              default_value: v.defaultValue,
+            }))
           : undefined,
       },
       agent_secret_api_key: [],
@@ -850,6 +872,148 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
             </CardContent>
           </Card>
 
+          {/* Custom Variables Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Variable className="w-5 h-5" />
+                Custom Variables
+              </CardTitle>
+              <CardDescription>
+                Define variables that can be personalized for each recipient in outbound campaigns.
+                Use these in your system prompt with {"{{variable_name}}"} syntax.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Info Banner */}
+              <div className="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  <p className="font-medium mb-1">How Custom Variables Work</p>
+                  <p>When running campaigns, these variables will be replaced with recipient-specific data from your CSV import. For example, {"{{first_name}}"} becomes "John" for each recipient.</p>
+                </div>
+              </div>
+
+              {/* Variables List */}
+              {formData.customVariables.length > 0 && (
+                <div className="space-y-3">
+                  {formData.customVariables.map((variable, index) => (
+                    <div key={index} className="p-4 rounded-lg border bg-muted/30">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 grid grid-cols-3 gap-4">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Variable Name</Label>
+                            <Input
+                              value={variable.name}
+                              onChange={(e) => {
+                                const updated = [...formData.customVariables]
+                                updated[index] = { ...variable, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") }
+                                updateFormData("customVariables", updated)
+                              }}
+                              placeholder="e.g., product_interest"
+                              className="mt-1 font-mono text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Description</Label>
+                            <Input
+                              value={variable.description}
+                              onChange={(e) => {
+                                const updated = [...formData.customVariables]
+                                updated[index] = { ...variable, description: e.target.value }
+                                updateFormData("customVariables", updated)
+                              }}
+                              placeholder="What this variable represents"
+                              className="mt-1 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Default Value</Label>
+                            <Input
+                              value={variable.defaultValue}
+                              onChange={(e) => {
+                                const updated = [...formData.customVariables]
+                                updated[index] = { ...variable, defaultValue: e.target.value }
+                                updateFormData("customVariables", updated)
+                              }}
+                              placeholder="Fallback if not provided"
+                              className="mt-1 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={() => {
+                            const updated = formData.customVariables.filter((_, i) => i !== index)
+                            updateFormData("customVariables", updated)
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="mt-2 pt-2 border-t">
+                        <p className="text-xs text-muted-foreground">
+                          Use in prompt: <code className="bg-muted px-1 py-0.5 rounded">{`{{${variable.name || "variable_name"}}}`}</code>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add Variable Button */}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  updateFormData("customVariables", [
+                    ...formData.customVariables,
+                    { name: "", description: "", defaultValue: "" },
+                  ])
+                }}
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Custom Variable
+              </Button>
+
+              {/* Common Variables Suggestions */}
+              {formData.customVariables.length === 0 && (
+                <div className="pt-4 border-t">
+                  <p className="text-sm font-medium mb-3">Quick Add Common Variables</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { name: "first_name", desc: "Recipient's first name" },
+                      { name: "company", desc: "Company name" },
+                      { name: "product_interest", desc: "Product they're interested in" },
+                      { name: "appointment_date", desc: "Scheduled appointment date" },
+                      { name: "account_balance", desc: "Account balance amount" },
+                    ].map((suggestion) => (
+                      <Button
+                        key={suggestion.name}
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          updateFormData("customVariables", [
+                            ...formData.customVariables,
+                            { name: suggestion.name, description: suggestion.desc, defaultValue: "" },
+                          ])
+                        }}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        {suggestion.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Review Summary */}
           <Card>
             <CardHeader>
@@ -889,6 +1053,10 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 <div>
                   <p className="text-muted-foreground">Tools</p>
                   <p className="font-medium">{formData.tools.length === 0 ? "No tools" : `${formData.tools.length} tool${formData.tools.length > 1 ? "s" : ""}`}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Custom Variables</p>
+                  <p className="font-medium">{formData.customVariables.length === 0 ? "None" : `${formData.customVariables.length} variable${formData.customVariables.length > 1 ? "s" : ""}`}</p>
                 </div>
               </div>
             </CardContent>

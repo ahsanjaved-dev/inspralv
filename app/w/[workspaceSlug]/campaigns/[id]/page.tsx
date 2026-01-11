@@ -70,9 +70,6 @@ import {
   MoreVertical,
   RefreshCw,
   Calendar,
-  Variable,
-  MessageSquare,
-  Settings2,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -85,8 +82,6 @@ import type {
   CallRecipient,
   RecipientCallStatus,
   BusinessHoursConfig,
-  VariableMapping,
-  AgentPromptOverrides,
 } from "@/types/database.types"
 
 const statusFilterOptions = [
@@ -466,48 +461,6 @@ export default function CampaignDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Variable Mappings & Settings Card */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Settings2 className="h-4 w-4" />
-              Configuration
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {/* Variable Mappings */}
-            {campaign.variable_mappings &&
-              (campaign.variable_mappings as VariableMapping[]).length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Variable className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">Variables</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {(campaign.variable_mappings as VariableMapping[]).map((mapping) => (
-                      <Badge key={mapping.csv_column} variant="outline" className="text-xs">
-                        {mapping.prompt_placeholder}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-            {/* Custom Greeting Indicator */}
-            {campaign.agent_prompt_overrides &&
-              (campaign.agent_prompt_overrides as AgentPromptOverrides).greeting_override && (
-                <div className="pt-3 border-t">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">Custom Greeting</span>
-                    <Badge variant="secondary" className="text-xs">
-                      Active
-                    </Badge>
-                  </div>
-                </div>
-              )}
-          </CardContent>
-        </Card>
       </div>
 
       {/* Recipients Table */}

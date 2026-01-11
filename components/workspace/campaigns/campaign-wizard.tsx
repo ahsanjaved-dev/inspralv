@@ -19,7 +19,6 @@ import {
 import type {
   CreateCampaignWizardInput,
   CreateRecipientInput,
-  VariableMapping,
   BusinessHoursConfig,
   AIAgent,
 } from "@/types/database.types"
@@ -53,9 +52,6 @@ export interface WizardFormData {
   recipients: CreateRecipientInput[]
   csvColumnHeaders: string[]
   importedFileName: string | null
-
-  // Step 3: Variable Mappings (auto-generated from CSV)
-  variableMappings: VariableMapping[]
 
   // Step 3: Schedule
   scheduleType: "immediate" | "scheduled"
@@ -102,8 +98,9 @@ const WIZARD_STEPS: WizardStep[] = [
   },
 ]
 
+// Business hours are always enabled with sensible defaults (9 AM - 5 PM weekdays)
 const DEFAULT_BUSINESS_HOURS_CONFIG: BusinessHoursConfig = {
-  enabled: false,
+  enabled: true, // Always enabled - no toggle
   timezone: "America/New_York",
   schedule: {
     monday: [{ start: "09:00", end: "17:00" }],
@@ -140,8 +137,6 @@ export function CampaignWizard({
     recipients: [],
     csvColumnHeaders: [],
     importedFileName: null,
-    // Step 3 (auto-generated)
-    variableMappings: [],
     // Step 3
     scheduleType: "immediate",
     scheduledStartAt: null,
@@ -239,15 +234,6 @@ export function CampaignWizard({
   const handleSubmit = async () => {
     if (!validateStep(currentStep)) return
 
-    // Filter out incomplete variable mappings (empty csv_column or prompt_placeholder)
-    // and ensure all mappings have default_value
-    const validVariableMappings = formData.variableMappings
-      .filter((mapping) => mapping.csv_column.trim() && mapping.prompt_placeholder.trim())
-      .map((mapping) => ({
-        ...mapping,
-        default_value: mapping.default_value || "",
-      }))
-
     // Convert datetime-local format to ISO 8601 format
     // datetime-local gives "2026-01-15T09:00" but Zod expects "2026-01-15T09:00:00.000Z"
     let scheduledStartAt: string | null = null
@@ -268,7 +254,7 @@ export function CampaignWizard({
       agent_id: formData.agent_id,
       recipients: formData.recipients,
       csv_column_headers: formData.csvColumnHeaders,
-      variable_mappings: validVariableMappings,
+      variable_mappings: [], // Custom variables removed from campaign module
       agent_prompt_overrides: null, // Removed: users should configure greeting at agent level
       schedule_type: formData.scheduleType,
       scheduled_start_at: scheduledStartAt,

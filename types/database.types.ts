@@ -2655,7 +2655,14 @@ export const createRecipientSchema = z.object({
   last_name: z.string().max(255).optional().nullable(),
   email: z.string().email().max(255).optional().nullable().or(z.literal("")),
   company: z.string().max(255).optional().nullable(),
-  custom_variables: z.record(z.string(), z.unknown()).optional(),
+  // New standard columns for Inspra API integration
+  reason_for_call: z.string().max(500).optional().nullable(),
+  address_line_1: z.string().max(255).optional().nullable(),
+  address_line_2: z.string().max(255).optional().nullable(),
+  suburb: z.string().max(255).optional().nullable(),
+  state: z.string().max(100).optional().nullable(),
+  post_code: z.string().max(20).optional().nullable(),
+  country: z.string().max(100).optional().nullable(),
 })
 
 // Create Campaign Schema (legacy - still works)

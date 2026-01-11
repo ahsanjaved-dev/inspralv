@@ -1,18 +1,13 @@
 "use client"
 
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import {
   FileText,
   Bot,
   Users,
-  Variable,
   Clock,
-  Settings2,
   Edit2,
   CheckCircle2,
   AlertTriangle,
@@ -180,19 +175,6 @@ export function StepReview({ formData, updateFormData, errors, goToStep }: StepR
               </div>
             )}
           </div>
-
-          {formData.variableMappings.length > 0 && (
-            <div className="mt-4 pt-4 border-t">
-              <p className="text-sm text-muted-foreground mb-2">Custom Variables:</p>
-              <div className="flex flex-wrap gap-2">
-                {formData.variableMappings.map((mapping) => (
-                  <Badge key={mapping.csv_column} variant="outline">
-                    {mapping.prompt_placeholder}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -205,7 +187,7 @@ export function StepReview({ formData, updateFormData, errors, goToStep }: StepR
             <Clock className="h-4 w-4" />
             Schedule
           </CardTitle>
-          <Button variant="ghost" size="sm" onClick={() => goToStep(4)}>
+          <Button variant="ghost" size="sm" onClick={() => goToStep(3)}>
             <Edit2 className="h-4 w-4 mr-1" />
             Edit
           </Button>
@@ -229,24 +211,18 @@ export function StepReview({ formData, updateFormData, errors, goToStep }: StepR
             <div className="flex items-center">
               <dt className="w-32 text-muted-foreground text-sm">Business Hours</dt>
               <dd className="flex-1">
-                {formData.businessHoursConfig.enabled ? (
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary">Enabled</Badge>
-                    <span className="text-sm text-muted-foreground">
-                      {activeDays.join(", ")} • {totalHoursPerWeek.toFixed(0)}h/week
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground">24/7</span>
-                )}
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">9 AM - 8 PM</Badge>
+                  <span className="text-sm text-muted-foreground">
+                    {activeDays.join(", ")} • {totalHoursPerWeek.toFixed(0)}h/week
+                  </span>
+                </div>
               </dd>
             </div>
-            {formData.businessHoursConfig.enabled && (
-              <div className="flex items-center">
-                <dt className="w-32 text-muted-foreground text-sm">Timezone</dt>
-                <dd className="flex-1">{formData.businessHoursConfig.timezone}</dd>
-              </div>
-            )}
+            <div className="flex items-center">
+              <dt className="w-32 text-muted-foreground text-sm">Timezone</dt>
+              <dd className="flex-1">{formData.businessHoursConfig.timezone}</dd>
+            </div>
           </dl>
         </CardContent>
       </Card>

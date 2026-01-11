@@ -176,7 +176,14 @@ export async function POST(
         last_name: r.last_name || null,
         email: r.email || null,
         company: r.company || null,
-        custom_variables: r.custom_variables || {},
+        // New standard columns for Inspra API
+        reason_for_call: r.reason_for_call || null,
+        address_line_1: r.address_line_1 || null,
+        address_line_2: r.address_line_2 || null,
+        suburb: r.suburb || null,
+        state: r.state || null,
+        post_code: r.post_code || null,
+        country: r.country || null,
         call_status: "pending",
         attempts: 0,
       }))

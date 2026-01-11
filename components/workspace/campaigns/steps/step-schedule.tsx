@@ -3,8 +3,6 @@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -21,6 +19,7 @@ import {
   X,
   AlertCircle,
   Zap,
+  Info,
 } from "lucide-react"
 import type { BusinessHoursConfig, BusinessHoursTimeSlot, DayOfWeek } from "@/types/database.types"
 import type { WizardFormData } from "../campaign-wizard"
@@ -58,6 +57,34 @@ const TIMEZONES = [
   { value: "Asia/Singapore", label: "Singapore (SGT)" },
   { value: "Asia/Tokyo", label: "Japan (JST)" },
   { value: "Australia/Sydney", label: "Sydney (AEDT)" },
+  { value: "Australia/Melbourne", label: "Melbourne (AEDT)" },
+]
+
+// Allowed time options: 9:00 AM to 8:00 PM (no night calling)
+const ALLOWED_TIMES = [
+  { value: "09:00", label: "9:00 AM" },
+  { value: "09:30", label: "9:30 AM" },
+  { value: "10:00", label: "10:00 AM" },
+  { value: "10:30", label: "10:30 AM" },
+  { value: "11:00", label: "11:00 AM" },
+  { value: "11:30", label: "11:30 AM" },
+  { value: "12:00", label: "12:00 PM" },
+  { value: "12:30", label: "12:30 PM" },
+  { value: "13:00", label: "1:00 PM" },
+  { value: "13:30", label: "1:30 PM" },
+  { value: "14:00", label: "2:00 PM" },
+  { value: "14:30", label: "2:30 PM" },
+  { value: "15:00", label: "3:00 PM" },
+  { value: "15:30", label: "3:30 PM" },
+  { value: "16:00", label: "4:00 PM" },
+  { value: "16:30", label: "4:30 PM" },
+  { value: "17:00", label: "5:00 PM" },
+  { value: "17:30", label: "5:30 PM" },
+  { value: "18:00", label: "6:00 PM" },
+  { value: "18:30", label: "6:30 PM" },
+  { value: "19:00", label: "7:00 PM" },
+  { value: "19:30", label: "7:30 PM" },
+  { value: "20:00", label: "8:00 PM" },
 ]
 
 export function StepSchedule({
@@ -87,9 +114,10 @@ export function StepSchedule({
   const addTimeSlot = (day: DayOfWeek) => {
     const currentSlots = config.schedule[day]
     const lastSlot = currentSlots[currentSlots.length - 1]
-    const newSlot: BusinessHoursTimeSlot = lastSlot
-      ? { start: lastSlot.end, end: "18:00" }
-      : { start: "09:00", end: "17:00" }
+    // Default new slot starts after the last one ends, capped at allowed range
+    const newStart = lastSlot?.end || "09:00"
+    const newEnd = "17:00"
+    const newSlot: BusinessHoursTimeSlot = { start: newStart, end: newEnd }
     updateDaySchedule(day, [...currentSlots, newSlot])
   }
 
@@ -120,6 +148,11 @@ export function StepSchedule({
     }
   }
 
+  // Get available end times (must be after start time)
+  const getEndTimeOptions = (startTime: string) => {
+    const startIndex = ALLOWED_TIMES.findIndex(t => t.value === startTime)
+    return ALLOWED_TIMES.filter((_, index) => index > startIndex)
+  }
 
   return (
     <div className="space-y-8">
@@ -231,131 +264,147 @@ export function StepSchedule({
         )}
       </div>
 
-      {/* Business Hours Section */}
+      {/* Business Hours Section - Always shown, no toggle */}
       <div className="border-t pt-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <Label className="text-base font-medium flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              Business Hours
-            </Label>
-            <p className="text-sm text-muted-foreground">
-              Limit calls to specific days and times
-            </p>
-          </div>
-          <Switch
-            checked={config.enabled}
-            onCheckedChange={(enabled) => updateConfig({ enabled })}
-          />
+        <div className="mb-4">
+          <Label className="text-base font-medium flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Business Hours
+          </Label>
+          <p className="text-sm text-muted-foreground">
+            Configure when calls can be made. Calls are only allowed between 9 AM and 8 PM.
+          </p>
         </div>
 
-        {config.enabled && (
-          <div className="space-y-6">
-            {/* Timezone */}
-            <div>
-              <Label>Timezone</Label>
-              <Select
-                value={config.timezone}
-                onValueChange={(value) => updateConfig({ timezone: value })}
-              >
-                <SelectTrigger className="max-w-xs mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIMEZONES.map((tz) => (
-                    <SelectItem key={tz.value} value={tz.value}>
-                      {tz.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        {/* Info Banner */}
+        <div className="flex items-start gap-3 p-3 mb-6 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+          <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            To protect recipients from unwanted calls, calling hours are restricted to 9:00 AM - 8:00 PM in the selected timezone.
+          </p>
+        </div>
 
-            {/* Day-by-Day Schedule */}
-            <div className="space-y-3">
-              {DAYS_OF_WEEK.map((day) => {
-                const slots = config.schedule[day.key]
-                const isEnabled = slots.length > 0
-
-                return (
-                  <div
-                    key={day.key}
-                    className={`p-4 rounded-lg border ${
-                      isEnabled ? "bg-muted/30" : "bg-muted/10"
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <Checkbox
-                        id={`day-${day.key}`}
-                        checked={isEnabled}
-                        onCheckedChange={(checked) => toggleDay(day.key, !!checked)}
-                      />
-                      <Label
-                        htmlFor={`day-${day.key}`}
-                        className={`w-24 font-medium cursor-pointer ${
-                          !isEnabled && "text-muted-foreground"
-                        }`}
-                      >
-                        {day.label}
-                      </Label>
-
-                      {isEnabled ? (
-                        <div className="flex-1 space-y-2">
-                          {slots.map((slot, index) => (
-                            <div key={index} className="flex items-center gap-2">
-                              <Input
-                                type="time"
-                                value={slot.start}
-                                onChange={(e) =>
-                                  updateTimeSlot(day.key, index, "start", e.target.value)
-                                }
-                                className="w-[120px] h-9"
-                              />
-                              <span className="text-muted-foreground">to</span>
-                              <Input
-                                type="time"
-                                value={slot.end}
-                                onChange={(e) =>
-                                  updateTimeSlot(day.key, index, "end", e.target.value)
-                                }
-                                className="w-[120px] h-9"
-                              />
-                              {slots.length > 1 && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                  onClick={() => removeTimeSlot(day.key, index)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              )}
-                              {index === slots.length - 1 && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground"
-                                  onClick={() => addTimeSlot(day.key)}
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No calls on this day</p>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
+        <div className="space-y-6">
+          {/* Timezone */}
+          <div>
+            <Label>Timezone</Label>
+            <Select
+              value={config.timezone}
+              onValueChange={(value) => updateConfig({ timezone: value })}
+            >
+              <SelectTrigger className="max-w-xs mt-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TIMEZONES.map((tz) => (
+                  <SelectItem key={tz.value} value={tz.value}>
+                    {tz.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
+
+          {/* Day-by-Day Schedule */}
+          <div className="space-y-3">
+            {DAYS_OF_WEEK.map((day) => {
+              const slots = config.schedule[day.key]
+              const isEnabled = slots.length > 0
+
+              return (
+                <div
+                  key={day.key}
+                  className={`p-4 rounded-lg border ${
+                    isEnabled ? "bg-muted/30" : "bg-muted/10"
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <Checkbox
+                      id={`day-${day.key}`}
+                      checked={isEnabled}
+                      onCheckedChange={(checked) => toggleDay(day.key, !!checked)}
+                    />
+                    <Label
+                      htmlFor={`day-${day.key}`}
+                      className={`w-24 font-medium cursor-pointer ${
+                        !isEnabled && "text-muted-foreground"
+                      }`}
+                    >
+                      {day.label}
+                    </Label>
+
+                    {isEnabled ? (
+                      <div className="flex-1 space-y-2">
+                        {slots.map((slot, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <Select
+                              value={slot.start}
+                              onValueChange={(value) =>
+                                updateTimeSlot(day.key, index, "start", value)
+                              }
+                            >
+                              <SelectTrigger className="w-[130px] h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ALLOWED_TIMES.slice(0, -1).map((time) => (
+                                  <SelectItem key={time.value} value={time.value}>
+                                    {time.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <span className="text-muted-foreground">to</span>
+                            <Select
+                              value={slot.end}
+                              onValueChange={(value) =>
+                                updateTimeSlot(day.key, index, "end", value)
+                              }
+                            >
+                              <SelectTrigger className="w-[130px] h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {getEndTimeOptions(slot.start).map((time) => (
+                                  <SelectItem key={time.value} value={time.value}>
+                                    {time.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {slots.length > 1 && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={() => removeTimeSlot(day.key, index)}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {index === slots.length - 1 && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground"
+                                onClick={() => addTimeSlot(day.key)}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No calls on this day</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
     </div>
   )
 }
-
