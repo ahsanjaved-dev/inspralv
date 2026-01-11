@@ -113,7 +113,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     // Get recent calls (top 5)
     // Note: ai_agents is returned as a single object (not array) since it's a many-to-one relationship
     const recentCalls = (calls || []).slice(0, 5).map((call) => {
-      const agent = call.ai_agents as { id: string; name: string } | null
+      const agent = (call.ai_agents as unknown as { id?: string; name?: string } | null) || null
       return {
         id: call.id,
         status: call.status,

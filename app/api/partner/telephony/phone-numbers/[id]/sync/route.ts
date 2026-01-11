@@ -29,7 +29,14 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     // Get the phone number with SIP trunk
-    const phoneNumber = await prisma.phoneNumber.findFirst({
+    if (!prisma!) {
+      return NextResponse.json(
+        { error: "Database connection unavailable" },
+        { status: 500 }
+      )
+    }
+
+    const phoneNumber = await prisma!!.phoneNumber.findFirst({
       where: {
         id,
         partnerId,
@@ -53,7 +60,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     // Get Vapi integration for this partner
-    const vapiIntegration = await prisma.partnerIntegration.findFirst({
+    const vapiIntegration = await prisma!.partnerIntegration.findFirst({
       where: {
         partnerId,
         provider: "vapi",
@@ -97,7 +104,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       logger.error(`Failed to create Vapi BYO phone number: ${createResult.error}`)
       
       // Update with error status
-      await prisma.phoneNumber.update({
+      await prisma!.phoneNumber.update({
         where: { id },
         data: {
           status: "error",
@@ -115,7 +122,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     // Update phone number with Vapi ID
-    const updatedPhoneNumber = await prisma.phoneNumber.update({
+    const updatedPhoneNumber = await prisma!.phoneNumber.update({
       where: { id },
       data: {
         externalId: createResult.data.id,
@@ -143,7 +150,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       },
     })
   } catch (error) {
-    logger.error("Error syncing phone number:", error)
+    logger.error("Error syncing phone number:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to sync phone number" },
       { status: 500 }
@@ -172,7 +179,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     }
 
     // Get the phone number
-    const phoneNumber = await prisma.phoneNumber.findFirst({
+    const phoneNumber = await prisma!.phoneNumber.findFirst({
       where: {
         id,
         partnerId,
@@ -192,7 +199,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     }
 
     // Get Vapi integration for this partner
-    const vapiIntegration = await prisma.partnerIntegration.findFirst({
+    const vapiIntegration = await prisma!.partnerIntegration.findFirst({
       where: {
         partnerId,
         provider: "vapi",
@@ -230,7 +237,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     }
 
     // Update phone number to remove Vapi reference
-    await prisma.phoneNumber.update({
+    await prisma!.phoneNumber.update({
       where: { id },
       data: {
         externalId: null,
@@ -255,7 +262,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       },
     })
   } catch (error) {
-    logger.error("Error unsyncing phone number:", error)
+    logger.error("Error unsyncing phone number:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to unsync phone number" },
       { status: 500 }
@@ -287,7 +294,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const { agentId } = body as { agentId: string | null }
 
     // Get the phone number
-    const phoneNumber = await prisma.phoneNumber.findFirst({
+    const phoneNumber = await prisma!.phoneNumber.findFirst({
       where: {
         id,
         partnerId,
@@ -307,7 +314,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     }
 
     // Get Vapi integration for this partner
-    const vapiIntegration = await prisma.partnerIntegration.findFirst({
+    const vapiIntegration = await prisma!.partnerIntegration.findFirst({
       where: {
         partnerId,
         provider: "vapi",
@@ -333,7 +340,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     // Get the agent's external ID if assigning
     let vapiAssistantId: string | null = null
     if (agentId) {
-      const agent = await prisma.aiAgent.findFirst({
+      const agent = await prisma!.aiAgent.findFirst({
         where: {
           id: agentId,
           deletedAt: null,
@@ -370,7 +377,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     }
 
     // Update phone number assignment in database
-    const updatedPhoneNumber = await prisma.phoneNumber.update({
+    const updatedPhoneNumber = await prisma!.phoneNumber.update({
       where: { id },
       data: {
         assignedAgentId: agentId,
@@ -381,7 +388,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
     // Also update the agent's assigned phone number
     if (agentId) {
-      await prisma.aiAgent.update({
+      await prisma!.aiAgent.update({
         where: { id: agentId },
         data: {
           assignedPhoneNumberId: id,
@@ -390,7 +397,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       })
     } else if (phoneNumber.assignedAgentId) {
       // Clear the previous agent's assignment
-      await prisma.aiAgent.update({
+      await prisma!.aiAgent.update({
         where: { id: phoneNumber.assignedAgentId },
         data: {
           assignedPhoneNumberId: null,
@@ -410,7 +417,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       },
     })
   } catch (error) {
-    logger.error("Error assigning phone number:", error)
+    logger.error("Error assigning phone number:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to assign phone number" },
       { status: 500 }

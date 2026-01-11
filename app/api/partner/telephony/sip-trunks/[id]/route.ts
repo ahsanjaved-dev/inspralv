@@ -88,7 +88,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const sipTrunk = await prisma.sipTrunk.findFirst({
+    if (!prisma!) {
+      return NextResponse.json({ error: "Database connection unavailable" }, { status: 500 })
+    }
+
+    const sipTrunk = await prisma!!.sipTrunk.findFirst({
       where: {
         id,
         partnerId,
@@ -106,7 +110,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ data: transformed })
   } catch (error) {
-    logger.error("Error fetching SIP trunk:", error)
+    logger.error("Error fetching SIP trunk:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to fetch SIP trunk" },
       { status: 500 }
@@ -135,7 +139,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // Verify ownership
-    const existingTrunk = await prisma.sipTrunk.findFirst({
+    const existingTrunk = await prisma!.sipTrunk.findFirst({
       where: {
         id,
         partnerId,
@@ -152,7 +156,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     // If setting as default, unset other defaults first
     if (validatedData.is_default) {
-      await prisma.sipTrunk.updateMany({
+      await prisma!.sipTrunk.updateMany({
         where: {
           partnerId,
           isDefault: true,
@@ -180,7 +184,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (validatedData.outbound_caller_id !== undefined) updateData.outboundCallerId = validatedData.outbound_caller_id
     if (validatedData.is_default !== undefined) updateData.isDefault = validatedData.is_default
 
-    const sipTrunk = await prisma.sipTrunk.update({
+    const sipTrunk = await prisma!.sipTrunk.update({
       where: { id },
       data: updateData,
     })
@@ -191,11 +195,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation error", details: error.errors },
+        { error: "Validation error", details: error.issues },
         { status: 400 }
       )
     }
-    logger.error("Error updating SIP trunk:", error)
+    logger.error("Error updating SIP trunk:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to update SIP trunk" },
       { status: 500 }
@@ -224,7 +228,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Verify ownership
-    const existingTrunk = await prisma.sipTrunk.findFirst({
+    const existingTrunk = await prisma!.sipTrunk.findFirst({
       where: {
         id,
         partnerId,
@@ -237,7 +241,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check if any phone numbers are using this trunk
-    const phoneNumbersUsingTrunk = await prisma.phoneNumber.count({
+    const phoneNumbersUsingTrunk = await prisma!.phoneNumber.count({
       where: {
         sipTrunkIdRef: id,
         deletedAt: null,
@@ -252,7 +256,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Soft delete
-    await prisma.sipTrunk.update({
+    await prisma!.sipTrunk.update({
       where: { id },
       data: {
         deletedAt: new Date(),
@@ -264,7 +268,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    logger.error("Error deleting SIP trunk:", error)
+    logger.error("Error deleting SIP trunk:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to delete SIP trunk" },
       { status: 500 }

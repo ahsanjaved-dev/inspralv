@@ -363,7 +363,6 @@ export function StepImport({ formData, updateMultipleFields, errors }: StepImpor
       recipients,
       csvColumnHeaders: headers,
       importedFileName: file?.name || null,
-      variableMappings: [], // No longer using custom variable mappings in campaign
     })
 
     setStep("preview")
@@ -392,7 +391,6 @@ export function StepImport({ formData, updateMultipleFields, errors }: StepImpor
       recipients: [],
       csvColumnHeaders: [],
       importedFileName: null,
-      variableMappings: [],
     })
   }
 

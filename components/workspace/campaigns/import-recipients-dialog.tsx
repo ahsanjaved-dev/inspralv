@@ -32,6 +32,7 @@ interface ImportRecipientsDialogProps {
 }
 
 interface ParsedRecipient extends CreateRecipientInput {
+  custom_variables?: Record<string, string>
   _row?: number
   _error?: string
 }

@@ -313,14 +313,14 @@ export async function updateSipTrunkCredential(params: {
         }
       }
 
-      const currentGateway = currentResult.data.gateways?.[0] || {}
+      const currentGateway = currentResult.data.gateways?.[0] || {} as Record<string, unknown>
       
       const gatewayPayload = {
-        ip: sipServer || currentGateway.ip,
-        port: sipPort ?? currentGateway.port ?? 5060,
-        inboundEnabled: inboundEnabled ?? currentGateway.inboundEnabled ?? true,
-        outboundEnabled: outboundEnabled ?? currentGateway.outboundEnabled ?? true,
-        outboundProtocol: sipTransport || currentGateway.outboundProtocol || "udp",
+        ip: (sipServer || (currentGateway.ip as string)) ?? "",
+        port: sipPort ?? ((currentGateway.port as number) ?? 5060),
+        inboundEnabled: inboundEnabled ?? ((currentGateway.inboundEnabled as boolean) ?? true),
+        outboundEnabled: outboundEnabled ?? ((currentGateway.outboundEnabled as boolean) ?? true),
+        outboundProtocol: sipTransport || ((currentGateway.outboundProtocol as string) ?? "udp") as "udp" | "tcp" | "tls",
       }
 
       payload.gateways = [gatewayPayload]

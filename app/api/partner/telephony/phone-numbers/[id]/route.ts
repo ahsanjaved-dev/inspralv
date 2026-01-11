@@ -72,6 +72,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { partner, partnerRole, user } = authContext
     const partnerId = partner.id
 
+    if (!prisma) {
+      return NextResponse.json(
+        { error: "Database connection unavailable" },
+        { status: 500 }
+      )
+    }
+
     const phoneNumber = await prisma.phoneNumber.findFirst({
       where: {
         id,
@@ -129,7 +136,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ data: transformPhoneNumber(phoneNumber) })
   } catch (error) {
-    logger.error("Error fetching phone number:", error)
+    logger.error("Error fetching phone number:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to fetch phone number" },
       { status: 500 }
@@ -155,6 +162,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // Only partner admins/owners can update phone numbers
     if (!partnerRole || !["owner", "admin"].includes(partnerRole)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    if (!prisma) {
+      return NextResponse.json({ error: "Database connection unavailable" }, { status: 500 })
     }
 
     // Verify ownership
@@ -293,11 +304,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation error", details: error.errors },
+        { error: "Validation error", details: error.issues },
         { status: 400 }
       )
     }
-    logger.error("Error updating phone number:", error)
+    logger.error("Error updating phone number:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to update phone number" },
       { status: 500 }
@@ -323,6 +334,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     // Only partner admins/owners can delete phone numbers
     if (!partnerRole || !["owner", "admin"].includes(partnerRole)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    if (!prisma) {
+      return NextResponse.json({ error: "Database connection unavailable" }, { status: 500 })
     }
 
     // Verify ownership
@@ -361,7 +376,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    logger.error("Error deleting phone number:", error)
+    logger.error("Error deleting phone number:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to delete phone number" },
       { status: 500 }

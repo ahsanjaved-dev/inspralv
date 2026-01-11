@@ -83,7 +83,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const sipTrunks = await prisma.sipTrunk.findMany({
+    if (!prisma!) {
+      return NextResponse.json({ error: "Database connection unavailable" }, { status: 500 })
+    }
+
+    const sipTrunks = await prisma!!.sipTrunk.findMany({
       where: {
         partnerId,
         deletedAt: null,
@@ -96,7 +100,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: sipTrunks.map(transformSipTrunk) })
   } catch (error) {
-    logger.error("Error fetching SIP trunks:", error)
+    logger.error("Error fetching SIP trunks:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to fetch SIP trunks" },
       { status: 500 }
@@ -129,7 +133,7 @@ export async function POST(request: NextRequest) {
 
     // If this is set as default, unset other defaults first
     if (validatedData.is_default) {
-      await prisma.sipTrunk.updateMany({
+      await prisma!.sipTrunk.updateMany({
         where: {
           partnerId,
           isDefault: true,
@@ -141,7 +145,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const sipTrunk = await prisma.sipTrunk.create({
+    const sipTrunk = await prisma!.sipTrunk.create({
       data: {
         partnerId,
         name: validatedData.name,
@@ -168,11 +172,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation error", details: error.errors },
+        { error: "Validation error", details: error.issues },
         { status: 400 }
       )
     }
-    logger.error("Error creating SIP trunk:", error)
+    logger.error("Error creating SIP trunk:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to create SIP trunk" },
       { status: 500 }

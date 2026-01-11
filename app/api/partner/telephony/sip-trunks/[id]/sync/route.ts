@@ -28,8 +28,12 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
+    if (!prisma!) {
+      return NextResponse.json({ error: "Database connection unavailable" }, { status: 500 })
+    }
+
     // Get the SIP trunk
-    const sipTrunk = await prisma.sipTrunk.findFirst({
+    const sipTrunk = await prisma!.sipTrunk.findFirst({
       where: {
         id,
         partnerId,
@@ -42,7 +46,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     // Get Vapi integration for this partner
-    const vapiIntegration = await prisma.partnerIntegration.findFirst({
+    const vapiIntegration = await prisma!.partnerIntegration.findFirst({
       where: {
         partnerId,
         provider: "vapi",
@@ -91,7 +95,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       }
 
       // Update registration status
-      await prisma.sipTrunk.update({
+      await prisma!.sipTrunk.update({
         where: { id },
         data: {
           registrationStatus: "synced",
@@ -143,7 +147,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       }
       
       // Update with error status
-      await prisma.sipTrunk.update({
+      await prisma!.sipTrunk.update({
         where: { id },
         data: {
           registrationStatus: "error",
@@ -158,7 +162,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     // Update SIP trunk with Vapi credential ID
-    const updatedSipTrunk = await prisma.sipTrunk.update({
+    const updatedSipTrunk = await prisma!.sipTrunk.update({
       where: { id },
       data: {
         externalCredentialId: createResult.data.id,
@@ -180,7 +184,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       },
     })
   } catch (error) {
-    logger.error("Error syncing SIP trunk:", error)
+    logger.error("Error syncing SIP trunk:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to sync SIP trunk" },
       { status: 500 }
@@ -208,8 +212,12 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
+    if (!prisma!) {
+      return NextResponse.json({ error: "Database connection unavailable" }, { status: 500 })
+    }
+
     // Get the SIP trunk
-    const sipTrunk = await prisma.sipTrunk.findFirst({
+    const sipTrunk = await prisma!.sipTrunk.findFirst({
       where: {
         id,
         partnerId,
@@ -229,7 +237,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     }
 
     // Get Vapi integration for this partner
-    const vapiIntegration = await prisma.partnerIntegration.findFirst({
+    const vapiIntegration = await prisma!.partnerIntegration.findFirst({
       where: {
         partnerId,
         provider: "vapi",
@@ -267,7 +275,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     }
 
     // Update SIP trunk to remove Vapi reference
-    await prisma.sipTrunk.update({
+    await prisma!.sipTrunk.update({
       where: { id },
       data: {
         externalCredentialId: null,
@@ -287,7 +295,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       },
     })
   } catch (error) {
-    logger.error("Error unsyncing SIP trunk:", error)
+    logger.error("Error unsyncing SIP trunk:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to unsync SIP trunk" },
       { status: 500 }

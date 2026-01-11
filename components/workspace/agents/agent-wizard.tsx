@@ -332,14 +332,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               injection_mode: "system_prompt",
             }
           : undefined,
-        // Include custom variables for campaign personalization
-        custom_variables: formData.customVariables.length > 0
-          ? formData.customVariables.map(v => ({
-              name: v.name,
-              description: v.description,
-              default_value: v.defaultValue,
-            }))
-          : undefined,
       },
       agent_secret_api_key: [],
       agent_public_api_key: [],

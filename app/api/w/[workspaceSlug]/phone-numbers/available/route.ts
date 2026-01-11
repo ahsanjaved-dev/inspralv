@@ -27,6 +27,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       return unauthorized()
     }
 
+    if (!prisma) {
+      return serverError()
+    }
+
     // Get the partner ID from the workspace
     const workspace = await prisma.workspace.findUnique({
       where: { id: ctx.workspace.id },

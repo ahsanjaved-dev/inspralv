@@ -109,7 +109,6 @@ export async function POST(
         phone_number: normalizePhoneNumber(recipient.phone_number),
         campaign_id: id,
         workspace_id: ctx.workspace.id,
-        custom_variables: recipient.custom_variables || {},
       }))
 
       // Insert with upsert to handle duplicates
@@ -146,7 +145,6 @@ export async function POST(
           phone_number: normalizePhoneNumber(parsed.data.phone_number),
           campaign_id: id,
           workspace_id: ctx.workspace.id,
-          custom_variables: parsed.data.custom_variables || {},
         })
         .select()
         .single()

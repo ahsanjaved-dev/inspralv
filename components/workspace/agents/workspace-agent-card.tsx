@@ -47,7 +47,7 @@ const providerColors: Record<string, string> = {
   synthflow: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
 }
 
-const directionConfig: Record<string, { icon: typeof PhoneIncoming; label: string; color: string }> = {
+const directionConfig: Record<"inbound" | "outbound" | "bidirectional", { icon: typeof PhoneIncoming; label: string; color: string }> = {
   inbound: {
     icon: PhoneIncoming,
     label: "Inbound",

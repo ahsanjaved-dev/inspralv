@@ -63,10 +63,14 @@ function convertBusinessHoursToBlockRules(config: BusinessHoursConfig): string[]
 
       // Block gaps between slots
       for (let i = 0; i < sortedSlots.length - 1; i++) {
-        const currentEnd = sortedSlots[i].end.replace(":", "")
-        const nextStart = sortedSlots[i + 1].start.replace(":", "")
-        if (currentEnd !== nextStart) {
-          blockRules.push(`${dayAbbrev}|${currentEnd}-${nextStart}`)
+        const currentSlot = sortedSlots[i]
+        const nextSlot = sortedSlots[i + 1]
+        if (currentSlot && nextSlot) {
+          const currentEnd = currentSlot.end.replace(":", "")
+          const nextStart = nextSlot.start.replace(":", "")
+          if (currentEnd !== nextStart) {
+            blockRules.push(`${dayAbbrev}|${currentEnd}-${nextStart}`)
+          }
         }
       }
 

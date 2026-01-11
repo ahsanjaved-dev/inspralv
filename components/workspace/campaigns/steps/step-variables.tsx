@@ -31,8 +31,12 @@ export function StepVariables({
   updateFormData,
   errors,
 }: StepVariablesProps) {
-  // Get custom variables from imported data (auto-mapped)
-  const customVariables = formData.variableMappings
+  // Get custom variables from imported data or CSV headers
+  const customVariables: Array<{ csv_column: string; prompt_placeholder: string }> = 
+    (formData.csvColumnHeaders || []).map((col) => ({
+      csv_column: col,
+      prompt_placeholder: `{{${col}}}`,
+    }))
 
   // All available variables
   const allVariables = useMemo(() => {

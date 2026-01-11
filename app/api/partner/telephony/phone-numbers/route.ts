@@ -88,6 +88,13 @@ export async function GET(request: NextRequest) {
 
     // If not admin, only show numbers for workspaces they have access to
     if (!isAdmin) {
+      if (!prisma) {
+        return NextResponse.json(
+          { error: "Database connection unavailable" },
+          { status: 500 }
+        )
+      }
+
       const userWorkspaces = await prisma.workspaceMember.findMany({
         where: {
           userId: user.id,
@@ -97,6 +104,13 @@ export async function GET(request: NextRequest) {
       })
       const workspaceIds = userWorkspaces.map(w => w.workspaceId)
       whereClause.assignedWorkspaceId = { in: workspaceIds }
+    }
+
+    if (!prisma) {
+      return NextResponse.json(
+        { error: "Database connection unavailable" },
+        { status: 500 }
+      )
     }
 
     const phoneNumbers = await prisma.phoneNumber.findMany({
@@ -128,7 +142,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: phoneNumbers.map(transformPhoneNumber) })
   } catch (error) {
-    logger.error("Error fetching phone numbers:", error)
+    logger.error("Error fetching phone numbers:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to fetch phone numbers" },
       { status: 500 }
@@ -158,6 +172,13 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const validatedData = createPhoneNumberSchema.parse(body)
+
+    if (!prisma) {
+      return NextResponse.json(
+        { error: "Database connection unavailable" },
+        { status: 500 }
+      )
+    }
 
     // Check for duplicate phone number
     const existingNumber = await prisma.phoneNumber.findFirst({
@@ -214,7 +235,7 @@ export async function POST(request: NextRequest) {
         supportsInbound: validatedData.supports_inbound,
         supportsOutbound: validatedData.supports_outbound,
         supportsSms: validatedData.supports_sms,
-        config: validatedData.config,
+        config: JSON.parse(JSON.stringify(validatedData.config ?? {})),
         status: "available",
         createdBy: userId,
       },
@@ -235,11 +256,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation error", details: error.errors },
+        { error: "Validation error", details: error.issues },
         { status: 400 }
       )
     }
-    logger.error("Error creating phone number:", error)
+    logger.error("Error creating phone number:", error as Record<string, unknown>)
     return NextResponse.json(
       { error: "Failed to create phone number" },
       { status: 500 }
