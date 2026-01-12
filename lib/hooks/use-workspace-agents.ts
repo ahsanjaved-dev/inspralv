@@ -171,6 +171,7 @@ export interface AvailablePhoneNumber {
   phone_number: string
   phone_number_e164: string | null
   friendly_name: string | null
+  country_code: string | null
   provider: string
   status: string
   supports_inbound: boolean
@@ -183,6 +184,7 @@ export interface AvailablePhoneNumber {
     name: string
   } | null
   is_available: boolean
+  is_assigned_to_this_workspace: boolean
   display_name: string
 }
 
@@ -190,7 +192,7 @@ export function useAvailablePhoneNumbers() {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
 
-  return useQuery<{ data: AvailablePhoneNumber[]; total: number }>({
+  return useQuery<AvailablePhoneNumber[]>({
     queryKey: ["available-phone-numbers", workspaceSlug],
     queryFn: async () => {
       const res = await fetch(`/api/w/${workspaceSlug}/phone-numbers/available`)
@@ -199,6 +201,7 @@ export function useAvailablePhoneNumbers() {
         throw new Error(error.error || "Failed to fetch available phone numbers")
       }
       const json = await res.json()
+      // API returns { data: [...], total: number, workspace_id: string }
       return json.data
     },
     enabled: !!workspaceSlug,

@@ -51,7 +51,7 @@ import { functionToolsArraySchema, type CreateWorkspaceAgentInput } from "@/type
 import type { FunctionTool, KnowledgeDocument, KnowledgeDocumentType, AgentDirection } from "@/types/database.types"
 import { FunctionToolEditor } from "./function-tool-editor"
 import { useActiveKnowledgeDocuments } from "@/lib/hooks/use-workspace-knowledge-base"
-import { useAvailablePhoneNumbers } from "@/lib/hooks/use-telephony"
+import { useAvailablePhoneNumbers } from "@/lib/hooks/use-workspace-agents"
 
 // ============================================================================
 // TYPES
