@@ -125,6 +125,8 @@ export interface VapiAssistantPayload {
   metadata?: Record<string, unknown>
   /** Server URL for tool calls (fallback if not specified per-tool) */
   serverUrl?: string
+  /** Filter which webhook events VAPI sends to serverUrl */
+  serverMessages?: string[]
 }
 
 // ============================================================================
@@ -329,6 +331,19 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
   const baseUrl = env.appUrl || "https://genius365.vercel.app"
   const defaultWebhookUrl = `${baseUrl}/api/webhooks/vapi`
   payload.serverUrl = config.tools_server_url || defaultWebhookUrl
+
+  // Filter webhook events: only send essential events to avoid webhook spam
+  // Valid values from VAPI API:
+  // assistant.started, conversation-update, end-of-call-report, function-call,
+  // hang, language-changed, language-change-detected, model-output, phone-call-control,
+  // speech-update, status-update, transcript, tool-calls, transfer-update, etc.
+  payload.serverMessages = [
+    "status-update",        // Call status changes (queued, ringing, in-progress, ended)
+    "end-of-call-report",   // Complete call summary with transcript and recording
+    "function-call",        // When functions are called (singular!)
+    "tool-calls",           // When tools are called
+    "transfer-update",      // When transfers occur
+  ]
 
   // Transcriber configuration
   if (agent.transcriber_provider || config.transcriber_settings) {

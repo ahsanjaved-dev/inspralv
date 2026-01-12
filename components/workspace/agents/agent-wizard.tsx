@@ -986,8 +986,8 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
             </CardContent>
           </Card>
 
-          {/* Webhook URL - Only for Retell */}
-          {formData.provider === "retell" && (
+          {/* Webhook URL - For Retell and VAPI */}
+          {(formData.provider === "retell" || formData.provider === "vapi") && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -995,7 +995,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                   Webhook URL
                 </CardTitle>
                 <CardDescription>
-                  Your server endpoint that receives tool execution requests and call data.
+                  Your server endpoint that receives {formData.provider === "retell" ? "tool execution requests and call data" : "function tool calls and call events"}.
                 </CardDescription>
               </CardHeader>
               <CardContent>

@@ -629,8 +629,8 @@ export function WorkspaceAgentForm({
         </CardContent>
       </Card>
 
-      {/* Webhook URL Configuration - Only for Retell */}
-      {selectedProvider === "retell" && (
+      {/* Webhook URL Configuration - For Retell and VAPI */}
+      {(selectedProvider === "retell" || selectedProvider === "vapi") && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -638,7 +638,7 @@ export function WorkspaceAgentForm({
               Webhook URL
             </CardTitle>
             <CardDescription>
-              Your server endpoint that receives tool execution requests and call data.
+              Your server endpoint that receives {selectedProvider === "retell" ? "tool execution requests and call data" : "function tool calls and call events"}.
             </CardDescription>
           </CardHeader>
           <CardContent>
