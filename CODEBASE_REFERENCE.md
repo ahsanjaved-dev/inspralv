@@ -189,13 +189,15 @@ genius365/
 
 Actual routes:
 
-- `dashboard/`, `agents/`, `calls/`, `conversations/`, `campaigns/`, `knowledge-base/`, `integrations/`, `members/`, `analytics/`, `telephony/`, `billing/`, `settings/`
+- `dashboard/`, `agents/`, `calls/`, `conversations/`, `campaigns/`, `knowledge-base/`, `integrations/`, `members/`, `analytics/`, `billing/`, `settings/`
+
+> **Note**: Telephony management (SIP trunks, phone numbers) is handled at the organization level (`/org/telephony`), not at the workspace level.
 
 ### Workspace API (`app/api/w/[workspaceSlug]/...`)
 
 Actual route groups:
 
-- `agents/*` (includes nested test-call/outbound-call/phone-number/etc.)
+- `agents/*` (includes nested test-call/outbound-call/etc.)
 - `calls/*` (list + ingest + stats)
 - `campaigns/*`
 - `conversations/*`
@@ -205,6 +207,8 @@ Actual route groups:
 - `knowledge-base/*`
 - `members/*`, `invitations/*`
 - `analytics/*`, `settings/*`, `dashboard/stats/*`
+
+> **Note**: Phone number and SIP trunk management APIs are at the partner/org level (`/api/partner/telephony/*`), not workspace level.
 
 ### Super admin pages (`app/super-admin/(dashboard)/...`)
 

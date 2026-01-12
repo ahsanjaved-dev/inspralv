@@ -63,10 +63,6 @@ export const PERMISSIONS = {
   "workspace.integrations.update": true,
   "workspace.integrations.delete": true,
 
-  // Telephony permissions
-  "workspace.telephony.read": true,
-  "workspace.telephony.update": true,
-
   // Analytics permissions
   "workspace.analytics.read": true,
   "workspace.analytics.export": true,
@@ -133,7 +129,6 @@ export const WORKSPACE_ROLE_PERMISSIONS: Record<WorkspaceRole, Permission[]> = {
     "workspace.analytics.read",
     "workspace.members.read",
     "workspace.integrations.read",
-    "workspace.telephony.read",
     "workspace.knowledge.read",
     "workspace.billing.read",
     "workspace.settings.read",
@@ -150,7 +145,6 @@ export const WORKSPACE_ROLE_PERMISSIONS: Record<WorkspaceRole, Permission[]> = {
     "workspace.analytics.read",
     "workspace.members.read",
     "workspace.integrations.read",
-    "workspace.telephony.read",
     "workspace.knowledge.read",
     "workspace.billing.read",
     // Additional member permissions
@@ -191,8 +185,6 @@ export const WORKSPACE_ROLE_PERMISSIONS: Record<WorkspaceRole, Permission[]> = {
     "workspace.integrations.read",
     "workspace.integrations.create",
     "workspace.integrations.update",
-    "workspace.telephony.read",
-    "workspace.telephony.update",
     "workspace.knowledge.read",
     "workspace.knowledge.create",
     "workspace.knowledge.update",
@@ -234,8 +226,6 @@ export const WORKSPACE_ROLE_PERMISSIONS: Record<WorkspaceRole, Permission[]> = {
     "workspace.integrations.create",
     "workspace.integrations.update",
     "workspace.integrations.delete",
-    "workspace.telephony.read",
-    "workspace.telephony.update",
     "workspace.analytics.read",
     "workspace.analytics.export",
     "workspace.billing.read",
@@ -464,8 +454,6 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "workspace.integrations.create": "Create integrations",
   "workspace.integrations.update": "Update integrations",
   "workspace.integrations.delete": "Delete integrations",
-  "workspace.telephony.read": "View telephony settings",
-  "workspace.telephony.update": "Update telephony settings",
   "workspace.analytics.read": "View analytics",
   "workspace.analytics.export": "Export analytics",
   "workspace.billing.read": "View billing",

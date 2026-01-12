@@ -48,7 +48,6 @@ const pageNames: Record<string, string> = {
   leads: "Leads",
   "knowledge-base": "Knowledge Base",
   integrations: "Integrations",
-  telephony: "Telephony",
   billing: "Billing",
   analytics: "Analytics",
   calls: "Calls",

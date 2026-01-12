@@ -9,13 +9,6 @@ import { apiError } from "@/lib/api/helpers"
 
 import { POST as testCallPOST } from "../test-call/route"
 import { POST as outboundCallPOST } from "../outbound-call/route"
-import { GET as sipInfoGET } from "../sip-info/route"
-import {
-  GET as phoneNumberGET,
-  POST as phoneNumberPOST,
-  DELETE as phoneNumberDELETE,
-} from "../phone-number/route"
-import { POST as assignSipNumberPOST } from "../assign-sip-number/route"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string; id: string; path: string[] }>
@@ -27,18 +20,7 @@ function makeCtx(workspaceSlug: string, id: string): any {
   }
 }
 
-export async function GET(request: NextRequest, { params }: RouteContext) {
-  const { workspaceSlug, id, path } = await params
-  const segment = path?.[0]
-
-  if (segment === "sip-info") {
-    return sipInfoGET(request, makeCtx(workspaceSlug, id))
-  }
-
-  if (segment === "phone-number") {
-    return phoneNumberGET(request, makeCtx(workspaceSlug, id))
-  }
-
+export async function GET(_request: NextRequest, _context: RouteContext) {
   return apiError("Not found", 404)
 }
 
@@ -56,25 +38,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     return outboundCallPOST(request, makeCtx(workspaceSlug, id))
   }
 
-  if (segment === "phone-number") {
-    return phoneNumberPOST(request, makeCtx(workspaceSlug, id))
-  }
-
-  if (segment === "assign-sip-number") {
-    return assignSipNumberPOST(request, makeCtx(workspaceSlug, id))
-  }
-
   return apiError("Not found", 404)
 }
 
-export async function DELETE(request: NextRequest, { params }: RouteContext) {
-  const { workspaceSlug, id, path } = await params
-  const segment = path?.[0]
-
-  if (segment === "phone-number") {
-    return phoneNumberDELETE(request, makeCtx(workspaceSlug, id))
-  }
-
+export async function DELETE(_request: NextRequest, _context: RouteContext) {
   return apiError("Not found", 404)
 }
 
