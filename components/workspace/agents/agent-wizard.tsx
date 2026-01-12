@@ -57,6 +57,12 @@ import type {
 import { FunctionToolEditor } from "./function-tool-editor"
 import { useActiveKnowledgeDocuments } from "@/lib/hooks/use-workspace-knowledge-base"
 import { useAvailablePhoneNumbers } from "@/lib/hooks/use-workspace-agents"
+import {
+  getVoicesForProvider,
+  getDefaultVoice,
+  getVoiceCardColor,
+  type VoiceOption,
+} from "@/lib/voice"
 
 // ============================================================================
 // TYPES
@@ -874,7 +880,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                   {formData.voice && !isVoiceListOpen && (
                     <div className="space-y-3">
                       {(() => {
-                        const selectedVoice = availableVoices.find((v) => v.id === formData.voice)
+                        const selectedVoice = availableVoices.find(
+                          (v: VoiceOption) => v.id === formData.voice
+                        )
                         if (!selectedVoice) return null
                         const colors = getVoiceCardColor(selectedVoice.gender)
                         return (
@@ -882,7 +890,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                             <div className="flex items-start gap-3">
                               <div
                                 className={cn(
-                                  "w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0",
+                                  "w-12 h-12 rounded-full flex items-center justify-center shrink-0",
                                   colors.bg
                                 )}
                               >
@@ -978,7 +986,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                         )}
                       >
                         <div className="space-y-2">
-                          {availableVoices.map((voice) => {
+                          {availableVoices.map((voice: VoiceOption) => {
                             const colors = getVoiceCardColor(voice.gender)
                             return (
                               <div
@@ -988,7 +996,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                                 <div className="flex items-start gap-3">
                                   <div
                                     className={cn(
-                                      "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0",
+                                      "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
                                       colors.bg
                                     )}
                                   >
@@ -1404,7 +1412,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 <div>
                   <p className="text-muted-foreground">Voice</p>
                   <p className="font-medium">
-                    {availableVoices.find((v) => v.id === formData.voice)?.name || "-"}
+                    {availableVoices.find((v: VoiceOption) => v.id === formData.voice)?.name || "-"}
                   </p>
                 </div>
                 <div>
