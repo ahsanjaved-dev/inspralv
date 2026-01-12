@@ -29,7 +29,6 @@ import {
   Phone,
   PhoneIncoming,
   PhoneOutgoing,
-  PhoneCall,
   Briefcase,
   Smile,
   Coffee,
@@ -537,14 +536,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                     color: "bg-blue-100 dark:bg-blue-900/30",
                     iconColor: "text-blue-600",
                   },
-                  {
-                    value: "bidirectional" as AgentDirection,
-                    label: "Bidirectional",
-                    description: "Both inbound and outbound calls",
-                    icon: PhoneCall,
-                    color: "bg-purple-100 dark:bg-purple-900/30",
-                    iconColor: "text-purple-600",
-                  },
                 ].map((direction) => {
                   const Icon = direction.icon
                   return (
@@ -599,7 +590,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
             <Separator />
 
             {/* Phone Number Assignment - For all agent directions */}
-            {(formData.agentDirection === "inbound" || formData.agentDirection === "outbound" || formData.agentDirection === "bidirectional") && (
+            {(formData.agentDirection === "inbound" || formData.agentDirection === "outbound") && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -611,8 +602,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                       <p className="text-xs text-muted-foreground">
                         {formData.agentDirection === "outbound" 
                           ? "Select caller ID for outbound calls"
-                          : formData.agentDirection === "bidirectional"
-                          ? "Assign a phone number for calls"
                           : "Assign a phone number for inbound calls"}
                       </p>
                     </div>

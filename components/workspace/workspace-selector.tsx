@@ -308,31 +308,26 @@ export function WorkspaceSelector({
               )}
             </div>
           )}
-
-          {/* Create Workspace Button */}
-          {canCreateWorkspace && (
-            <Link
-              href="/workspace-onboarding"
-              className={cn(
-                "group flex items-center gap-3 rounded-xl",
-                "border-2 border-dashed border-muted-foreground/20",
-                "hover:border-primary/40 hover:bg-primary/5",
-                "text-muted-foreground hover:text-primary",
-                "transition-all duration-200",
-                viewMode === "card" ? "p-4 justify-center" : "p-3"
-              )}
-            >
-              <div className={cn(
-                "rounded-lg border-2 border-current border-dashed flex items-center justify-center group-hover:border-solid",
-                viewMode === "card" ? "h-10 w-10" : "h-8 w-8"
-              )}>
-                <Plus className={cn(viewMode === "card" ? "h-5 w-5" : "h-4 w-4")} />
-              </div>
-              <span className="font-medium text-sm">Create New Workspace</span>
-            </Link>
-          )}
         </div>
       </ScrollArea>
+
+      {/* Create Workspace Button - Outside ScrollArea for proper layout */}
+      {canCreateWorkspace && (
+        <Link
+          href="/workspace-onboarding"
+          className={cn(
+            "group flex items-center gap-3 rounded-xl mt-3",
+            "border-2 border-dashed border-muted-foreground/20",
+            "hover:border-primary/40 hover:bg-primary/5",
+            "text-muted-foreground hover:text-primary",
+            "transition-all duration-200",
+            "p-3 justify-center"
+          )}
+        >
+          <Plus className="h-4 w-4" />
+          <span className="font-medium text-sm">Create New Workspace</span>
+        </Link>
+      )}
 
       {/* User Footer */}
       <div className="flex items-center justify-between pt-4 mt-4 border-t border-border/50">

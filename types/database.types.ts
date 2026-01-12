@@ -74,7 +74,7 @@ export type Database = {
           voice_provider: Database["public"]["Enums"]["voice_provider"] | null
           workspace_id: string | null
           // Telephony / Direction fields
-          agent_direction: "inbound" | "outbound" | "bidirectional"
+          agent_direction: "inbound" | "outbound"
           allow_outbound: boolean
           assigned_phone_number_id: string | null
         }
@@ -109,7 +109,7 @@ export type Database = {
           voice_provider?: Database["public"]["Enums"]["voice_provider"] | null
           workspace_id?: string | null
           // Telephony / Direction fields
-          agent_direction?: "inbound" | "outbound" | "bidirectional"
+          agent_direction?: "inbound" | "outbound"
           allow_outbound?: boolean
           assigned_phone_number_id?: string | null
         }
@@ -144,7 +144,7 @@ export type Database = {
           voice_provider?: Database["public"]["Enums"]["voice_provider"] | null
           workspace_id?: string | null
           // Telephony / Direction fields
-          agent_direction?: "inbound" | "outbound" | "bidirectional"
+          agent_direction?: "inbound" | "outbound"
           allow_outbound?: boolean
           assigned_phone_number_id?: string | null
         }
@@ -1306,7 +1306,7 @@ export type Database = {
     }
     Enums: {
       agent_provider: "vapi" | "retell" | "synthflow"
-      agent_direction: "inbound" | "outbound" | "bidirectional"
+      agent_direction: "inbound" | "outbound"
       call_direction: "inbound" | "outbound"
       call_status:
         | "initiated"
@@ -2077,7 +2077,7 @@ export const vapiIntegrationConfigSchema = z.object({
 // TELEPHONY TYPES
 // ============================================================================
 
-export type AgentDirection = "inbound" | "outbound" | "bidirectional"
+export type AgentDirection = "inbound" | "outbound"
 export type PhoneNumberStatus = "available" | "assigned" | "pending" | "inactive" | "error"
 export type PhoneNumberProvider = "sip" | "vapi" | "retell" | "twilio"
 
@@ -2146,7 +2146,7 @@ export interface PhoneNumber {
 /**
  * Zod schemas for telephony validation
  */
-export const agentDirectionSchema = z.enum(["inbound", "outbound", "bidirectional"])
+export const agentDirectionSchema = z.enum(["inbound", "outbound"])
 export const phoneNumberStatusSchema = z.enum(["available", "assigned", "pending", "inactive", "error"])
 export const phoneNumberProviderSchema = z.enum(["sip", "vapi", "retell", "twilio"])
 

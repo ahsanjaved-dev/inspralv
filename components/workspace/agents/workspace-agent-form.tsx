@@ -16,7 +16,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Loader2, Lock, Globe, AlertCircle, Check, AlertTriangle, CloudOff, Phone, PhoneCall, PhoneIncoming, PhoneOutgoing, Copy, Wrench } from "lucide-react"
+import { Loader2, Lock, Globe, AlertCircle, Check, AlertTriangle, CloudOff, Phone, PhoneIncoming, PhoneOutgoing, Copy, Wrench } from "lucide-react"
 import type { AIAgent, FunctionTool, AgentDirection } from "@/types/database.types"
 import type { CreateWorkspaceAgentInput } from "@/types/api.types"
 import Link from "next/link"
@@ -91,7 +91,7 @@ export function WorkspaceAgentForm({
     initialData?.assigned_phone_number_id || null
   )
   
-  // Fetch available phone numbers for assignment (only for outbound/bidirectional agents)
+  // Fetch available phone numbers for assignment (only for outbound agents)
   const { data: availablePhoneNumbers, isLoading: isLoadingAvailableNumbers, error: phoneNumbersError } = useAvailablePhoneNumbers()
 
   // useForm must be defined before watch() is called
@@ -155,9 +155,7 @@ export function WorkspaceAgentForm({
       agent_direction: agentDirection,
       allow_outbound: agentDirection === "inbound" ? allowOutbound : undefined,
       // Phone number assignment for outbound agents
-      assigned_phone_number_id: (agentDirection === "outbound" || agentDirection === "bidirectional") 
-        ? assignedPhoneNumberId 
-        : undefined,
+      assigned_phone_number_id: agentDirection === "outbound" ? assignedPhoneNumberId : undefined,
     }
     
     console.log("[WorkspaceAgentForm] Submitting with config:", JSON.stringify(submitData.config, null, 2))
@@ -357,15 +355,15 @@ export function WorkspaceAgentForm({
             <Phone className="h-5 w-5" />
             Agent Direction
           </CardTitle>
-          <CardDescription>Define whether this agent handles inbound, outbound, or both types of calls</CardDescription>
+          <CardDescription>Define whether this agent handles inbound or outbound calls</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               {
                 value: "inbound" as AgentDirection,
                 label: "Inbound",
-                description: "Receives incoming calls",
+                description: "Receives incoming calls from customers",
                 icon: PhoneIncoming,
                 color: "bg-green-100 dark:bg-green-900/30",
                 iconColor: "text-green-600",
@@ -373,18 +371,10 @@ export function WorkspaceAgentForm({
               {
                 value: "outbound" as AgentDirection,
                 label: "Outbound",
-                description: "Makes outgoing calls",
+                description: "Makes outgoing calls to contacts",
                 icon: PhoneOutgoing,
                 color: "bg-blue-100 dark:bg-blue-900/30",
                 iconColor: "text-blue-600",
-              },
-              {
-                value: "bidirectional" as AgentDirection,
-                label: "Bidirectional",
-                description: "Both inbound and outbound",
-                icon: PhoneCall,
-                color: "bg-purple-100 dark:bg-purple-900/30",
-                iconColor: "text-purple-600",
               },
             ].map((direction) => {
               const Icon = direction.icon
@@ -439,8 +429,8 @@ export function WorkspaceAgentForm({
             </div>
           )}
 
-          {/* Phone Number Assignment for Outbound/Bidirectional Agents */}
-          {(agentDirection === "outbound" || agentDirection === "bidirectional") && (
+          {/* Phone Number Assignment for Outbound Agents */}
+          {agentDirection === "outbound" && (
             <div className="mt-4 p-4 rounded-lg border bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800">
               <div className="flex items-center gap-2 mb-3">
                 <PhoneOutgoing className="h-4 w-4 text-blue-600" />

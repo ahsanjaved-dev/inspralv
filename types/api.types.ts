@@ -32,7 +32,7 @@ export const agentKnowledgeBaseConfigSchema = z.object({
 })
 
 // Agent direction schema
-export const agentDirectionSchema = z.enum(["inbound", "outbound", "bidirectional"] as const)
+export const agentDirectionSchema = z.enum(["inbound", "outbound"] as const)
 
 // Agent schema for workspace context (workspace comes from URL)
 export const createWorkspaceAgentSchema = z.object({

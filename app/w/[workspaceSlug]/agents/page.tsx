@@ -129,7 +129,6 @@ export default function WorkspaceAgentsPage() {
             <SelectItem value="all">All Directions</SelectItem>
             <SelectItem value="inbound">Inbound</SelectItem>
             <SelectItem value="outbound">Outbound</SelectItem>
-            <SelectItem value="bidirectional">Bidirectional</SelectItem>
           </SelectContent>
         </Select>
       </div>

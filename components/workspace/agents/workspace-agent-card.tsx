@@ -25,7 +25,6 @@ import {
   Loader2,
   PhoneIncoming,
   PhoneOutgoing,
-  PhoneCall,
 } from "lucide-react"
 import type { AIAgent } from "@/types/database.types"
 import Link from "next/link"
@@ -47,7 +46,7 @@ const providerColors: Record<string, string> = {
   synthflow: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
 }
 
-const directionConfig: Record<"inbound" | "outbound" | "bidirectional", { icon: typeof PhoneIncoming; label: string; color: string }> = {
+const directionConfig: Record<"inbound" | "outbound", { icon: typeof PhoneIncoming; label: string; color: string }> = {
   inbound: {
     icon: PhoneIncoming,
     label: "Inbound",
@@ -57,11 +56,6 @@ const directionConfig: Record<"inbound" | "outbound" | "bidirectional", { icon: 
     icon: PhoneOutgoing,
     label: "Outbound",
     color: "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300",
-  },
-  bidirectional: {
-    icon: PhoneCall,
-    label: "Both",
-    color: "bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300",
   },
 }
 
@@ -76,7 +70,7 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
   
   // Check if agent can make outbound calls
   const canMakeOutboundCall = agent.provider === "vapi" && !!agent.external_agent_id
-  const isOutboundAgent = agent.agent_direction === "outbound" || agent.agent_direction === "bidirectional"
+  const isOutboundAgent = agent.agent_direction === "outbound"
 
   return (
     <Card className="hover:shadow-md transition-shadow">

@@ -135,7 +135,6 @@ enum SyncStatus {
 enum AgentDirection {
   inbound
   outbound
-  bidirectional
   @@map("agent_direction")
   @@schema("public")
 }
