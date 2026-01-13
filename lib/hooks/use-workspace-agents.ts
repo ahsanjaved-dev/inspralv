@@ -80,7 +80,7 @@ export function useCreateWorkspaceAgent() {
       await queryClient.cancelQueries({ queryKey: ["workspace-agents", workspaceSlug] })
 
       // Snapshot previous values for all possible query variations
-      const previousData: { key: unknown[]; data: PaginatedResponse<AIAgent> | undefined }[] = []
+      const previousData: Array<{ key: unknown[]; data: PaginatedResponse<AIAgent> | undefined }> = []
       
       // Get all workspace-agents queries for this workspace
       const queries = queryClient.getQueriesData<PaginatedResponse<AIAgent>>({
@@ -98,24 +98,35 @@ export function useCreateWorkspaceAgent() {
         workspace_id: "", // Will be populated from server
         config: newAgentData.config || {},
         external_agent_id: null,
-        external_llm_id: null,
+        retell_llm_id: null,
         sync_status: "not_synced",
         needs_resync: false,
-        last_sync_at: null,
+        last_synced_at: null,
         last_sync_error: null,
-        total_calls: 0,
+        total_conversations: 0,
         total_minutes: 0,
         total_cost: 0,
         allow_outbound: false,
         assigned_phone_number_id: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        agent_public_api_key: null,
+        agent_secret_api_key: null,
+        created_by: null,
+        deleted_at: null,
+        external_phone_number: null,
+        last_conversation_at: null,
+        model_provider: null,
+        tags: [],
+        transcriber_provider: null,
+        version: 1,
+        voice_provider: null,
       }
 
       // Update all matching queries with the optimistic agent
       for (const [key, data] of queries) {
         if (data) {
-          previousData.push({ key, data })
+          previousData.push({ key: [...key], data })
           queryClient.setQueryData<PaginatedResponse<AIAgent>>(key, {
             ...data,
             data: [optimisticAgent, ...data.data],
