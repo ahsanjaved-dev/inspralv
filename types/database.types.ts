@@ -2853,6 +2853,9 @@ export const createCampaignWizardSchema = z.object({
   
   // Wizard metadata
   wizard_completed: z.boolean().default(true),
+  
+  // Optional: Existing draft ID to update instead of creating new
+  draft_id: z.string().uuid().optional(),
 })
 .refine(
   (data) => {

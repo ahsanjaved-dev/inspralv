@@ -1,11 +1,14 @@
 import { NextRequest } from "next/server"
 import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, serverError, notFound } from "@/lib/api/helpers"
+import { terminateBatch } from "@/lib/integrations/inspra/client"
 
-// Inspra Outbound API base URL
-const INSPRA_API_BASE_URL = process.env.INSPRA_OUTBOUND_API_URL || "https://api.inspra.io"
-
-// POST /api/w/[workspaceSlug]/campaigns/[id]/terminate - Terminate/cancel campaign via Inspra API
+/**
+ * POST /api/w/[workspaceSlug]/campaigns/[id]/terminate
+ * 
+ * Terminate/cancel a campaign.
+ * Calls Inspra /terminate-batch to stop all processing.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ workspaceSlug: string; id: string }> }
@@ -36,42 +39,30 @@ export async function POST(
     }
 
     // Validate campaign can be terminated
-    if (campaign.status !== "active" && campaign.status !== "paused") {
-      return apiError("Only active or paused campaigns can be terminated")
+    if (campaign.status !== "active" && campaign.status !== "paused" && campaign.status !== "draft") {
+      return apiError("Only active, paused, or draft campaigns can be terminated")
     }
 
     const agent = campaign.agent as any
-    if (!agent?.external_agent_id) {
-      return apiError("Agent configuration is invalid")
-    }
 
-    // Call Inspra API to terminate batch
-    const inspraPayload = {
-      workspaceId: ctx.workspace.id,
-      agentId: agent.external_agent_id,
-      batchRef: `campaign-${campaign.id}`,
-    }
+    // Call Inspra API to terminate batch (only if agent is synced)
+    let inspraResult = { success: true, error: undefined as string | undefined }
+    
+    if (agent?.external_agent_id) {
+      const inspraPayload = {
+        workspaceId: ctx.workspace.id,
+        agentId: agent.external_agent_id,
+        batchRef: `campaign-${id}`,
+      }
 
-    console.log("[CampaignTerminate] Sending to Inspra API:", inspraPayload)
+      console.log("[CampaignTerminate] Calling Inspra terminate-batch:", inspraPayload)
 
-    const inspraResponse = await fetch(`${INSPRA_API_BASE_URL}/terminate-batch`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(process.env.INSPRA_API_KEY && {
-          "Authorization": `Bearer ${process.env.INSPRA_API_KEY}`,
-        }),
-      },
-      body: JSON.stringify(inspraPayload),
-    })
+      inspraResult = await terminateBatch(inspraPayload)
 
-    if (!inspraResponse.ok) {
-      const errorText = await inspraResponse.text()
-      console.error("[CampaignTerminate] Inspra API error:", {
-        status: inspraResponse.status,
-        body: errorText,
-      })
-      return apiError(`Failed to terminate campaign: ${errorText}`, inspraResponse.status)
+      if (!inspraResult.success) {
+        console.error("[CampaignTerminate] Inspra API error:", inspraResult.error)
+        // Don't fail - still update local status
+      }
     }
 
     // Update campaign status to cancelled
@@ -80,6 +71,7 @@ export async function POST(
       .update({
         status: "cancelled",
         completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq("id", id)
       .select()
@@ -87,15 +79,37 @@ export async function POST(
 
     if (updateError) {
       console.error("[CampaignTerminate] Error updating campaign status:", updateError)
+      return serverError("Failed to update campaign status")
     }
+
+    // Mark all pending recipients as cancelled
+    const { error: recipientError } = await ctx.adminClient
+      .from("call_recipients")
+      .update({
+        call_status: "cancelled",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("campaign_id", id)
+      .eq("call_status", "pending")
+
+    if (recipientError) {
+      console.error("[CampaignTerminate] Error updating recipients:", recipientError)
+    }
+
+    console.log("[CampaignTerminate] Campaign terminated:", id)
 
     return apiResponse({
       success: true,
-      campaign: updatedCampaign || campaign,
+      campaign: updatedCampaign,
+      inspra: {
+        called: !!agent?.external_agent_id,
+        success: inspraResult.success,
+        error: inspraResult.error,
+      },
+      message: "Campaign terminated. Pending recipients have been cancelled.",
     })
   } catch (error) {
     console.error("[CampaignTerminate] Exception:", error)
     return serverError("Internal server error")
   }
 }
-

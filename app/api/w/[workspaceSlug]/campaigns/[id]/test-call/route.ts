@@ -2,17 +2,19 @@ import { NextRequest } from "next/server"
 import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, serverError, notFound, getValidationError } from "@/lib/api/helpers"
 import { z } from "zod"
+import { queueTestCall, convertBusinessHoursToBlockRules } from "@/lib/integrations/inspra/client"
 import type { BusinessHoursConfig } from "@/types/database.types"
-
-// Inspra Outbound API base URL
-const INSPRA_API_BASE_URL = process.env.INSPRA_OUTBOUND_API_URL || "https://api.inspra.io"
 
 const testCallSchema = z.object({
   phone_number: z.string().min(1, "Phone number is required"),
   variables: z.record(z.string(), z.string()).optional(),
 })
 
-// POST /api/w/[workspaceSlug]/campaigns/[id]/test-call - Queue a single test call
+/**
+ * POST /api/w/[workspaceSlug]/campaigns/[id]/test-call
+ * 
+ * Queue a single test call via Inspra /test-call endpoint.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ workspaceSlug: string; id: string }> }
@@ -60,11 +62,9 @@ export async function POST(
     }
 
     // Get CLI (caller ID) from agent's phone number
-    // First try external_phone_number, then look up from assigned_phone_number_id
     let cli = agent.external_phone_number
     
     if (!cli && agent.assigned_phone_number_id) {
-      // Look up the phone number from the assignment
       const { data: phoneNumber } = await ctx.adminClient
         .from("phone_numbers")
         .select("phone_number, phone_number_e164")
@@ -72,7 +72,6 @@ export async function POST(
         .single()
       
       if (phoneNumber) {
-        // Prefer E.164 format, fall back to regular phone number
         cli = phoneNumber.phone_number_e164 || phoneNumber.phone_number
       }
     }
@@ -83,60 +82,65 @@ export async function POST(
 
     // Set NBF to now and EXP to 24 hours from now for test calls
     const now = new Date()
-    const exp = new Date(now)
-    exp.setHours(exp.getHours() + 24)
+    const exp = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+
+    // Get business hours block rules
+    const businessHoursConfig = campaign.business_hours_config as BusinessHoursConfig | null
+    const blockRules = convertBusinessHoursToBlockRules(businessHoursConfig)
 
     // Build test call payload
     const inspraPayload = {
       agentId: agent.external_agent_id,
       workspaceId: ctx.workspace.id,
-      batchRef: `test-${campaign.id}-${Date.now()}`,
+      batchRef: `test-${id}-${Date.now()}`,
       cli,
       nbf: now.toISOString(),
       exp: exp.toISOString(),
-      blockRules: [], // No block rules for test calls
+      blockRules,
       phone: parsed.data.phone_number,
       variables: parsed.data.variables || {
         FIRST_NAME: "Test",
         LAST_NAME: "User",
         COMPANY_NAME: "Test Company",
+        EMAIL: "",
+        REASON_FOR_CALL: "Test call",
+        ADDRESS: "",
+        ADDRESS_LINE_2: "",
+        CITY: "",
+        STATE: "",
+        POST_CODE: "",
+        COUNTRY: "",
       },
     }
 
-    console.log("[TestCall] Sending to Inspra API:", {
+    console.log("[CampaignTestCall] Calling Inspra test-call:", {
       campaignId: id,
       phone: parsed.data.phone_number,
+      agentId: agent.external_agent_id,
     })
 
     // Call Inspra test-call endpoint
-    const inspraResponse = await fetch(`${INSPRA_API_BASE_URL}/test-call`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(process.env.INSPRA_API_KEY && {
-          "Authorization": `Bearer ${process.env.INSPRA_API_KEY}`,
-        }),
-      },
-      body: JSON.stringify(inspraPayload),
-    })
+    const inspraResult = await queueTestCall(inspraPayload)
 
-    if (!inspraResponse.ok) {
-      const errorText = await inspraResponse.text()
-      console.error("[TestCall] Inspra API error:", {
-        status: inspraResponse.status,
-        body: errorText,
-      })
-      return apiError(`Failed to queue test call: ${errorText}`, inspraResponse.status)
+    if (!inspraResult.success) {
+      console.error("[CampaignTestCall] Inspra API error:", inspraResult.error)
+      // For testing with webhook.site, this might "fail" but the payload was sent
     }
+
+    console.log("[CampaignTestCall] Test call queued")
 
     return apiResponse({
       success: true,
       message: "Test call queued successfully",
       phone: parsed.data.phone_number,
+      inspra: {
+        called: true,
+        success: inspraResult.success,
+        error: inspraResult.error,
+      },
     })
   } catch (error) {
-    console.error("[TestCall] Exception:", error)
+    console.error("[CampaignTestCall] Exception:", error)
     return serverError("Internal server error")
   }
 }
-

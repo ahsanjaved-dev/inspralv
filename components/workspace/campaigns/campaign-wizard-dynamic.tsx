@@ -10,6 +10,7 @@ import dynamic from "next/dynamic"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import type { CreateCampaignWizardInput, AIAgent } from "@/types/database.types"
+import type { DraftData } from "@/lib/hooks/use-campaign-draft"
 
 // Props type for the wizard
 export interface CampaignWizardProps {
@@ -18,6 +19,10 @@ export interface CampaignWizardProps {
   onCancel: () => void
   agents: AIAgent[]
   isLoadingAgents: boolean
+  /** Optional: ID of existing draft to load */
+  draftId?: string
+  /** Optional: Initial draft data (when resuming a draft) */
+  initialDraft?: DraftData
 }
 
 // Dynamically import the heavy campaign wizard component

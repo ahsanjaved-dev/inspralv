@@ -2,8 +2,8 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useParams, useRouter } from "next/navigation"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { 
   Select, 
@@ -23,7 +23,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { CampaignCard } from "@/components/workspace/campaigns/campaign-card"
-import { useCampaigns, useUpdateCampaign, useDeleteCampaign } from "@/lib/hooks/use-campaigns"
+import { 
+  useCampaigns, 
+  useDeleteCampaign,
+  useStartCampaign,
+  usePauseCampaign,
+  useResumeCampaign,
+} from "@/lib/hooks/use-campaigns"
 import {
   Phone,
   Plus,
@@ -31,9 +37,9 @@ import {
   RefreshCw,
   Users,
   CheckCircle2,
-  Clock,
   PhoneCall,
 } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
 import type { CallCampaignWithAgent, CampaignStatus } from "@/types/database.types"
 
@@ -48,24 +54,34 @@ const statusOptions = [
 
 export default function CampaignsPage() {
   const params = useParams()
+  const router = useRouter()
   const workspaceSlug = params.workspaceSlug as string
 
   const [statusFilter, setStatusFilter] = useState<CampaignStatus | "all">("all")
   const [page, setPage] = useState(1)
   const [deleteTarget, setDeleteTarget] = useState<CallCampaignWithAgent | null>(null)
+  const [isCreatingCampaign, setIsCreatingCampaign] = useState(false)
+
+  const handleNewCampaign = () => {
+    setIsCreatingCampaign(true)
+    router.push(`/w/${workspaceSlug}/campaigns/new`)
+  }
 
   const { data, isLoading, refetch } = useCampaigns({ 
     status: statusFilter, 
     page 
   })
-  const updateMutation = useUpdateCampaign()
   const deleteMutation = useDeleteCampaign()
+  const startMutation = useStartCampaign()
+  const pauseMutation = usePauseCampaign()
+  const resumeMutation = useResumeCampaign()
 
   const campaigns = data?.data || []
   const totalCampaigns = data?.total || 0
 
   // Calculate stats
   const activeCampaigns = campaigns.filter(c => c.status === "active").length
+  const draftCampaigns = campaigns.filter(c => c.status === "draft").length
   const totalRecipients = campaigns.reduce((sum, c) => sum + c.total_recipients, 0)
   const completedCalls = campaigns.reduce((sum, c) => sum + c.completed_calls, 0)
 
@@ -76,11 +92,8 @@ export default function CampaignsPage() {
     }
     
     try {
-      await updateMutation.mutateAsync({ 
-        id: campaign.id, 
-        data: { status: "active" } 
-      })
-      toast.success("Campaign started successfully")
+      const result = await startMutation.mutateAsync(campaign.id)
+      toast.success(result.message || "Campaign started successfully")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to start campaign")
     }
@@ -88,21 +101,28 @@ export default function CampaignsPage() {
 
   const handlePause = async (campaign: CallCampaignWithAgent) => {
     try {
-      await updateMutation.mutateAsync({ 
-        id: campaign.id, 
-        data: { status: "paused" } 
-      })
-      toast.success("Campaign paused")
+      const result = await pauseMutation.mutateAsync(campaign.id)
+      toast.success(result.message || "Campaign paused")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to pause campaign")
     }
   }
 
+  const handleResume = async (campaign: CallCampaignWithAgent) => {
+    try {
+      const result = await resumeMutation.mutateAsync(campaign.id)
+      toast.success(result.message || "Campaign resumed")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to resume campaign")
+    }
+  }
+
   const handleDelete = async () => {
     if (!deleteTarget) return
+    const wasActive = deleteTarget.status === "active" || deleteTarget.status === "paused"
     try {
       await deleteMutation.mutateAsync(deleteTarget.id)
-      toast.success("Campaign deleted")
+      toast.success(wasActive ? "Campaign terminated and deleted" : "Campaign deleted")
       setDeleteTarget(null)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete campaign")
@@ -120,14 +140,21 @@ export default function CampaignsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="icon" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4" />
+          <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
-          <Button asChild>
-            <Link href={`/w/${workspaceSlug}/campaigns/new`}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Campaign
-            </Link>
+          <Button onClick={handleNewCampaign} disabled={isCreatingCampaign || isLoading}>
+            {isCreatingCampaign ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Plus className="mr-2 h-4 w-4" />
+                New Campaign
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -141,7 +168,11 @@ export default function CampaignsPage() {
           <CardContent>
             <div className="flex items-center gap-2">
               <Phone className="h-5 w-5 text-primary" />
-              <span className="text-2xl font-bold">{totalCampaigns}</span>
+              {isLoading ? (
+                <Skeleton className="h-8 w-12" />
+              ) : (
+                <span className="text-2xl font-bold">{totalCampaigns}</span>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -152,7 +183,11 @@ export default function CampaignsPage() {
           <CardContent>
             <div className="flex items-center gap-2">
               <PhoneCall className="h-5 w-5 text-green-600" />
-              <span className="text-2xl font-bold text-green-600">{activeCampaigns}</span>
+              {isLoading ? (
+                <Skeleton className="h-8 w-12" />
+              ) : (
+                <span className="text-2xl font-bold text-green-600">{activeCampaigns}</span>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -163,7 +198,11 @@ export default function CampaignsPage() {
           <CardContent>
             <div className="flex items-center gap-2">
               <Users className="h-5 w-5 text-blue-600" />
-              <span className="text-2xl font-bold">{totalRecipients}</span>
+              {isLoading ? (
+                <Skeleton className="h-8 w-12" />
+              ) : (
+                <span className="text-2xl font-bold">{totalRecipients}</span>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -174,7 +213,11 @@ export default function CampaignsPage() {
           <CardContent>
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-purple-600" />
-              <span className="text-2xl font-bold">{completedCalls}</span>
+              {isLoading ? (
+                <Skeleton className="h-8 w-12" />
+              ) : (
+                <span className="text-2xl font-bold">{completedCalls}</span>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -208,8 +251,33 @@ export default function CampaignsPage() {
 
       {/* Campaigns List */}
       {isLoading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="animate-pulse">
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Skeleton className="h-10 w-10 rounded-lg" />
+                      <div className="space-y-2">
+                        <Skeleton className="h-5 w-40" />
+                        <Skeleton className="h-4 w-28" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 mt-3">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-4 w-20" />
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <Skeleton className="h-6 w-16 rounded-full" />
+                    <Skeleton className="h-9 w-24" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : campaigns.length === 0 ? (
         <Card className="border-dashed">
@@ -224,11 +292,18 @@ export default function CampaignsPage() {
                 : "Create your first calling campaign to start reaching your leads with AI-powered outbound calls."}
             </p>
             {statusFilter === "all" && (
-              <Button className="mt-6" asChild>
-                <Link href={`/w/${workspaceSlug}/campaigns/new`}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Your First Campaign
-                </Link>
+              <Button className="mt-6" onClick={handleNewCampaign} disabled={isCreatingCampaign}>
+                {isCreatingCampaign ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Your First Campaign
+                  </>
+                )}
               </Button>
             )}
           </CardContent>
@@ -241,6 +316,7 @@ export default function CampaignsPage() {
               campaign={campaign}
               onStart={handleStart}
               onPause={handlePause}
+              onResume={handleResume}
               onDelete={setDeleteTarget}
             />
           ))}
@@ -253,7 +329,15 @@ export default function CampaignsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{deleteTarget?.name}"? This will also remove all recipients and cannot be undone.
+              Are you sure you want to delete "{deleteTarget?.name}"?
+              {(deleteTarget?.status === "active" || deleteTarget?.status === "paused") && (
+                <span className="block mt-2 text-orange-600 dark:text-orange-400 font-medium">
+                  This campaign is currently {deleteTarget?.status}. All pending calls will be stopped immediately.
+                </span>
+              )}
+              <span className="block mt-2">
+                This will permanently remove all recipients and call data. This action cannot be undone.
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -266,10 +350,14 @@ export default function CampaignsPage() {
               {deleteMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
+                  {(deleteTarget?.status === "active" || deleteTarget?.status === "paused") 
+                    ? "Terminating..." 
+                    : "Deleting..."}
                 </>
               ) : (
-                "Delete"
+                (deleteTarget?.status === "active" || deleteTarget?.status === "paused")
+                  ? "Terminate & Delete"
+                  : "Delete"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

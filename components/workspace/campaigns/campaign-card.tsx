@@ -1,7 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,6 +25,8 @@ import {
   Users,
   CheckCircle2,
   XCircle,
+  Edit,
+  Loader2,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import type { CallCampaignWithAgent, CampaignStatus } from "@/types/database.types"
@@ -32,6 +35,7 @@ interface CampaignCardProps {
   campaign: CallCampaignWithAgent
   onStart?: (campaign: CallCampaignWithAgent) => void
   onPause?: (campaign: CallCampaignWithAgent) => void
+  onResume?: (campaign: CallCampaignWithAgent) => void
   onDelete?: (campaign: CallCampaignWithAgent) => void
 }
 
@@ -63,18 +67,40 @@ const statusConfig: Record<CampaignStatus, { label: string; color: string; icon:
   },
 }
 
-export function CampaignCard({ campaign, onStart, onPause, onDelete }: CampaignCardProps) {
+export function CampaignCard({ 
+  campaign, 
+  onStart, 
+  onPause, 
+  onResume,
+  onDelete 
+}: CampaignCardProps) {
   const params = useParams()
+  const router = useRouter()
   const workspaceSlug = params.workspaceSlug as string
+  const [isNavigating, setIsNavigating] = useState(false)
+
+  const handleContinue = () => {
+    setIsNavigating(true)
+    router.push(`/w/${workspaceSlug}/campaigns/new?draft=${campaign.id}`)
+  }
 
   const progress = campaign.total_recipients > 0
     ? Math.round((campaign.completed_calls / campaign.total_recipients) * 100)
     : 0
 
   const statusInfo = statusConfig[campaign.status]
-  const canStart = campaign.status === "draft" || campaign.status === "paused"
-  const canPause = campaign.status === "active"
-  const canDelete = campaign.status !== "active"
+  
+  // Determine available actions based on status
+  const isDraft = campaign.status === "draft"
+  const isActive = campaign.status === "active"
+  const isPaused = campaign.status === "paused"
+  
+  const canStart = isDraft
+  const canResume = isPaused
+  const canPause = isActive
+  // Delete is always available - the API will terminate active campaigns automatically
+  const canDelete = true
+  const canEdit = isDraft
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -88,7 +114,7 @@ export function CampaignCard({ campaign, onStart, onPause, onDelete }: CampaignC
               </div>
               <div className="min-w-0">
                 <Link
-                  href={`/w/${workspaceSlug}/campaigns/${campaign.id}`}
+                  href={isDraft ? `/w/${workspaceSlug}/campaigns/new?draft=${campaign.id}` : `/w/${workspaceSlug}/campaigns/${campaign.id}`}
                   className="font-semibold text-foreground hover:text-primary transition-colors truncate block"
                 >
                   {campaign.name}
@@ -108,20 +134,24 @@ export function CampaignCard({ campaign, onStart, onPause, onDelete }: CampaignC
                 <Users className="h-4 w-4" />
                 <span>{campaign.total_recipients} recipients</span>
               </div>
-              <div className="flex items-center gap-1">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                <span>{campaign.successful_calls} answered</span>
-              </div>
-              {campaign.failed_calls > 0 && (
-                <div className="flex items-center gap-1">
-                  <XCircle className="h-4 w-4 text-red-500" />
-                  <span>{campaign.failed_calls} failed</span>
-                </div>
+              {!isDraft && (
+                <>
+                  <div className="flex items-center gap-1">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span>{campaign.successful_calls} answered</span>
+                  </div>
+                  {campaign.failed_calls > 0 && (
+                    <div className="flex items-center gap-1">
+                      <XCircle className="h-4 w-4 text-red-500" />
+                      <span>{campaign.failed_calls} failed</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
             {/* Progress bar */}
-            {campaign.total_recipients > 0 && (
+            {campaign.total_recipients > 0 && !isDraft && (
               <div className="mt-3">
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                   <span>{campaign.completed_calls} / {campaign.total_recipients} completed</span>
@@ -140,12 +170,37 @@ export function CampaignCard({ campaign, onStart, onPause, onDelete }: CampaignC
             </Badge>
 
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" asChild>
-                <Link href={`/w/${workspaceSlug}/campaigns/${campaign.id}`}>
-                  <Eye className="h-4 w-4 mr-1" />
-                  View
-                </Link>
-              </Button>
+              {/* Quick action for drafts - Continue editing */}
+              {canEdit && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleContinue}
+                  disabled={isNavigating}
+                >
+                  {isNavigating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Edit className="h-4 w-4 mr-1" />
+                      Continue
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {/* View button for non-draft campaigns */}
+              {!isDraft && (
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href={`/w/${workspaceSlug}/campaigns/${campaign.id}`}>
+                    <Eye className="h-4 w-4 mr-1" />
+                    View
+                  </Link>
+                </Button>
+              )}
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -157,7 +212,13 @@ export function CampaignCard({ campaign, onStart, onPause, onDelete }: CampaignC
                   {canStart && onStart && (
                     <DropdownMenuItem onClick={() => onStart(campaign)}>
                       <Play className="h-4 w-4 mr-2" />
-                      {campaign.status === "paused" ? "Resume" : "Start"} Campaign
+                      Start Campaign
+                    </DropdownMenuItem>
+                  )}
+                  {canResume && onResume && (
+                    <DropdownMenuItem onClick={() => onResume(campaign)}>
+                      <Play className="h-4 w-4 mr-2" />
+                      Resume Campaign
                     </DropdownMenuItem>
                   )}
                   {canPause && onPause && (
@@ -166,15 +227,17 @@ export function CampaignCard({ campaign, onStart, onPause, onDelete }: CampaignC
                       Pause Campaign
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuSeparator />
                   {canDelete && onDelete && (
-                    <DropdownMenuItem
-                      onClick={() => onDelete(campaign)}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => onDelete(campaign)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </>
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>

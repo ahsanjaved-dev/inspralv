@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, serverError, notFound, getValidationError } from "@/lib/api/helpers"
 import { updateCampaignSchema } from "@/types/database.types"
+import { terminateBatch } from "@/lib/integrations/inspra/client"
 
 // GET /api/w/[workspaceSlug]/campaigns/[id] - Get campaign details
 export async function GET(
@@ -119,6 +120,7 @@ export async function PATCH(
 }
 
 // DELETE /api/w/[workspaceSlug]/campaigns/[id] - Permanently delete campaign
+// Automatically terminates the batch with Inspra if campaign was active/paused
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ workspaceSlug: string; id: string }> }
@@ -137,10 +139,13 @@ export async function DELETE(
       return apiError("Only workspace admins can delete campaigns", 403)
     }
 
-    // Verify campaign exists and is not active
+    // Verify campaign exists and get full details including agent
     const { data: existing, error: existingError } = await ctx.adminClient
       .from("call_campaigns")
-      .select("id, status")
+      .select(`
+        id, status,
+        agent:ai_agents!agent_id(id, external_agent_id)
+      `)
       .eq("id", id)
       .eq("workspace_id", ctx.workspace.id)
       .single()
@@ -149,8 +154,27 @@ export async function DELETE(
       return notFound("Campaign")
     }
 
-    if (existing.status === "active") {
-      return apiError("Cannot delete an active campaign. Please pause or cancel it first.")
+    const agent = existing.agent as any
+
+    // If campaign is active or paused, terminate it with Inspra first
+    let inspraResult = { success: true, error: undefined as string | undefined }
+    const needsTermination = existing.status === "active" || existing.status === "paused"
+    
+    if (needsTermination && agent?.external_agent_id) {
+      const inspraPayload = {
+        workspaceId: ctx.workspace.id,
+        agentId: agent.external_agent_id,
+        batchRef: `campaign-${id}`,
+      }
+
+      console.log("[CampaignAPI] Terminating batch before delete:", inspraPayload)
+
+      inspraResult = await terminateBatch(inspraPayload)
+
+      if (!inspraResult.success) {
+        console.error("[CampaignAPI] Inspra terminate error:", inspraResult.error)
+        // Continue with deletion even if Inspra fails
+      }
     }
 
     // Permanently delete campaign (recipients are deleted via CASCADE)
@@ -165,7 +189,17 @@ export async function DELETE(
       return serverError("Failed to delete campaign")
     }
 
-    return apiResponse({ success: true })
+    console.log(`[CampaignAPI] Campaign deleted: ${id}${needsTermination ? " (batch terminated)" : ""}`)
+
+    return apiResponse({ 
+      success: true,
+      terminated: needsTermination,
+      inspra: needsTermination ? {
+        called: !!agent?.external_agent_id,
+        success: inspraResult.success,
+        error: inspraResult.error,
+      } : undefined,
+    })
   } catch (error) {
     console.error("[CampaignAPI] Exception:", error)
     return serverError("Internal server error")

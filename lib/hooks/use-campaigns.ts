@@ -78,6 +78,14 @@ export function useCampaigns(options: UseCampaignsOptions = {}) {
       return response.json()
     },
     enabled: !!workspaceSlug,
+    // Always refetch on mount to get fresh data after navigation
+    refetchOnMount: "always",
+    // Refetch when window regains focus (user comes back to tab)
+    refetchOnWindowFocus: true,
+    // Consider data stale immediately
+    staleTime: 0,
+    // Don't keep old data in cache for long
+    gcTime: 1000 * 60, // 1 minute
   })
 }
 
@@ -148,7 +156,8 @@ export function useCreateCampaignWizard() {
       return response.json() as Promise<CampaignResponse>
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
+      // Reset queries to force fresh fetch - ensures loader shows on next view
+      queryClient.resetQueries({ queryKey: ["campaigns", workspaceSlug] })
     },
   })
 }
@@ -377,6 +386,166 @@ export function useDeleteAllRecipients() {
       queryClient.invalidateQueries({ 
         queryKey: ["campaign", workspaceSlug, campaignId] 
       })
+    },
+  })
+}
+
+// ============================================================================
+// CAMPAIGN ACTIONS HOOKS
+// ============================================================================
+
+interface CampaignActionResponse {
+  success: boolean
+  campaign: CallCampaignWithAgent
+  message?: string
+  inspra?: {
+    called: boolean
+    success: boolean
+    error?: string
+    batchRef?: string
+    recipientCount?: number
+  }
+}
+
+/**
+ * Hook for starting a campaign
+ * Updates local status and activates the batch
+ */
+export function useStartCampaign() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation<CampaignActionResponse, Error, string>({
+    mutationFn: async (campaignId: string) => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/start`,
+        { method: "POST" }
+      )
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to start campaign")
+      }
+      return response.json()
+    },
+    onSuccess: (_, campaignId) => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
+      queryClient.invalidateQueries({ queryKey: ["campaign", workspaceSlug, campaignId] })
+    },
+  })
+}
+
+/**
+ * Hook for pausing a campaign
+ * Calls Inspra /pause-batch and updates local status
+ */
+export function usePauseCampaign() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation<CampaignActionResponse, Error, string>({
+    mutationFn: async (campaignId: string) => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/pause`,
+        { method: "POST" }
+      )
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to pause campaign")
+      }
+      return response.json()
+    },
+    onSuccess: (_, campaignId) => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
+      queryClient.invalidateQueries({ queryKey: ["campaign", workspaceSlug, campaignId] })
+    },
+  })
+}
+
+/**
+ * Hook for resuming a paused campaign
+ * Calls Inspra /load-json with updated NBF and updates local status
+ */
+export function useResumeCampaign() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation<CampaignActionResponse, Error, string>({
+    mutationFn: async (campaignId: string) => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/resume`,
+        { method: "POST" }
+      )
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to resume campaign")
+      }
+      return response.json()
+    },
+    onSuccess: (_, campaignId) => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
+      queryClient.invalidateQueries({ queryKey: ["campaign", workspaceSlug, campaignId] })
+    },
+  })
+}
+
+/**
+ * Hook for terminating a campaign
+ * Calls Inspra /terminate-batch and updates local status
+ */
+export function useTerminateCampaign() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation<CampaignActionResponse, Error, string>({
+    mutationFn: async (campaignId: string) => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/terminate`,
+        { method: "POST" }
+      )
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to terminate campaign")
+      }
+      return response.json()
+    },
+    onSuccess: (_, campaignId) => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
+      queryClient.invalidateQueries({ queryKey: ["campaign", workspaceSlug, campaignId] })
+    },
+  })
+}
+
+/**
+ * Hook for making a test call
+ * Calls Inspra /test-call endpoint
+ */
+export function useTestCall() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+
+  return useMutation<CampaignActionResponse, Error, {
+    campaignId: string
+    phoneNumber: string
+    variables?: Record<string, string>
+  }>({
+    mutationFn: async ({ campaignId, phoneNumber, variables }) => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/test-call`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone_number: phoneNumber, variables }),
+        }
+      )
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to queue test call")
+      }
+      return response.json()
     },
   })
 }

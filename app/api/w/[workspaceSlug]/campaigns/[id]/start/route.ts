@@ -1,92 +1,18 @@
 import { NextRequest } from "next/server"
 import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, serverError, notFound } from "@/lib/api/helpers"
-import type { BusinessHoursConfig, BusinessHoursTimeSlot, DayOfWeek } from "@/types/database.types"
 
-// Inspra Outbound API base URL - should be configured via environment variable
-const INSPRA_API_BASE_URL = process.env.INSPRA_OUTBOUND_API_URL || "https://api.inspra.io"
-
-interface InspraCallListItem {
-  phone: string
-  variables: Record<string, string>
-}
-
-interface InspraLoadJsonPayload {
-  agentId: string
-  workspaceId: string
-  batchRef: string
-  cli: string
-  callList: InspraCallListItem[]
-  nbf: string // Not before (ISO date)
-  exp: string // Expiry (ISO date)
-  blockRules: string[] // e.g., ["Mon-Fri|0800-1600"]
-}
-
-// Convert business hours config to Inspra block rules format
-// Block rules define when calls CANNOT be made
-// Format: "Day-Day|HHMM-HHMM" e.g., "Mon-Fri|2000-0900" blocks 8PM to 9AM
-function convertBusinessHoursToBlockRules(config: BusinessHoursConfig): string[] {
-  const blockRules: string[] = []
-  
-  const dayMap: Record<DayOfWeek, string> = {
-    monday: "Mon",
-    tuesday: "Tue",
-    wednesday: "Wed",
-    thursday: "Thu",
-    friday: "Fri",
-    saturday: "Sat",
-    sunday: "Sun",
-  }
-
-  const dayOrder: DayOfWeek[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-
-  // For each day, if there are no slots, block the entire day
-  // If there are slots, block the times outside those slots
-  for (const day of dayOrder) {
-    const slots = config.schedule[day] || []
-    const dayAbbrev = dayMap[day]
-
-    if (slots.length === 0) {
-      // Block entire day: 0000-2359
-      blockRules.push(`${dayAbbrev}|0000-2359`)
-    } else {
-      // Block times outside the allowed slots
-      // Sort slots by start time
-      const sortedSlots = [...slots].sort((a, b) => a.start.localeCompare(b.start))
-      
-      // Block from midnight to first slot start
-      const firstSlot = sortedSlots[0]
-      if (firstSlot && firstSlot.start !== "00:00") {
-        const startTime = firstSlot.start.replace(":", "")
-        blockRules.push(`${dayAbbrev}|0000-${startTime}`)
-      }
-
-      // Block gaps between slots
-      for (let i = 0; i < sortedSlots.length - 1; i++) {
-        const currentSlot = sortedSlots[i]
-        const nextSlot = sortedSlots[i + 1]
-        if (currentSlot && nextSlot) {
-          const currentEnd = currentSlot.end.replace(":", "")
-          const nextStart = nextSlot.start.replace(":", "")
-          if (currentEnd !== nextStart) {
-            blockRules.push(`${dayAbbrev}|${currentEnd}-${nextStart}`)
-          }
-        }
-      }
-
-      // Block from last slot end to midnight
-      const lastSlot = sortedSlots[sortedSlots.length - 1]
-      if (lastSlot && lastSlot.end !== "24:00" && lastSlot.end !== "23:59") {
-        const endTime = lastSlot.end.replace(":", "")
-        blockRules.push(`${dayAbbrev}|${endTime}-2359`)
-      }
-    }
-  }
-
-  return blockRules
-}
-
-// POST /api/w/[workspaceSlug]/campaigns/[id]/start - Start campaign via Inspra API
+/**
+ * POST /api/w/[workspaceSlug]/campaigns/[id]/start
+ * 
+ * Start a campaign that was previously created.
+ * 
+ * Since the batch was already sent to Inspra on CREATE (with NBF set to future),
+ * starting the campaign just updates the local status.
+ * 
+ * In production, this might also call Inspra to update the NBF to "now"
+ * if Inspra supports such an endpoint.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ workspaceSlug: string; id: string }> }
@@ -100,7 +26,7 @@ export async function POST(
     const paywallError = await checkWorkspacePaywall(ctx.workspace.id, workspaceSlug)
     if (paywallError) return paywallError
 
-    // Get campaign with agent and recipients
+    // Get campaign with agent
     const { data: campaign, error: campaignError } = await ctx.adminClient
       .from("call_campaigns")
       .select(`
@@ -110,10 +36,7 @@ export async function POST(
           name, 
           provider, 
           is_active, 
-          external_agent_id,
-          external_phone_number,
-          assigned_phone_number_id,
-          config
+          external_agent_id
         )
       `)
       .eq("id", id)
@@ -144,155 +67,63 @@ export async function POST(
       return apiError("Agent has not been synced with the voice provider")
     }
 
-    // Get CLI (caller ID) from agent's phone number
-    // First try external_phone_number, then look up from assigned_phone_number_id
-    let cli = agent.external_phone_number
-    
-    if (!cli && agent.assigned_phone_number_id) {
-      // Look up the phone number from the assignment
-      const { data: phoneNumber } = await ctx.adminClient
-        .from("phone_numbers")
-        .select("phone_number, phone_number_e164")
-        .eq("id", agent.assigned_phone_number_id)
-        .single()
-      
-      if (phoneNumber) {
-        // Prefer E.164 format, fall back to regular phone number
-        cli = phoneNumber.phone_number_e164 || phoneNumber.phone_number
-      }
-    }
-    
-    if (!cli) {
-      return apiError("Agent does not have a phone number assigned")
-    }
-
-    // Get all pending recipients
-    const { data: recipients, error: recipientsError } = await ctx.adminClient
+    // Check we have recipients
+    const { count: pendingCount, error: countError } = await ctx.adminClient
       .from("call_recipients")
-      .select("*")
+      .select("*", { count: "exact", head: true })
       .eq("campaign_id", id)
       .eq("call_status", "pending")
 
-    if (recipientsError) {
-      console.error("[CampaignStart] Error fetching recipients:", recipientsError)
-      return serverError("Failed to fetch recipients")
+    if (countError) {
+      console.error("[CampaignStart] Error counting recipients:", countError)
+      return serverError("Failed to count recipients")
     }
 
-    if (!recipients || recipients.length === 0) {
-      return apiError("No pending recipients to call")
-    }
-
-    // Build call list for Inspra API
-    // Map recipient data to Inspra variables format
-    const callList: InspraCallListItem[] = recipients.map((recipient) => ({
-      phone: recipient.phone_number,
-      variables: {
-        FIRST_NAME: recipient.first_name || "",
-        LAST_NAME: recipient.last_name || "",
-        EMAIL: recipient.email || "",
-        COMPANY_NAME: recipient.company || "",
-        REASON_FOR_CALL: recipient.reason_for_call || "",
-        ADDRESS: recipient.address_line_1 || "",
-        ADDRESS_LINE_2: recipient.address_line_2 || "",
-        CITY: recipient.suburb || "",
-        STATE: recipient.state || "",
-        POST_CODE: recipient.post_code || "",
-        COUNTRY: recipient.country || "",
-      },
-    }))
-
-    // Calculate NBF (not before) and EXP (expiry) dates
-    const now = new Date()
-    let nbf: Date
-    let exp: Date
-
-    if (campaign.schedule_type === "scheduled" && campaign.scheduled_start_at) {
-      nbf = new Date(campaign.scheduled_start_at)
-    } else {
-      nbf = now
-    }
-
-    // Set expiry - use scheduled_expires_at if set, otherwise 30 days from now
-    if (campaign.scheduled_expires_at) {
-      exp = new Date(campaign.scheduled_expires_at)
-    } else {
-      exp = new Date(nbf)
-      exp.setDate(exp.getDate() + 30)
-    }
-
-    // Convert business hours to block rules
-    const businessHoursConfig = campaign.business_hours_config as BusinessHoursConfig | null
-    const blockRules = businessHoursConfig 
-      ? convertBusinessHoursToBlockRules(businessHoursConfig)
-      : []
-
-    // Prepare Inspra API payload
-    const inspraPayload: InspraLoadJsonPayload = {
-      agentId: agent.external_agent_id,
-      workspaceId: ctx.workspace.id,
-      batchRef: `campaign-${campaign.id}`,
-      cli,
-      callList,
-      nbf: nbf.toISOString(),
-      exp: exp.toISOString(),
-      blockRules,
-    }
-
-    console.log("[CampaignStart] Sending to Inspra API:", {
-      campaignId: id,
-      agentId: agent.external_agent_id,
-      recipientCount: callList.length,
-      blockRulesCount: blockRules.length,
-    })
-
-    // Call Inspra API
-    const inspraResponse = await fetch(`${INSPRA_API_BASE_URL}/load-json`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        // Add API key if required
-        ...(process.env.INSPRA_API_KEY && {
-          "Authorization": `Bearer ${process.env.INSPRA_API_KEY}`,
-        }),
-      },
-      body: JSON.stringify(inspraPayload),
-    })
-
-    if (!inspraResponse.ok) {
-      const errorText = await inspraResponse.text()
-      console.error("[CampaignStart] Inspra API error:", {
-        status: inspraResponse.status,
-        body: errorText,
-      })
-      return apiError(`Failed to start campaign: ${errorText}`, inspraResponse.status)
+    if (!pendingCount || pendingCount === 0) {
+      return apiError("No pending recipients to call. Add recipients first.")
     }
 
     // Update campaign status to active
+    // The batch was already sent to Inspra on CREATE
+    // Inspra will handle the actual calling based on NBF/EXP/blockRules
     const { data: updatedCampaign, error: updateError } = await ctx.adminClient
       .from("call_campaigns")
       .update({
         status: "active",
         started_at: new Date().toISOString(),
+        pending_calls: pendingCount,
       })
       .eq("id", id)
-      .select()
+      .select(`
+        *,
+        agent:ai_agents!agent_id(id, name, provider, is_active, external_agent_id)
+      `)
       .single()
 
     if (updateError) {
       console.error("[CampaignStart] Error updating campaign status:", updateError)
-      // Campaign was sent to Inspra but status update failed
-      // This is a partial success - log and continue
+      return serverError("Failed to update campaign status")
     }
+
+    console.log("[CampaignStart] Campaign started:", {
+      campaignId: id,
+      batchRef: `campaign-${id}`,
+      pendingRecipients: pendingCount,
+    })
+
+    // NOTE: In production, if Inspra supports updating NBF, we would call:
+    // await updateBatchNbf({ batchRef: `campaign-${id}`, nbf: new Date().toISOString() })
+    // For now, the batch timing is controlled by what was sent on CREATE
 
     return apiResponse({
       success: true,
-      campaign: updatedCampaign || campaign,
-      batchRef: `campaign-${campaign.id}`,
-      recipientCount: callList.length,
+      campaign: updatedCampaign,
+      batchRef: `campaign-${id}`,
+      recipientCount: pendingCount,
+      message: "Campaign started. Calls will be processed by Inspra according to schedule.",
     })
   } catch (error) {
     console.error("[CampaignStart] Exception:", error)
     return serverError("Internal server error")
   }
 }
-
