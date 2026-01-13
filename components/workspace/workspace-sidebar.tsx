@@ -32,7 +32,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { AccessibleWorkspace } from "@/types/database.types"
@@ -46,8 +45,8 @@ interface Props {
   partnerRole?: "owner" | "admin" | "member" | null
 }
 
-// Max workspaces to show in dropdown before showing "View all" link
-const MAX_DROPDOWN_WORKSPACES = 8
+// Max workspaces to show in dropdown before showing search
+const MAX_DROPDOWN_WORKSPACES = 5
 
 // Generate a consistent gradient based on string
 function getWorkspaceGradient(str: string): string {
@@ -120,12 +119,9 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
 
   // Determine if we should show search (more than MAX_DROPDOWN_WORKSPACES workspaces)
   const showSearch = workspaces.length > MAX_DROPDOWN_WORKSPACES
-  const showViewAll = workspaces.length > MAX_DROPDOWN_WORKSPACES && !searchQuery
 
-  // Limit displayed workspaces in dropdown
-  const displayedWorkspaces = showViewAll 
-    ? filteredWorkspaces.slice(0, MAX_DROPDOWN_WORKSPACES)
-    : filteredWorkspaces
+  // Show all filtered workspaces with scrolling
+  const displayedWorkspaces = filteredWorkspaces
 
   const navigation = [
     { title: "Dashboard", href: `${baseUrl}/dashboard`, icon: LayoutDashboard },
@@ -241,14 +237,14 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
           </DropdownMenuTrigger>
           <DropdownMenuContent 
             align="start" 
-            className="w-80 p-0" 
-            sideOffset={8}
+            className="w-[min(calc(100vw-1rem),16rem)] p-0 flex flex-col max-h-[min(calc(100vh-8rem),22rem)]" 
+            sideOffset={6}
           >
             {/* Header with workspace count */}
-            <div className="px-3 py-2.5 border-b border-border">
+            <div className="px-2.5 py-1.5 border-b border-border shrink-0">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground">Switch workspace</p>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                <p className="text-[11px] font-medium text-muted-foreground">Switch workspace</p>
+                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-3.5">
                   {workspaces.length}
                 </Badge>
               </div>
@@ -256,28 +252,28 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
 
             {/* Search Input (only show if many workspaces) */}
             {showSearch && (
-              <div className="px-2 py-2 border-b border-border">
+              <div className="px-1.5 py-1.5 border-b border-border shrink-0">
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                   <Input
-                    placeholder="Search workspaces..."
+                    placeholder="Search..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-8 pl-8 text-sm bg-muted/50 border-0 focus-visible:ring-1"
+                    className="h-7 pl-7 text-xs bg-muted/50 border-0 focus-visible:ring-1"
                     autoFocus
                   />
                 </div>
               </div>
             )}
 
-            {/* Workspace List */}
-            <ScrollArea className="max-h-64">
-              <div className="p-1.5 space-y-0.5">
+            {/* Workspace List - Scrollable */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="p-1 space-y-0.5">
                 {displayedWorkspaces.length === 0 ? (
-                  <div className="px-3 py-6 text-center">
-                    <p className="text-sm text-muted-foreground">No workspaces found</p>
+                  <div className="px-2 py-3 text-center">
+                    <p className="text-xs text-muted-foreground">No workspaces found</p>
                     {searchQuery && (
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
                         Try a different search term
                       </p>
                     )}
@@ -292,7 +288,7 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
                         <Link
                           href={`/w/${ws.slug}/dashboard`}
                           className={cn(
-                            "flex items-center gap-2.5 p-2 rounded-lg cursor-pointer w-full transition-colors",
+                            "flex items-center gap-2 p-1.5 rounded-md cursor-pointer w-full transition-colors",
                             isCurrent 
                               ? "bg-primary/10 border border-primary/20" 
                               : "hover:bg-muted border border-transparent"
@@ -300,32 +296,26 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
                         >
                           <div
                             className={cn(
-                              "h-8 w-8 rounded-lg flex items-center justify-center text-white font-semibold text-xs shrink-0 bg-gradient-to-br shadow-sm",
+                              "h-7 w-7 rounded-md flex items-center justify-center text-white font-semibold text-[10px] shrink-0 bg-gradient-to-br shadow-sm",
                               getWorkspaceGradient(ws.name)
                             )}
                           >
                             {getInitials(ws.name)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <p className="font-medium text-sm text-foreground truncate">{ws.name}</p>
+                            <div className="flex items-center gap-1">
+                              <p className="font-medium text-xs text-foreground truncate">{ws.name}</p>
                               {isCurrent && (
-                                <Check className="h-3.5 w-3.5 text-primary shrink-0" />
-                              )}
-                              {ws.is_partner_admin_access && (
-                                <ExternalLink className="h-3 w-3 text-purple-500 shrink-0" />
+                                <Check className="h-3 w-3 text-primary shrink-0" />
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <roleInfo.icon className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">{roleInfo.label}</span>
-                              {ws.is_partner_admin_access && ws.owner_email && (
-                                <>
-                                  <span className="text-muted-foreground/50">•</span>
-                                  <span className="text-xs text-muted-foreground truncate max-w-[100px]">
-                                    {ws.owner_email}
-                                  </span>
-                                </>
+                            <div className="flex items-center gap-1">
+                              <roleInfo.icon className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
+                              <span className="text-[10px] text-muted-foreground">{roleInfo.label}</span>
+                              {ws.is_partner_admin_access && (
+                                <Badge variant="outline" className="text-[8px] px-1 py-0 h-3 bg-purple-500/10 text-purple-600 border-purple-500/20 shrink-0 ml-0.5">
+                                  Admin
+                                </Badge>
                               )}
                             </div>
                           </div>
@@ -334,39 +324,26 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
                     )
                   })
                 )}
-
-                {/* Show "View all" if there are more workspaces */}
-                {showViewAll && filteredWorkspaces.length > MAX_DROPDOWN_WORKSPACES && (
-                  <div className="px-2 pt-1">
-                    <Link
-                      href="/select-workspace"
-                      className="flex items-center justify-center gap-1.5 py-1.5 text-xs text-primary hover:underline"
-                    >
-                      View all {workspaces.length} workspaces
-                    </Link>
-                  </div>
-                )}
               </div>
-            </ScrollArea>
+            </div>
 
-            {/* Actions - Only show for partner admins/owners who may have multiple workspaces */}
+            {/* Footer - View all workspaces (for partner admins) */}
             {isPartnerAdmin && (
-              <>
-                <DropdownMenuSeparator className="my-0" />
-                <div className="p-1.5 space-y-0.5">
+              <div className="border-t border-border shrink-0">
+                <div className="p-1">
                   <DropdownMenuItem asChild>
                     <Link
                       href="/select-workspace"
-                      className="flex items-center gap-2.5 px-2 py-2 cursor-pointer rounded-lg"
+                      className="flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded-md hover:bg-muted"
                     >
-                      <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center">
-                        <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
+                      <div className="h-5 w-5 rounded bg-muted flex items-center justify-center shrink-0">
+                        <LayoutGrid className="h-3 w-3 text-muted-foreground" />
                       </div>
-                      <span className="text-sm font-medium">View all workspaces</span>
+                      <span className="text-xs font-medium">View all workspaces</span>
                     </Link>
                   </DropdownMenuItem>
                 </div>
-              </>
+              </div>
             )}
           </DropdownMenuContent>
         </DropdownMenu>

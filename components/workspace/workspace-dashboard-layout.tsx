@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { WorkspaceSidebar } from "./workspace-sidebar"
 import { WorkspaceHeader } from "./workspace-header"
+import { WorkspaceMobileSidebar } from "./workspace-mobile-sidebar"
 import { PaywallBanner } from "./paywall-banner"
 import { BrandingProvider } from "@/context/branding-context"
 import { cn } from "@/lib/utils"
@@ -65,6 +66,7 @@ export function WorkspaceDashboardLayout({
   children,
 }: Props) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isMobileOpen, setIsMobileOpen] = useState(false)
 
   // Load saved collapsed state on mount
   useEffect(() => {
@@ -74,10 +76,14 @@ export function WorkspaceDashboardLayout({
     }
   }, [])
 
-  const toggleSidebar = () => {
+  const toggleDesktopSidebar = () => {
     const newCollapsed = !isCollapsed
     setIsCollapsed(newCollapsed)
     localStorage.setItem("workspace-sidebar-collapsed", String(newCollapsed))
+  }
+
+  const toggleMobileSidebar = () => {
+    setIsMobileOpen(!isMobileOpen)
   }
 
   // Compute CSS custom properties from partner branding
@@ -109,6 +115,7 @@ export function WorkspaceDashboardLayout({
         className={cn("workspace-theme flex h-screen overflow-hidden bg-background text-foreground")}
         style={brandingStyles as React.CSSProperties}
       >
+        {/* Desktop Sidebar */}
         <WorkspaceSidebar
           partner={partner}
           currentWorkspace={currentWorkspace}
@@ -116,6 +123,17 @@ export function WorkspaceDashboardLayout({
           isCollapsed={isCollapsed}
           partnerRole={partnerRole}
         />
+        
+        {/* Mobile Sidebar */}
+        <WorkspaceMobileSidebar
+          partner={partner}
+          currentWorkspace={currentWorkspace}
+          workspaces={workspaces}
+          partnerRole={partnerRole}
+          isOpen={isMobileOpen}
+          onClose={() => setIsMobileOpen(false)}
+        />
+        
         <div className="flex-1 flex flex-col overflow-hidden">
           <WorkspaceHeader
             user={user}
@@ -123,10 +141,11 @@ export function WorkspaceDashboardLayout({
             currentWorkspace={currentWorkspace}
             workspaces={workspaces}
             isCollapsed={isCollapsed}
-            onToggleSidebar={toggleSidebar}
+            onToggleDesktopSidebar={toggleDesktopSidebar}
+            onToggleMobileSidebar={toggleMobileSidebar}
             partnerRole={partnerRole}
           />
-          <main className="flex-1 overflow-y-auto bg-muted/30 p-6">
+          <main className="flex-1 overflow-y-auto bg-muted/30 p-4 sm:p-6">
             <div className="max-w-[1400px] mx-auto space-y-6">
               <PaywallBanner workspaceSlug={currentWorkspace.slug} />
               {children}

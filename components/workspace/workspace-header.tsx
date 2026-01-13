@@ -37,7 +37,8 @@ interface Props {
   currentWorkspace: AccessibleWorkspace
   workspaces: AccessibleWorkspace[]
   isCollapsed: boolean
-  onToggleSidebar: () => void
+  onToggleDesktopSidebar: () => void
+  onToggleMobileSidebar: () => void
   partnerRole?: PartnerMemberRole | null
 }
 
@@ -62,7 +63,8 @@ export function WorkspaceHeader({
   currentWorkspace,
   workspaces,
   isCollapsed,
-  onToggleSidebar,
+  onToggleDesktopSidebar,
+  onToggleMobileSidebar,
   partnerRole,
 }: Props) {
   // Check if user is a partner admin/owner
@@ -126,29 +128,29 @@ export function WorkspaceHeader({
   return (
     <header className="h-16 border-b border-border bg-background/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0">
       {/* Left side - Collapse Button + Breadcrumbs */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
+        {/* Mobile Menu Button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="lg:hidden h-9 w-9"
+          onClick={onToggleMobileSidebar}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+
         {/* Desktop Collapse Button */}
         <Button
           variant="ghost"
           size="icon"
           className="hidden lg:flex h-9 w-9"
-          onClick={onToggleSidebar}
+          onClick={onToggleDesktopSidebar}
         >
           {isCollapsed ? (
             <PanelLeft className="h-5 w-5" />
           ) : (
             <PanelLeftClose className="h-5 w-5" />
           )}
-        </Button>
-
-        {/* Mobile Menu Button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="lg:hidden h-9 w-9"
-          onClick={onToggleSidebar}
-        >
-          <Menu className="h-5 w-5" />
         </Button>
 
         {/* Breadcrumbs */}
