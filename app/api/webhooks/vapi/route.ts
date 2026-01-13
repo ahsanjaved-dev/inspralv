@@ -14,6 +14,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { processCallCompletion } from "@/lib/billing/usage"
+import { indexCallLogToAlgolia } from "@/lib/algolia"
+import type { AgentProvider, Conversation } from "@/types/database.types"
 
 // Disable body parsing - we need the raw body for signature verification
 export const dynamic = "force-dynamic"
@@ -28,6 +30,7 @@ interface VapiWebhookPayload {
     call: {
       id: string
       orgId: string
+      type?: string // "webCall", "inboundPhoneCall", "outboundPhoneCall"
       assistantId?: string
       startedAt: string
       endedAt?: string
@@ -51,6 +54,7 @@ interface VapiWebhookPayload {
       }
       customer?: {
         number: string
+        name?: string
       }
       endedReason?: string
       recordingUrl?: string
@@ -298,11 +302,18 @@ async function handleStatusUpdate(payload: VapiWebhookPayload) {
 /**
  * Handle end-of-call-report event from VAPI
  * This contains the complete call summary with transcript and recording
+ * 
+ * For phone calls (inbound/outbound), this may be the first time we hear about the call,
+ * so we create the conversation if it doesn't exist.
  */
 async function handleEndOfCallReport(payload: VapiWebhookPayload) {
   const { call } = payload.message
 
-  console.log(`[VAPI Webhook] End of call report: ${call?.id}`)
+  console.log(`[VAPI Webhook] End of call report: ${call?.id}`, {
+    type: call?.type,
+    assistantId: call?.assistantId,
+    customer: call?.customer,
+  })
 
   if (!prisma || !call?.id) {
     console.error("[VAPI Webhook] Prisma not configured or no call ID")
@@ -310,7 +321,7 @@ async function handleEndOfCallReport(payload: VapiWebhookPayload) {
   }
 
   // Find conversation with workspace for billing
-  const conversation = await prisma.conversation.findFirst({
+  let conversation = await prisma.conversation.findFirst({
     where: { externalId: call.id },
     include: {
       workspace: {
@@ -322,14 +333,116 @@ async function handleEndOfCallReport(payload: VapiWebhookPayload) {
       agent: {
         select: {
           id: true,
+          name: true,
+          provider: true,
           config: true,
         },
       },
     },
   })
 
+  // If conversation doesn't exist, this is likely a phone call that wasn't ingested yet
+  // Create it now using the assistant ID to find the agent
+  if (!conversation && call.assistantId) {
+    console.log(`[VAPI Webhook] Conversation not found, attempting to create for phone call: ${call.id}`)
+    
+    // Find agent by external_agent_id (VAPI assistant ID)
+    const agent = await prisma.aIAgent.findFirst({
+      where: { 
+        externalAgentId: call.assistantId,
+        deletedAt: null,
+      },
+      include: {
+        workspace: {
+          select: {
+            id: true,
+            partnerId: true,
+          },
+        },
+      },
+    })
+
+    if (!agent) {
+      console.error(`[VAPI Webhook] Agent not found for assistantId: ${call.assistantId}`)
+      return
+    }
+
+    if (!agent.workspace) {
+      console.error(`[VAPI Webhook] Agent ${agent.id} has no workspace`)
+      return
+    }
+
+    // Determine direction from call type
+    let direction: "inbound" | "outbound" = "outbound"
+    if (call.type === "inboundPhoneCall") {
+      direction = "inbound"
+    }
+
+    // Calculate duration
+    const startedAt = call.startedAt ? new Date(call.startedAt) : new Date()
+    const endedAt = call.endedAt ? new Date(call.endedAt) : new Date()
+    const durationMs = endedAt.getTime() - startedAt.getTime()
+    const durationSeconds = Math.max(0, Math.floor(durationMs / 1000))
+
+    // Create the conversation
+    const newConversation = await prisma.conversation.create({
+      data: {
+        externalId: call.id,
+        workspaceId: agent.workspace.id,
+        agentId: agent.id,
+        direction: direction,
+        status: "completed",
+        startedAt: startedAt,
+        endedAt: endedAt,
+        durationSeconds: durationSeconds,
+        transcript: call.transcript || null,
+        recordingUrl: call.recordingUrl || null,
+        phoneNumber: call.customer?.number || null,
+        callerName: call.customer?.name || null,
+        totalCost: call.cost || 0,
+        metadata: {
+          provider: "vapi",
+          call_type: call.type, // "inboundPhoneCall", "outboundPhoneCall", "webCall"
+          ended_reason: call.endedReason,
+          vapi_cost_breakdown: call.costBreakdown,
+          assistant_id: call.assistantId,
+        },
+      },
+      include: {
+        workspace: {
+          select: {
+            id: true,
+            partnerId: true,
+          },
+        },
+        agent: {
+          select: {
+            id: true,
+            name: true,
+            provider: true,
+            config: true,
+          },
+        },
+      },
+    })
+
+    console.log(`[VAPI Webhook] Created conversation for phone call: ${newConversation.id}`)
+    conversation = newConversation
+
+    // Index to Algolia (async, don't block)
+    indexCallLogToAlgolia({
+      conversation: newConversation as unknown as Conversation,
+      workspaceId: agent.workspace.id,
+      partnerId: agent.workspace.partnerId,
+      agentName: agent.name,
+      agentProvider: agent.provider as AgentProvider,
+    }).catch((err) => {
+      console.error("[VAPI Webhook] Algolia indexing failed:", err)
+    })
+  }
+
   if (!conversation) {
-    console.error(`[VAPI Webhook] Conversation not found for call: ${call.id}`)
+    console.error(`[VAPI Webhook] Conversation not found and could not be created for call: ${call.id}`)
     return
   }
 
@@ -338,14 +451,14 @@ async function handleEndOfCallReport(payload: VapiWebhookPayload) {
     return
   }
 
-  // Calculate duration
+  // Calculate duration for existing conversations
   const startedAt = call.startedAt ? new Date(call.startedAt) : conversation.startedAt
   const endedAt = call.endedAt ? new Date(call.endedAt) : new Date()
   const durationMs = startedAt && endedAt ? endedAt.getTime() - startedAt.getTime() : 0
   const durationSeconds = Math.max(0, Math.floor(durationMs / 1000))
 
-  // Update conversation with call details
-  await prisma.conversation.update({
+  // Update conversation with call details (for existing conversations)
+  const updatedConversation = await prisma.conversation.update({
     where: { id: conversation.id },
     data: {
       status: "completed",
@@ -353,13 +466,29 @@ async function handleEndOfCallReport(payload: VapiWebhookPayload) {
       durationSeconds: durationSeconds,
       transcript: call.transcript || conversation.transcript,
       recordingUrl: call.recordingUrl || conversation.recordingUrl,
+      phoneNumber: call.customer?.number || conversation.phoneNumber,
+      callerName: call.customer?.name || conversation.callerName,
       metadata: {
         ...(conversation.metadata as object),
+        call_type: call.type,
         vapi_ended_reason: call.endedReason,
         vapi_cost_breakdown: call.costBreakdown,
       },
     },
   })
+
+  // Re-index to Algolia for existing conversations that were updated
+  if (conversation.agent) {
+    indexCallLogToAlgolia({
+      conversation: updatedConversation as unknown as Conversation,
+      workspaceId: conversation.workspace.id,
+      partnerId: conversation.workspace.partnerId,
+      agentName: conversation.agent.name || "Unknown Agent",
+      agentProvider: (conversation.agent.provider as AgentProvider) || "vapi",
+    }).catch((err) => {
+      console.error("[VAPI Webhook] Algolia re-indexing failed:", err)
+    })
+  }
 
   // Process billing
   const result = await processCallCompletion({

@@ -1,20 +1,10 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import { useRouter, useParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import {
   Select,
   SelectContent,
@@ -31,32 +21,32 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ConversationDetailModal } from "@/components/workspace/conversations/conversation-detail-modal"
+import { AlgoliaSearchPanel } from "@/components/workspace/calls/algolia-search-panel"
+import { FallbackSearchPanel, type FallbackFilters } from "@/components/workspace/calls/fallback-search-panel"
 import { useWorkspaceCalls, useWorkspaceCallsStats } from "@/lib/hooks/use-workspace-calls"
 import { useWorkspaceAgents } from "@/lib/hooks/use-workspace-agents"
+import { useIsAlgoliaConfigured } from "@/lib/hooks/use-algolia-search"
 import { exportCallsToPDF, exportCallsToCSV } from "@/lib/utils/export-calls-pdf"
 import { toast } from "sonner"
 import {
   Phone,
-  Search,
   Loader2,
   Clock,
   CheckCircle,
   XCircle,
   ArrowDownLeft,
   ArrowUpRight,
-  ChevronLeft,
-  ChevronRight,
   Bot,
   Download,
   DollarSign,
   Activity,
   FileText,
-  // PlayCircle,
   Monitor,
   FileJson,
 } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 import type { ConversationWithAgent } from "@/types/database.types"
+import type { AlgoliaCallHit } from "@/lib/algolia/types"
 
 // ============================================================================
 // STATUS COLORS
@@ -77,33 +67,57 @@ const statusColors: Record<string, string> = {
 // ============================================================================
 
 export default function CallsPage() {
+  const router = useRouter()
+  const params = useParams()
+  const workspaceSlug = params?.workspaceSlug as string
+  
+  // Algolia state
+  const [algoliaResults, setAlgoliaResults] = useState<AlgoliaCallHit[]>([])
+  const [algoliaTotal, setAlgoliaTotal] = useState(0)
+  const [algoliaSearching, setAlgoliaSearching] = useState(false)
+  
+  // Fallback/DB state
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [directionFilter, setDirectionFilter] = useState<string>("all")
-  const [agentFilter, setAgentFilter] = useState<string>("all")
-  const [searchQuery, setSearchQuery] = useState("")
+  const [dbFilters, setDbFilters] = useState<FallbackFilters>({
+    search: "",
+    status: "all",
+    direction: "all",
+    agentId: "all",
+  })
+  
+  // Shared state
   const [selectedCall, setSelectedCall] = useState<ConversationWithAgent | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [exportFormat, setExportFormat] = useState<"pdf" | "csv">("pdf")
+  const [isResyncing, setIsResyncing] = useState(false)
 
-  const getCallTypeLabel = (call: ConversationWithAgent): "web" | "inbound" | "outbound" => {
-    const meta = call.metadata as Record<string, unknown> | null
-    const callType = typeof meta?.call_type === "string" ? meta.call_type : ""
-    if (callType.toLowerCase().includes("web")) return "web"
-    return call.direction === "inbound" ? "inbound" : "outbound"
+  // Check if Algolia is configured
+  const { isConfigured: algoliaConfigured, isLoading: algoliaLoading } = useIsAlgoliaConfigured()
+
+  const getCallTypeLabel = (call: ConversationWithAgent | AlgoliaCallHit): "web" | "inbound" | "outbound" => {
+    if ("call_type" in call && call.call_type) {
+      if (call.call_type.toLowerCase().includes("web")) return "web"
+    }
+    if ("metadata" in call) {
+      const meta = call.metadata as Record<string, unknown> | null
+      const callType = typeof meta?.call_type === "string" ? meta.call_type : ""
+      if (callType.toLowerCase().includes("web")) return "web"
+    }
+    const direction = "direction" in call ? call.direction : "outbound"
+    return direction === "inbound" ? "inbound" : "outbound"
   }
 
-  // Fetch calls
+  // Fetch calls for DB mode (only when Algolia is not configured)
   const { data, isLoading, error } = useWorkspaceCalls({
     page,
     pageSize,
-    status: statusFilter !== "all" ? statusFilter : undefined,
+    status: dbFilters.status !== "all" ? dbFilters.status : undefined,
     direction:
-      directionFilter !== "all" && directionFilter !== "web" ? directionFilter : undefined,
-    callType: directionFilter === "web" ? "web" : undefined,
-    agentId: agentFilter !== "all" ? agentFilter : undefined,
-    search: searchQuery || undefined,
+      dbFilters.direction !== "all" && dbFilters.direction !== "web" ? dbFilters.direction : undefined,
+    callType: dbFilters.direction === "web" ? "web" : undefined,
+    agentId: dbFilters.agentId !== "all" ? dbFilters.agentId : undefined,
+    search: dbFilters.search || undefined,
   })
 
   // Fetch stats
@@ -113,13 +127,163 @@ export default function CallsPage() {
   const { data: agentsData } = useWorkspaceAgents({})
   const agents = agentsData?.data || []
 
-  const calls = data?.data || []
+  const dbCalls = data?.data || []
   const totalPages = data?.totalPages || 1
+
+  // Handle Algolia results
+  const handleAlgoliaResults = useCallback((results: AlgoliaCallHit[], totalHits: number, isSearching: boolean) => {
+    setAlgoliaResults(results)
+    setAlgoliaTotal(totalHits)
+    setAlgoliaSearching(isSearching)
+  }, [])
+
+  // Handle DB filter changes
+  const handleDbFiltersChange = useCallback((filters: FallbackFilters) => {
+    setDbFilters(filters)
+  }, [])
+
+  // Navigate to org integrations
+  const handleConfigureAlgolia = useCallback(() => {
+    router.push("/org/integrations")
+  }, [router])
+
+  // Resync Algolia data
+  const handleResyncAlgolia = useCallback(async () => {
+    if (!algoliaConfigured || !workspaceSlug) return
+    
+    setIsResyncing(true)
+    try {
+      const response = await fetch(`/api/w/${workspaceSlug}/calls/resync-algolia`, {
+        method: "POST",
+      })
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Resync failed")
+      }
+      
+      const result = await response.json()
+      toast.success(result.data?.message || `Re-synced ${result.data?.recordsIndexed || 0} records`)
+      
+      // Refresh the page to load new data
+      window.location.reload()
+    } catch (error) {
+      console.error("Resync error:", error)
+      toast.error(error instanceof Error ? error.message : "Failed to resync Algolia data")
+    } finally {
+      setIsResyncing(false)
+    }
+  }, [algoliaConfigured, workspaceSlug])
+
+  // Clear all Algolia data (no resync)
+  const [isClearing, setIsClearing] = useState(false)
+  const handleClearAlgolia = useCallback(async () => {
+    if (!algoliaConfigured || !workspaceSlug) return
+    
+    if (!confirm("Are you sure you want to clear all search data? New calls will be indexed automatically.")) {
+      return
+    }
+    
+    setIsClearing(true)
+    try {
+      const response = await fetch(`/api/w/${workspaceSlug}/calls/clear-algolia`, {
+        method: "POST",
+      })
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Clear failed")
+      }
+      
+      const result = await response.json()
+      toast.success(result.data?.message || "Search data cleared successfully")
+      
+      // Refresh the page
+      window.location.reload()
+    } catch (error) {
+      console.error("Clear error:", error)
+      toast.error(error instanceof Error ? error.message : "Failed to clear Algolia data")
+    } finally {
+      setIsClearing(false)
+    }
+  }, [algoliaConfigured, workspaceSlug])
+
+  // Handle view call detail from Algolia suggestion
+  const handleViewCallDetail = useCallback((conversationId: string) => {
+    // Find in Algolia results first, then in DB results
+    const fromAlgolia = algoliaResults.find(h => h.objectID === conversationId || h.conversation_id === conversationId)
+    if (fromAlgolia) {
+      const converted = convertAlgoliaToConversation([fromAlgolia])
+      if (converted.length > 0) {
+        setSelectedCall(converted[0])
+        return
+      }
+    }
+    
+    // Fallback: find in DB results
+    const fromDb = dbCalls.find(c => c.id === conversationId)
+    if (fromDb) {
+      setSelectedCall(fromDb)
+    }
+  }, [algoliaResults, dbCalls])
+
+  // Convert Algolia hits to ConversationWithAgent format for display
+  const convertAlgoliaToConversation = (hits: AlgoliaCallHit[]): ConversationWithAgent[] => {
+    return hits.map((hit) => ({
+      id: hit.conversation_id || hit.objectID,
+      conversation_id: hit.conversation_id,
+      external_id: hit.external_id,
+      workspace_id: hit.workspace_id,
+      agent_id: hit.agent_id,
+      phone_number: hit.phone_number,
+      caller_name: hit.caller_name,
+      status: hit.status as ConversationWithAgent["status"],
+      direction: hit.direction as ConversationWithAgent["direction"],
+      sentiment: hit.sentiment,
+      provider: hit.provider as ConversationWithAgent["provider"],
+      duration_seconds: hit.duration_seconds,
+      total_cost: hit.total_cost,
+      started_at: hit.started_at_timestamp ? new Date(hit.started_at_timestamp).toISOString() : null,
+      created_at: new Date(hit.created_at_timestamp).toISOString(),
+      updated_at: new Date(hit.created_at_timestamp).toISOString(),
+      transcript: hit.transcript || null,
+      summary: hit.summary || null,
+      recording_url: hit.recording_url,
+      metadata: hit.call_type ? { call_type: hit.call_type } : null,
+      agent: {
+        id: hit.agent_id || "",
+        name: hit.agent_name || "Unknown",
+        provider: hit.provider as "vapi" | "retell",
+        is_active: true,
+        workspace_id: hit.workspace_id,
+        external_id: null,
+        voice_id: null,
+        voice_provider: null,
+        first_message: null,
+        system_prompt: null,
+        llm_model: null,
+        llm_temperature: null,
+        silence_timeout_seconds: null,
+        max_call_duration_seconds: null,
+        background_sound: null,
+        agent_direction: "inbound",
+        tool_ids: null,
+        tools_config: null,
+        knowledge_base_ids: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      // Highlight info
+      _highlightResult: hit._highlightResult,
+    })) as ConversationWithAgent[]
+  }
 
   // Export handler
   const handleExportCalls = useCallback(async () => {
     try {
-      if (calls.length === 0) {
+      const callsToExport = algoliaConfigured ? convertAlgoliaToConversation(algoliaResults) : dbCalls
+      
+      if (callsToExport.length === 0) {
         toast.error("No calls to export on this page")
         return
       }
@@ -128,16 +292,16 @@ export default function CallsPage() {
 
       if (exportFormat === "pdf") {
         await exportCallsToPDF({
-          calls,
+          calls: callsToExport,
           fileName: `call-logs-${format(new Date(), "yyyy-MM-dd")}.pdf`,
         })
-        toast.success(`Exported ${calls.length} calls to PDF`)
+        toast.success(`Exported ${callsToExport.length} calls to PDF`)
       } else {
         exportCallsToCSV({
-          calls,
+          calls: callsToExport,
           fileName: `call-logs-${format(new Date(), "yyyy-MM-dd")}.csv`,
         })
-        toast.success(`Exported ${calls.length} calls to CSV`)
+        toast.success(`Exported ${callsToExport.length} calls to CSV`)
       }
     } catch (error) {
       console.error("Export error:", error)
@@ -145,7 +309,7 @@ export default function CallsPage() {
     } finally {
       setIsExporting(false)
     }
-  }, [calls, exportFormat])
+  }, [algoliaConfigured, algoliaResults, dbCalls, exportFormat])
 
   // Format duration
   const formatDuration = (seconds: number) => {
@@ -161,6 +325,11 @@ export default function CallsPage() {
     const secs = seconds % 60
     return `${mins}:${secs.toString().padStart(2, "0")}`
   }
+
+  // Get current calls based on Algolia availability
+  const currentCalls = algoliaConfigured ? convertAlgoliaToConversation(algoliaResults) : dbCalls
+  const currentTotal = algoliaConfigured ? algoliaTotal : (data?.total || 0)
+  const isCurrentLoading = algoliaConfigured ? algoliaSearching : isLoading
 
   return (
     <div className="space-y-6">
@@ -192,7 +361,7 @@ export default function CallsPage() {
               </SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={handleExportCalls} disabled={isExporting || calls.length === 0}>
+          <Button onClick={handleExportCalls} disabled={isExporting || currentCalls.length === 0}>
             {isExporting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -205,6 +374,46 @@ export default function CallsPage() {
               </>
             )}
           </Button>
+          {algoliaConfigured && (
+            <>
+              <Button 
+                variant="outline" 
+                onClick={handleClearAlgolia} 
+                disabled={isClearing}
+                title="Clear all search data - new calls will be indexed automatically"
+              >
+                {isClearing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Clearing...
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="mr-2 h-4 w-4" />
+                    Clear Search Data
+                  </>
+                )}
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={handleResyncAlgolia} 
+                disabled={isResyncing}
+                title="Re-sync all call data to Algolia"
+              >
+                {isResyncing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <Activity className="mr-2 h-4 w-4" />
+                    Resync Search
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -283,274 +492,175 @@ export default function CallsPage() {
         </Card>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by phone number, caller name, or transcript..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value)
-                  setPage(1)
-                }}
-                className="pl-9"
-              />
-            </div>
-
-            <Select
-              value={statusFilter}
-              onValueChange={(value) => {
-                setStatusFilter(value)
-                setPage(1)
-              }}
-            >
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
-                <SelectItem value="no_answer">No Answer</SelectItem>
-                <SelectItem value="busy">Busy</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={directionFilter}
-              onValueChange={(value) => {
-                setDirectionFilter(value)
-                setPage(1)
-              }}
-            >
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Direction" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Directions</SelectItem>
-                <SelectItem value="inbound">Inbound</SelectItem>
-                <SelectItem value="outbound">Outbound</SelectItem>
-                <SelectItem value="web">Web Calls</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={agentFilter}
-              onValueChange={(value) => {
-                setAgentFilter(value)
-                setPage(1)
-              }}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Agent" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Agents</SelectItem>
-                {agents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select 
-              value={pageSize.toString()} 
-              onValueChange={(value) => {
-                setPageSize(parseInt(value))
-                setPage(1)
-              }}
-            >
-              <SelectTrigger className="w-[120px]">
-                <SelectValue placeholder="Page Size" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10 per page</SelectItem>
-                <SelectItem value="20">20 per page</SelectItem>
-                <SelectItem value="50">50 per page</SelectItem>
-                <SelectItem value="100">100 per page</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Search Panel - Automatically switches based on Algolia configuration */}
+      {algoliaLoading ? (
+        <Card>
+          <CardContent className="py-8 flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mr-2" />
+            <span className="text-muted-foreground">Loading search...</span>
+          </CardContent>
+        </Card>
+      ) : algoliaConfigured ? (
+        <AlgoliaSearchPanel
+          agents={agents}
+          onResultsChange={handleAlgoliaResults}
+          onViewCallDetail={handleViewCallDetail}
+        />
+      ) : (
+        <FallbackSearchPanel
+          agents={agents}
+          onFiltersChange={handleDbFiltersChange}
+          totalResults={data?.total || 0}
+          currentPage={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size)
+            setPage(1)
+          }}
+          isLoading={isLoading}
+          showAlgoliaBanner={true}
+          onConfigureAlgolia={handleConfigureAlgolia}
+        />
+      )}
 
       {/* Calls Table */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" />
-            Call History
-          </CardTitle>
-          <CardDescription>
-            {data?.total || 0} total calls
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Call History
+              </CardTitle>
+              <CardDescription>
+                {currentTotal || 0} total calls
+              </CardDescription>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isCurrentLoading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : calls.length === 0 ? (
+          ) : currentCalls.length === 0 ? (
             <div className="text-center py-12">
               <Phone className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
               <h3 className="mt-4 text-lg font-medium">No calls found</h3>
               <p className="text-muted-foreground mt-1">
-                {searchQuery || statusFilter !== "all" || directionFilter !== "all" || agentFilter !== "all"
-                  ? "Try adjusting your search or filters"
-                  : "Calls will appear here when your agents handle calls"}
+                Try searching with different terms or adjusting filters
               </p>
             </div>
           ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Caller</TableHead>
-                    <TableHead>Agent</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Cost</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead className="w-20">Details</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {calls.map((call) => (
-                    <TableRow
-                      key={call.id}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => setSelectedCall(call)}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Phone className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <p className="font-medium">
-                              {call.caller_name || "Unknown"}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {call.phone_number || "No number"}
-                            </p>
-                          </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Caller</TableHead>
+                  <TableHead>Agent</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Cost</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead className="w-20">Details</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {currentCalls.map((call) => (
+                  <TableRow
+                    key={call.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => setSelectedCall(call)}
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="font-medium">
+                            {call.caller_name || "Unknown"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {call.phone_number || "No number"}
+                          </p>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Bot className="h-4 w-4 text-muted-foreground" />
-                          <span>{call.agent?.name || "Unknown"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {(() => {
-                          const type = getCallTypeLabel(call)
-                          if (type === "web") {
-                            return (
-                              <div className="flex items-center gap-1 text-purple-600">
-                                <Monitor className="h-4 w-4" />
-                                <span>Web Call</span>
-                              </div>
-                            )
-                          }
-                          if (type === "inbound") {
-                            return (
-                              <div className="flex items-center gap-1 text-green-600">
-                                <ArrowDownLeft className="h-4 w-4" />
-                                <span>Inbound</span>
-                              </div>
-                            )
-                          }
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Bot className="h-4 w-4 text-muted-foreground" />
+                        <span>{call.agent?.name || "Unknown"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const type = getCallTypeLabel(call)
+                        if (type === "web") {
                           return (
-                            <div className="flex items-center gap-1 text-blue-600">
-                              <ArrowUpRight className="h-4 w-4" />
-                              <span>Outbound</span>
+                            <div className="flex items-center gap-1 text-purple-600">
+                              <Monitor className="h-4 w-4" />
+                              <span>Web Call</span>
                             </div>
                           )
-                        })()}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={statusColors[call.status] || statusColors.completed}>
-                          {call.status.replace("_", " ")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <Clock className="h-4 w-4" />
-                          <span>{formatDuration(call.duration_seconds)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <DollarSign className="h-4 w-4" />
-                          <span>${(call.total_cost || 0).toFixed(2)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {call.started_at
-                          ? formatDistanceToNow(new Date(call.started_at), {
-                              addSuffix: true,
-                            })
-                          : call.created_at
-                          ? formatDistanceToNow(new Date(call.created_at), {
-                              addSuffix: true,
-                            })
-                          : "N/A"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          {call.transcript && (
-                            <span title="Has transcript">
-                              <FileText className="h-4 w-4 text-muted-foreground" />
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-6 pt-6 border-t">
-                  <div className="text-sm text-muted-foreground">
-                    <p>
-                      Showing <span className="font-semibold">{calls.length}</span> of{" "}
-                      <span className="font-semibold">{data?.total || 0}</span> calls
-                    </p>
-                    <p className="mt-1">
-                      Page <span className="font-semibold">{page}</span> of{" "}
-                      <span className="font-semibold">{totalPages}</span>
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={page === 1 || isLoading}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages || isLoading}
-                    >
-                      Next
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
+                        }
+                        if (type === "inbound") {
+                          return (
+                            <div className="flex items-center gap-1 text-green-600">
+                              <ArrowDownLeft className="h-4 w-4" />
+                              <span>Inbound</span>
+                            </div>
+                          )
+                        }
+                        return (
+                          <div className="flex items-center gap-1 text-blue-600">
+                            <ArrowUpRight className="h-4 w-4" />
+                            <span>Outbound</span>
+                          </div>
+                        )
+                      })()}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={statusColors[call.status] || statusColors.completed}>
+                        {call.status.replace("_", " ")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-4 w-4" />
+                        <span>{formatDuration(call.duration_seconds)}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <DollarSign className="h-4 w-4" />
+                        <span>${(call.total_cost || 0).toFixed(2)}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {call.started_at
+                        ? formatDistanceToNow(new Date(call.started_at), {
+                            addSuffix: true,
+                          })
+                        : call.created_at
+                        ? formatDistanceToNow(new Date(call.created_at), {
+                            addSuffix: true,
+                          })
+                        : "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {call.transcript && (
+                          <span title="Has transcript">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
