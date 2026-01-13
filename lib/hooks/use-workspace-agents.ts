@@ -74,7 +74,88 @@ export function useCreateWorkspaceAgent() {
       }
       return res.json()
     },
-    onSuccess: () => {
+    // Optimistic update: add the new agent immediately to the cache
+    onMutate: async (newAgentData: CreateWorkspaceAgentInput) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["workspace-agents", workspaceSlug] })
+
+      // Snapshot previous values for all possible query variations
+      const previousData: { key: unknown[]; data: PaginatedResponse<AIAgent> | undefined }[] = []
+      
+      // Get all workspace-agents queries for this workspace
+      const queries = queryClient.getQueriesData<PaginatedResponse<AIAgent>>({
+        queryKey: ["workspace-agents", workspaceSlug],
+      })
+
+      // Create an optimistic agent object
+      const optimisticAgent: AIAgent = {
+        id: `temp-${Date.now()}`, // Temporary ID
+        name: newAgentData.name,
+        description: newAgentData.description || null,
+        provider: newAgentData.provider,
+        agent_direction: newAgentData.agent_direction || "inbound",
+        is_active: true,
+        workspace_id: "", // Will be populated from server
+        config: newAgentData.config || {},
+        external_agent_id: null,
+        external_llm_id: null,
+        sync_status: "not_synced",
+        needs_resync: false,
+        last_sync_at: null,
+        last_sync_error: null,
+        total_calls: 0,
+        total_minutes: 0,
+        total_cost: 0,
+        allow_outbound: false,
+        assigned_phone_number_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+
+      // Update all matching queries with the optimistic agent
+      for (const [key, data] of queries) {
+        if (data) {
+          previousData.push({ key, data })
+          queryClient.setQueryData<PaginatedResponse<AIAgent>>(key, {
+            ...data,
+            data: [optimisticAgent, ...data.data],
+            total: data.total + 1,
+          })
+        }
+      }
+
+      return { previousData, optimisticAgent }
+    },
+    // On success, update the optimistic entry with the real data
+    onSuccess: (response, _variables, context) => {
+      const newAgent = response.data as AIAgent
+      
+      // Replace the optimistic agent with the real one
+      const queries = queryClient.getQueriesData<PaginatedResponse<AIAgent>>({
+        queryKey: ["workspace-agents", workspaceSlug],
+      })
+
+      for (const [key, data] of queries) {
+        if (data && context?.optimisticAgent) {
+          queryClient.setQueryData<PaginatedResponse<AIAgent>>(key, {
+            ...data,
+            data: data.data.map((agent) =>
+              agent.id === context.optimisticAgent.id ? newAgent : agent
+            ),
+          })
+        }
+      }
+    },
+    // Rollback on error
+    onError: (_error, _variables, context) => {
+      if (context?.previousData) {
+        for (const { key, data } of context.previousData) {
+          queryClient.setQueryData(key, data)
+        }
+      }
+    },
+    // Always refetch to ensure consistency
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["workspace-agents", workspaceSlug] })
     },
   })

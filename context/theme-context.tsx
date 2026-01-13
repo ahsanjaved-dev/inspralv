@@ -8,6 +8,7 @@ interface ThemeContextValue {
   theme: Theme
   setTheme: (theme: Theme) => void
   resolvedTheme: "light" | "dark"
+  isHydrated: boolean
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -20,6 +21,7 @@ export function useTheme() {
       theme: "system" as Theme,
       setTheme: () => {},
       resolvedTheme: "light" as const,
+      isHydrated: false,
     }
   }
   return context
@@ -47,6 +49,9 @@ export function ThemeProvider({
       setThemeState(stored)
     }
     setMounted(true)
+    
+    // Mark body as hydrated to hide the CSS loading spinner
+    document.body.classList.add("hydrated")
   }, [storageKey])
 
   // Apply theme to document
@@ -87,7 +92,7 @@ export function ThemeProvider({
 
   // Always provide context, but with current state
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme, isHydrated: mounted }}>
       {children}
     </ThemeContext.Provider>
   )
