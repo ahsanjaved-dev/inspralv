@@ -2,6 +2,11 @@
  * Partner Subscription Plans API
  * GET  - List all plans for the partner
  * POST - Create a new subscription plan
+ * 
+ * For agencies (non-platform partners):
+ * - Paid plans require Stripe Connect to be set up
+ * - Stripe Product/Price is created on the agency's connected account
+ * - Only subscription billing (prepaid) is supported
  */
 
 import { NextRequest } from "next/server"
@@ -9,9 +14,9 @@ import { z } from "zod"
 import { getPartnerAuthContext } from "@/lib/api/auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import { prisma } from "@/lib/prisma"
-import { getStripe } from "@/lib/stripe"
+import { getStripe, getConnectAccountId } from "@/lib/stripe"
 
-// Billing type enum
+// Billing type enum - currently only prepaid is supported for agencies
 const billingTypeEnum = z.enum(["prepaid", "postpaid"])
 
 // Validation schema for creating a plan
@@ -26,7 +31,7 @@ const createPlanSchema = z.object({
   maxConversationsPerMonth: z.number().int().min(1).nullable().optional(),
   isPublic: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
-  // Postpaid billing fields
+  // Postpaid billing fields - currently only supported for platform partner
   billingType: billingTypeEnum.default("prepaid"),
   postpaidMinutesLimit: z.number().int().min(1).nullable().optional(),
 }).refine(
@@ -53,6 +58,16 @@ export async function GET() {
     if (!prisma) {
       return serverError("Database not configured")
     }
+
+    // Get partner info to check Connect status
+    const partner = await prisma.partner.findUnique({
+      where: { id: auth.partner.id },
+      select: { settings: true, isPlatformPartner: true },
+    })
+
+    const isPlatformPartner = partner?.isPlatformPartner || false
+    const connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown> | null)
+    const hasStripeConnect = !!connectAccountId
 
     const plans = await prisma.workspaceSubscriptionPlan.findMany({
       where: {
@@ -91,6 +106,9 @@ export async function GET() {
         createdAt: plan.createdAt.toISOString(),
         updatedAt: plan.updatedAt.toISOString(),
       })),
+      // Include Stripe Connect status for UI
+      isPlatformPartner,
+      hasStripeConnect,
     })
   } catch (error) {
     console.error("GET /api/partner/subscription-plans error:", error)
@@ -123,7 +141,7 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data
 
-    // Get partner info including platform partner flag
+    // Get partner info including platform partner flag and settings
     const partner = await prisma.partner.findUnique({
       where: { id: auth.partner.id },
       select: { id: true, name: true, settings: true, isPlatformPartner: true },
@@ -133,47 +151,105 @@ export async function POST(request: NextRequest) {
       return unauthorized()
     }
 
-    // Check if this is a platform partner (uses Stripe)
-    // or a white-label partner (handles billing externally)
     const isPlatformPartner = partner.isPlatformPartner
+    const connectAccountId = getConnectAccountId(partner.settings as Record<string, unknown> | null)
+
+    // For agencies (non-platform partners): only subscription billing (prepaid) is supported
+    if (!isPlatformPartner && data.billingType === "postpaid") {
+      return apiError(
+        "Postpaid billing is not currently supported. Please use subscription (prepaid) billing.",
+        400
+      )
+    }
+
+    // For paid plans, agencies must have Stripe Connect set up
+    if (!isPlatformPartner && data.monthlyPriceCents > 0 && !connectAccountId) {
+      return apiError(
+        "Please connect your Stripe account before creating paid plans. Go to Billing settings to set up Stripe Connect.",
+        400
+      )
+    }
 
     let stripeProductId: string | undefined
     let stripePriceId: string | undefined
 
-    // Only create Stripe products for platform partner
-    // White-label partners handle billing externally
-    if (isPlatformPartner && data.monthlyPriceCents > 0) {
+    // Create Stripe Product/Price for paid plans
+    if (data.monthlyPriceCents > 0) {
       try {
         const stripe = getStripe()
 
-        // Create product on platform Stripe account
-        const product = await stripe.products.create({
-          name: data.name,
-          description: data.description || undefined,
-          metadata: {
-            partner_id: auth.partner.id,
-            type: "workspace_subscription",
-          },
-        })
+        if (isPlatformPartner) {
+          // Platform partner: create on main Stripe account
+          const product = await stripe.products.create({
+            name: data.name,
+            description: data.description || undefined,
+            metadata: {
+              partner_id: auth.partner.id,
+              type: "workspace_subscription",
+            },
+          })
 
-        // Create recurring price on platform Stripe account
-        const price = await stripe.prices.create({
-          product: product.id,
-          unit_amount: data.monthlyPriceCents,
-          currency: "usd",
-          recurring: {
-            interval: "month",
-          },
-          metadata: {
-            partner_id: auth.partner.id,
-          },
-        })
+          const price = await stripe.prices.create({
+            product: product.id,
+            unit_amount: data.monthlyPriceCents,
+            currency: "usd",
+            recurring: {
+              interval: "month",
+            },
+            metadata: {
+              partner_id: auth.partner.id,
+            },
+          })
 
-        stripeProductId = product.id
-        stripePriceId = price.id
+          stripeProductId = product.id
+          stripePriceId = price.id
+        } else if (connectAccountId) {
+          // Agency: create on their Stripe Connect account
+          const product = await stripe.products.create(
+            {
+              name: data.name,
+              description: data.description || undefined,
+              metadata: {
+                partner_id: auth.partner.id,
+                type: "workspace_subscription",
+              },
+            },
+            { stripeAccount: connectAccountId }
+          )
+
+          const price = await stripe.prices.create(
+            {
+              product: product.id,
+              unit_amount: data.monthlyPriceCents,
+              currency: "usd",
+              recurring: {
+                interval: "month",
+              },
+              metadata: {
+                partner_id: auth.partner.id,
+              },
+            },
+            { stripeAccount: connectAccountId }
+          )
+
+          stripeProductId = product.id
+          stripePriceId = price.id
+
+          console.log(
+            `[Subscription Plans] Created Stripe product/price on Connect account ${connectAccountId}: ` +
+            `product=${product.id}, price=${price.id}`
+          )
+        }
       } catch (stripeError) {
         console.error("Failed to create Stripe product/price:", stripeError)
-        // Continue without Stripe - can be linked later
+        // For agencies, this is a hard failure - they need Stripe set up properly
+        if (!isPlatformPartner) {
+          return apiError(
+            "Failed to create plan in Stripe. Please ensure your Stripe Connect account is fully set up and try again.",
+            500
+          )
+        }
+        // For platform partner, continue without Stripe - can be linked later
       }
     }
 

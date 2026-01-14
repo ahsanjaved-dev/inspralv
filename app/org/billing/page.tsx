@@ -373,10 +373,8 @@ export default function OrgBillingPage() {
       )}
 
       {/* ============================================================ */}
-      {/* STRIPE CONNECT - Only for Platform Partner                   */}
-      {/* White-label partners handle billing externally               */}
+      {/* STRIPE CONNECT - For all partners to process workspace payments */}
       {/* ============================================================ */}
-      {isBillingExempt && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -384,7 +382,10 @@ export default function OrgBillingPage() {
             Stripe Connect
           </CardTitle>
           <CardDescription>
-            Connect your Stripe account to process payments from your workspaces
+            {isBillingExempt 
+              ? "Connect your Stripe account to process payments from your workspaces"
+              : "Connect your Stripe account to create paid subscription plans and receive workspace payments"
+            }
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -468,8 +469,10 @@ export default function OrgBillingPage() {
           ) : (
             <div className="space-y-4">
               <p className="text-muted-foreground">
-                Connect your Stripe account to start accepting payments from your workspaces. 
-                This allows you to bill your clients directly through the platform.
+                {isBillingExempt 
+                  ? "Connect your Stripe account to start accepting payments from your workspaces. This allows you to bill your clients directly through the platform."
+                  : "Connect your Stripe account to create paid subscription plans. When workspaces subscribe, payments go directly to your connected Stripe account."
+                }
               </p>
               <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
                 <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
@@ -497,9 +500,8 @@ export default function OrgBillingPage() {
           )}
         </CardContent>
       </Card>
-      )}
 
-      {/* Info card for white-label partners about billing */}
+      {/* Info card for agencies about how billing works */}
       {!isBillingExempt && (
         <Card className="bg-muted/50">
           <CardContent className="pt-6">
@@ -508,12 +510,11 @@ export default function OrgBillingPage() {
                 <Info className="h-5 w-5 text-blue-500" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">About Billing</h3>
+                <h3 className="font-semibold mb-1">How Workspace Billing Works</h3>
                 <p className="text-sm text-muted-foreground">
-                  Your organization handles billing through your own payment system. 
-                  You can create subscription plans in the "Subscription Plans" section 
-                  to define resource limits for your clients, while managing actual billing 
-                  externally through your preferred payment processor.
+                  Create subscription plans in the &quot;Subscription Plans&quot; section. When workspaces subscribe 
+                  to your paid plans, payments are processed through your connected Stripe account. 
+                  A small platform fee is deducted from each transaction.
                 </p>
               </div>
             </div>

@@ -31,7 +31,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Plus, MoreHorizontal, Pencil, Trash2, Users, Clock, DollarSign, Check } from "lucide-react"
+import { Plus, MoreHorizontal, Pencil, Trash2, Users, Clock, DollarSign, Check, AlertCircle, Link2 } from "lucide-react"
+import Link from "next/link"
 import { useSubscriptionPlans, useCreateSubscriptionPlan, useUpdateSubscriptionPlan, useDeleteSubscriptionPlan, type CreatePlanInput } from "@/lib/hooks/use-subscription-plans"
 import { toast } from "sonner"
 
@@ -44,6 +45,8 @@ export default function PlansPage() {
   const [editingPlan, setEditingPlan] = useState<string | null>(null)
 
   const plans = data?.plans || []
+  const isPlatformPartner = data?.isPlatformPartner ?? false
+  const hasStripeConnect = data?.hasStripeConnect ?? false
 
   if (isLoading) {
     return (
@@ -110,9 +113,38 @@ export default function PlansPage() {
           <CreatePlanDialog 
             onSuccess={() => setIsCreateOpen(false)}
             createPlan={createPlan}
+            hasStripeConnect={hasStripeConnect}
+            isPlatformPartner={isPlatformPartner}
           />
         </Dialog>
       </div>
+
+      {/* Stripe Connect Warning for Agencies */}
+      {!isPlatformPartner && !hasStripeConnect && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-4">
+              <div className="h-10 w-10 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-amber-700 dark:text-amber-400">
+                  Stripe Connect Required for Paid Plans
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Connect your Stripe account to create paid subscription plans. Workspace subscriptions will be processed through your connected Stripe account.
+                </p>
+                <Button asChild variant="outline" size="sm" className="mt-3">
+                  <Link href="/org/billing">
+                    <Link2 className="h-4 w-4 mr-2" />
+                    Set Up Stripe Connect
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Plans Table */}
       {plans.length === 0 ? (
@@ -260,10 +292,14 @@ function Package({ className }: { className?: string }) {
 // Create Plan Dialog
 function CreatePlanDialog({ 
   onSuccess, 
-  createPlan 
+  createPlan,
+  hasStripeConnect,
+  isPlatformPartner,
 }: { 
   onSuccess: () => void
   createPlan: ReturnType<typeof useCreateSubscriptionPlan>
+  hasStripeConnect: boolean
+  isPlatformPartner: boolean
 }) {
   const [form, setForm] = useState<CreatePlanInput>({
     name: "",
@@ -272,7 +308,7 @@ function CreatePlanDialog({
     includedMinutes: 0,
     overageRateCents: 20,
     features: [],
-    billingType: "prepaid",
+    billingType: "prepaid", // Always prepaid for now (subscription billing)
     postpaidMinutesLimit: null,
     maxAgents: null,
     maxConversationsPerMonth: null,
@@ -280,10 +316,20 @@ function CreatePlanDialog({
   })
   const [featureInput, setFeatureInput] = useState("")
 
-  const isPostpaid = form.billingType === "postpaid"
+  // For agencies without Stripe Connect, paid plans are not allowed
+  const canCreatePaidPlan = isPlatformPartner || hasStripeConnect
+  const isPaidPlan = (form.monthlyPriceCents || 0) > 0
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Validate paid plan requirements for agencies
+    if (!isPlatformPartner && isPaidPlan && !hasStripeConnect) {
+      toast.error("Please connect your Stripe account first", {
+        description: "Go to Billing settings to set up Stripe Connect before creating paid plans.",
+      })
+      return
+    }
     
     try {
       await createPlan.mutateAsync(form)
@@ -339,63 +385,6 @@ function CreatePlanDialog({
           />
         </div>
 
-        {/* Billing Type Selection */}
-        <div className="space-y-3">
-          <Label>Billing Type</Label>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, billingType: "prepaid", postpaidMinutesLimit: null })}
-              className={`p-3 rounded-lg border-2 text-left transition-all ${
-                !isPostpaid 
-                  ? "border-primary bg-primary/5" 
-                  : "border-muted hover:border-muted-foreground/50"
-              }`}
-            >
-              <div className="font-medium">Prepaid</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Workspaces pay upfront with credits
-              </p>
-            </button>
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, billingType: "postpaid", postpaidMinutesLimit: 1000 })}
-              className={`p-3 rounded-lg border-2 text-left transition-all ${
-                isPostpaid 
-                  ? "border-primary bg-primary/5" 
-                  : "border-muted hover:border-muted-foreground/50"
-              }`}
-            >
-              <div className="font-medium">Postpaid</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Invoice at end of billing period
-              </p>
-            </button>
-          </div>
-        </div>
-
-        {/* Postpaid Minutes Limit - only shown for postpaid plans */}
-        {isPostpaid && (
-          <div className="space-y-2 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <Label htmlFor="postpaidLimit" className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-amber-600" />
-              Minutes Threshold
-            </Label>
-            <Input
-              id="postpaidLimit"
-              type="number"
-              min={1}
-              value={form.postpaidMinutesLimit || ""}
-              onChange={(e) => setForm({ ...form, postpaidMinutesLimit: parseInt(e.target.value) || null })}
-              placeholder="e.g. 1000"
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              Maximum minutes allowed per billing period. Calls will be blocked when this limit is reached.
-            </p>
-          </div>
-        )}
-
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="price">Monthly Price ($)</Label>
@@ -407,7 +396,13 @@ function CreatePlanDialog({
               value={(form.monthlyPriceCents || 0) / 100}
               onChange={(e) => setForm({ ...form, monthlyPriceCents: Math.round(parseFloat(e.target.value || "0") * 100) })}
             />
-            <p className="text-xs text-muted-foreground">Reference price (billed externally)</p>
+            <p className="text-xs text-muted-foreground">
+              {isPlatformPartner 
+                ? "Billed monthly via Stripe" 
+                : hasStripeConnect 
+                  ? "Billed via your Stripe Connect account" 
+                  : "Connect Stripe to enable paid plans"}
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="minutes">Included Minutes</Label>
@@ -420,6 +415,23 @@ function CreatePlanDialog({
             />
           </div>
         </div>
+
+        {/* Warning for agencies without Connect trying to create paid plan */}
+        {!isPlatformPartner && !hasStripeConnect && isPaidPlan && (
+          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-amber-700 dark:text-amber-400">
+                  Stripe Connect Required
+                </p>
+                <p className="text-muted-foreground mt-1">
+                  Connect your Stripe account in Billing settings to create paid plans.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -501,7 +513,10 @@ function CreatePlanDialog({
         </div>
 
         <DialogFooter>
-          <Button type="submit" disabled={createPlan.isPending}>
+          <Button 
+            type="submit" 
+            disabled={createPlan.isPending || (!canCreatePaidPlan && isPaidPlan)}
+          >
             {createPlan.isPending ? "Creating..." : "Create Plan"}
           </Button>
         </DialogFooter>

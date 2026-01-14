@@ -65,6 +65,9 @@ export interface UpdatePlanInput {
 
 export interface PlansResponse {
   plans: SubscriptionPlanDetails[]
+  // Stripe Connect status for the partner
+  isPlatformPartner?: boolean
+  hasStripeConnect?: boolean
 }
 
 export interface PlanResponse {
