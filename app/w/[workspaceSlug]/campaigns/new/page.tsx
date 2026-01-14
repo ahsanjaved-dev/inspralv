@@ -1,7 +1,18 @@
 "use client"
 
+/**
+ * New Campaign Page - Optimized Version
+ * 
+ * Key optimizations:
+ * 1. NO upfront draft creation - page loads instantly
+ * 2. All state managed locally via Zustand store
+ * 3. State persisted in sessionStorage for recovery
+ * 4. Campaign created on final submission only
+ * 5. Optional draft loading for resuming existing drafts
+ */
+
 import { useRouter, useParams, useSearchParams } from "next/navigation"
-import { useEffect, useState, useCallback, useRef, Suspense } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { CampaignWizard } from "@/components/workspace/campaigns/campaign-wizard-dynamic"
 import { CampaignLoading } from "@/components/workspace/campaigns/campaign-loading"
 import { useWorkspaceAgents } from "@/lib/hooks/use-workspace-agents"
@@ -11,20 +22,7 @@ import { ArrowLeft, AlertCircle } from "lucide-react"
 import { toast } from "sonner"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import type { CreateCampaignWizardInput, AIAgent } from "@/types/database.types"
-
-interface DraftData {
-  draft_id: string
-  name: string
-  description: string | null
-  agent_id: string | null
-  recipients: any[]
-  csv_column_headers: string[]
-  schedule_type: string
-  scheduled_start_at: string | null
-  scheduled_expires_at: string | null
-  timezone: string
-  business_hours_config: any
-}
+import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
 
 // Main page component wrapped in Suspense
 export default function NewCampaignPage() {
@@ -40,18 +38,14 @@ function NewCampaignPageContent() {
   const params = useParams()
   const searchParams = useSearchParams()
   const workspaceSlug = params.workspaceSlug as string
+  
+  // Optional draft ID from URL (for resuming existing drafts)
   const draftIdParam = searchParams.get("draft")
 
-  // State - initialize based on whether we have a draft ID
-  const [draftId, setDraftId] = useState<string | null>(draftIdParam)
-  const [draftData, setDraftData] = useState<DraftData | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  // State for draft loading (only used when resuming)
+  const [isLoadingDraft, setIsLoadingDraft] = useState(!!draftIdParam)
+  const [draftData, setDraftData] = useState<Partial<WizardFormData> | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [isInitialized, setIsInitialized] = useState(false)
-  
-  // Ref to prevent double creation in strict mode
-  const isCreatingDraftRef = useRef(false)
-  const hasMountedRef = useRef(false)
 
   const { data: agentsData, isLoading: agentsLoading } = useWorkspaceAgents()
   const createMutation = useCreateCampaignWizard()
@@ -59,20 +53,19 @@ function NewCampaignPageContent() {
   const agents: AIAgent[] = agentsData?.data || []
 
   // =========================================================================
-  // STEP 1: Create or Load Draft
+  // OPTIONAL: Load existing draft if resuming
   // =========================================================================
   
-  const initializeDraft = useCallback(async () => {
-    // Prevent double initialization
-    if (hasMountedRef.current && isInitialized) {
+  useEffect(() => {
+    // Only load draft if we have a draft ID in URL
+    if (!draftIdParam) {
+      setIsLoadingDraft(false)
       return
     }
-    hasMountedRef.current = true
-    
-    // If we already have a draft ID in URL, load that draft
-    if (draftIdParam) {
+
+    const loadDraft = async () => {
       try {
-        console.log(`[NewCampaignPage] Loading existing draft: ${draftIdParam}`)
+        console.log(`[NewCampaignPage] Loading draft: ${draftIdParam}`)
         const response = await fetch(
           `/api/w/${workspaceSlug}/campaigns/draft?id=${draftIdParam}`
         )
@@ -83,83 +76,34 @@ function NewCampaignPageContent() {
         }
 
         const result = await response.json()
-        const data = result.data || result // Handle both wrapped and unwrapped responses
-        console.log(`[NewCampaignPage] Draft loaded:`, { id: data.id, name: data.name })
+        const data = result.data || result
 
+        // Map API response to WizardFormData format
         setDraftData({
-          draft_id: data.id,
           name: data.name || "",
-          description: data.description,
-          agent_id: data.agent_id,
+          description: data.description || "",
+          agent_id: data.agent_id || "",
+          selectedAgent: null, // Will be set when agents load
           recipients: data.recipients || [],
-          csv_column_headers: data.csv_column_headers || [],
-          schedule_type: data.schedule_type || "immediate",
-          scheduled_start_at: data.scheduled_start_at,
-          scheduled_expires_at: data.scheduled_expires_at,
-          timezone: data.timezone || "America/New_York",
-          business_hours_config: data.business_hours_config,
+          csvColumnHeaders: data.csv_column_headers || [],
+          importedFileName: null,
+          scheduleType: (data.schedule_type || "immediate") as "immediate" | "scheduled",
+          scheduledStartAt: data.scheduled_start_at || null,
+          scheduledExpiresAt: data.scheduled_expires_at || null,
+          businessHoursConfig: data.business_hours_config || undefined,
         })
-        setDraftId(data.id)
-        setIsLoading(false)
-        setIsInitialized(true)
-        
+
+        console.log(`[NewCampaignPage] Draft loaded successfully`)
       } catch (error) {
         console.error("[NewCampaignPage] Error loading draft:", error)
-        const errorMessage = error instanceof Error ? error.message : "Failed to load draft"
-        setLoadError(errorMessage)
-        setIsLoading(false)
-        setIsInitialized(true)
+        setLoadError(error instanceof Error ? error.message : "Failed to load draft")
+      } finally {
+        setIsLoadingDraft(false)
       }
-      return
     }
 
-    // No draft ID - create a new empty draft
-    // Use ref to prevent double creation in React strict mode
-    if (isCreatingDraftRef.current) {
-      console.log("[NewCampaignPage] Draft creation already in progress, skipping")
-      return
-    }
-
-    isCreatingDraftRef.current = true
-    console.log("[NewCampaignPage] Creating new empty draft...")
-
-    try {
-      const response = await fetch(`/api/w/${workspaceSlug}/campaigns/draft/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || `Failed to create draft: ${response.status}`)
-      }
-
-      const result = await response.json()
-      const newDraftId = result.data?.draft_id
-      console.log(`[NewCampaignPage] New draft created: ${newDraftId}`)
-
-      if (!newDraftId) {
-        throw new Error("Failed to get draft ID from response")
-      }
-
-      // Redirect to URL with draft ID to prevent re-creation on refresh
-      router.replace(`/w/${workspaceSlug}/campaigns/new?draft=${newDraftId}`)
-      
-    } catch (error) {
-      console.error("[NewCampaignPage] Error creating draft:", error)
-      const errorMessage = error instanceof Error ? error.message : "Failed to create draft"
-      setLoadError(errorMessage)
-      setIsLoading(false)
-      setIsInitialized(true)
-      isCreatingDraftRef.current = false
-    }
-  }, [draftIdParam, workspaceSlug, router, isInitialized])
-
-  // Run initialization immediately on mount
-  useEffect(() => {
-    initializeDraft()
-  }, [initializeDraft])
+    loadDraft()
+  }, [draftIdParam, workspaceSlug])
 
   // =========================================================================
   // HANDLERS
@@ -181,7 +125,7 @@ function NewCampaignPageContent() {
         toast.success("Campaign created successfully!")
       }
       
-      // Redirect to campaigns list so user can see and manage their campaign
+      // Redirect to campaigns list
       router.push(`/w/${workspaceSlug}/campaigns`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create campaign")
@@ -195,23 +139,20 @@ function NewCampaignPageContent() {
 
   const handleRetry = () => {
     setLoadError(null)
-    setIsLoading(true)
-    isCreatingDraftRef.current = false
-    initializeDraft()
+    setIsLoadingDraft(true)
+    // Trigger reload by navigating to same page
+    router.replace(`/w/${workspaceSlug}/campaigns/new${draftIdParam ? `?draft=${draftIdParam}` : ""}`)
   }
 
   // =========================================================================
-  // LOADING STATE
+  // LOADING STATE (only for draft loading)
   // =========================================================================
 
-  if (isLoading) {
+  if (isLoadingDraft) {
     return (
       <CampaignLoading 
-        message={draftIdParam ? "Loading your draft..." : "Setting up your campaign..."}
-        submessage={draftIdParam 
-          ? "Retrieving your saved progress" 
-          : "Creating a new draft for you"
-        }
+        message="Loading your draft..."
+        submessage="Retrieving your saved progress"
       />
     )
   }
@@ -251,7 +192,7 @@ function NewCampaignPageContent() {
   }
 
   // =========================================================================
-  // MAIN CONTENT
+  // MAIN CONTENT - Instant load, no waiting for draft creation
   // =========================================================================
 
   return (
@@ -263,10 +204,10 @@ function NewCampaignPageContent() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold">
-            {draftData?.name ? "Continue Campaign" : "Create Campaign"}
+            {draftData ? "Continue Campaign" : "Create Campaign"}
           </h1>
           <p className="text-muted-foreground">
-            {draftData?.name 
+            {draftData 
               ? "Continue setting up your outbound calling campaign"
               : "Set up a new outbound calling campaign step by step"
             }
@@ -274,27 +215,16 @@ function NewCampaignPageContent() {
         </div>
       </div>
 
-      {/* Wizard */}
+      {/* Wizard - loads instantly, no draft creation needed */}
       <CampaignWizard
         onSubmit={handleSubmit}
         isSubmitting={createMutation.isPending}
         onCancel={handleCancel}
         agents={agents}
         isLoadingAgents={agentsLoading}
-        draftId={draftId || undefined}
-        initialDraft={draftData ? {
-          draft_id: draftData.draft_id,
-          name: draftData.name,
-          description: draftData.description || undefined,
-          agent_id: draftData.agent_id || undefined,
-          recipients: draftData.recipients,
-          csv_column_headers: draftData.csv_column_headers,
-          schedule_type: draftData.schedule_type as "immediate" | "scheduled",
-          scheduled_start_at: draftData.scheduled_start_at,
-          scheduled_expires_at: draftData.scheduled_expires_at,
-          timezone: draftData.timezone,
-          business_hours_config: draftData.business_hours_config,
-        } : undefined}
+        workspaceSlug={workspaceSlug}
+        draftId={draftIdParam}
+        initialDraft={draftData || undefined}
       />
     </div>
   )

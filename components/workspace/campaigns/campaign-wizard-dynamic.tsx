@@ -3,14 +3,15 @@
 /**
  * Dynamic Campaign Wizard Wrapper
  *
- * Lazy loads the campaign wizard to reduce initial bundle size.
+ * Lazy loads the optimized campaign wizard to reduce initial bundle size.
+ * Uses Zustand store for instant local state management.
  */
 
 import dynamic from "next/dynamic"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import type { CreateCampaignWizardInput, AIAgent } from "@/types/database.types"
-import type { DraftData } from "@/lib/hooks/use-campaign-draft"
+import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
 
 // Props type for the wizard
 export interface CampaignWizardProps {
@@ -19,17 +20,18 @@ export interface CampaignWizardProps {
   onCancel: () => void
   agents: AIAgent[]
   isLoadingAgents: boolean
+  workspaceSlug: string
   /** Optional: ID of existing draft to load */
-  draftId?: string
+  draftId?: string | null
   /** Optional: Initial draft data (when resuming a draft) */
-  initialDraft?: DraftData
+  initialDraft?: Partial<WizardFormData>
 }
 
-// Dynamically import the heavy campaign wizard component
+// Dynamically import the optimized campaign wizard component
 export const CampaignWizard = dynamic<CampaignWizardProps>(
   () =>
-    import("./campaign-wizard").then((mod) => ({
-      default: mod.CampaignWizard,
+    import("./campaign-wizard-optimized").then((mod) => ({
+      default: mod.CampaignWizardOptimized,
     })),
   {
     loading: () => <CampaignWizardSkeleton />,
@@ -47,14 +49,14 @@ function CampaignWizardSkeleton() {
           <div className="space-y-4">
             {/* Step Indicators */}
             <div className="flex items-center justify-between">
-              {[1, 2, 3, 4, 5].map((step) => (
+              {[1, 2, 3, 4].map((step) => (
                 <div key={step} className="flex items-center flex-1">
                   <div className="flex flex-col items-center gap-2">
                     <Skeleton className="w-10 h-10 rounded-full" />
                     <Skeleton className="h-4 w-20 hidden md:block" />
                     <Skeleton className="h-3 w-24 hidden md:block" />
                   </div>
-                  {step < 5 && <Skeleton className="flex-1 h-0.5 mx-2" />}
+                  {step < 4 && <Skeleton className="flex-1 h-0.5 mx-2" />}
                 </div>
               ))}
             </div>
@@ -98,4 +100,3 @@ function CampaignWizardSkeleton() {
     </div>
   )
 }
-

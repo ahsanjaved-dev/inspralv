@@ -1,5 +1,6 @@
 "use client"
 
+import { memo, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,7 +13,7 @@ import {
   CheckCircle2,
   AlertTriangle,
 } from "lucide-react"
-import type { WizardFormData } from "../campaign-wizard"
+import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
 import type { BusinessHoursTimeSlot } from "@/types/database.types"
 
 interface StepReviewProps {
@@ -22,53 +23,62 @@ interface StepReviewProps {
   goToStep: (step: number) => void
 }
 
-export function StepReview({ formData, updateFormData, errors, goToStep }: StepReviewProps) {
-  const warnings: string[] = []
+export const StepReview = memo(function StepReview({ formData, goToStep }: StepReviewProps) {
+  // Memoize warnings calculation
+  const warnings = useMemo(() => {
+    const result: string[] = []
 
-  // Check for potential issues
-  if (formData.recipients.length === 0) {
-    warnings.push("No recipients imported - you'll need to add them after creation")
-  }
-
-  // Check if agent has a phone number (either external or assigned through our system)
-  const hasPhoneNumber = formData.selectedAgent?.external_phone_number || 
-                         formData.selectedAgent?.assigned_phone_number_id
-  if (!hasPhoneNumber) {
-    warnings.push("Selected agent doesn't have a phone number assigned")
-  }
-
-  if (formData.businessHoursConfig.enabled) {
-    const hasAnySchedule = Object.values(formData.businessHoursConfig.schedule).some(
-      (slots) => slots.length > 0
-    )
-    if (!hasAnySchedule) {
-      warnings.push("Business hours enabled but no days/times configured")
+    // Check for potential issues
+    if (formData.recipients.length === 0) {
+      result.push("No recipients imported - you'll need to add them after creation")
     }
-  }
 
-  // Calculate total calling hours per week
-  const totalHoursPerWeek = Object.values(formData.businessHoursConfig.schedule).reduce(
-    (total: number, slots) => {
-      return (
-        total +
-        slots.reduce((acc: number, slot: BusinessHoursTimeSlot) => {
-          const startParts = slot.start.split(":")
-          const endParts = slot.end.split(":")
-          const startH = startParts[0] ? Number(startParts[0]) : 0
-          const startM = startParts[1] ? Number(startParts[1]) : 0
-          const endH = endParts[0] ? Number(endParts[0]) : 0
-          const endM = endParts[1] ? Number(endParts[1]) : 0
-          return acc + (endH + endM / 60 - (startH + startM / 60))
-        }, 0)
+    // Check if agent has a phone number (either external or assigned through our system)
+    const hasPhoneNumber = formData.selectedAgent?.external_phone_number || 
+                           formData.selectedAgent?.assigned_phone_number_id
+    if (!hasPhoneNumber) {
+      result.push("Selected agent doesn't have a phone number assigned")
+    }
+
+    if (formData.businessHoursConfig.enabled) {
+      const hasAnySchedule = Object.values(formData.businessHoursConfig.schedule).some(
+        (slots) => slots.length > 0
       )
-    },
-    0
-  )
+      if (!hasAnySchedule) {
+        result.push("Business hours enabled but no days/times configured")
+      }
+    }
 
-  // Active days
-  const activeDays = Object.entries(formData.businessHoursConfig.schedule)
-    .filter(([_, slots]) => slots.length > 0)
-    .map(([day]) => day.charAt(0).toUpperCase() + day.slice(1, 3))
+    return result
+  }, [formData.recipients.length, formData.selectedAgent, formData.businessHoursConfig])
+
+  // Memoize total calling hours per week
+  const totalHoursPerWeek = useMemo(() => {
+    return Object.values(formData.businessHoursConfig.schedule).reduce(
+      (total: number, slots) => {
+        return (
+          total +
+          slots.reduce((acc: number, slot: BusinessHoursTimeSlot) => {
+            const startParts = slot.start.split(":")
+            const endParts = slot.end.split(":")
+            const startH = startParts[0] ? Number(startParts[0]) : 0
+            const startM = startParts[1] ? Number(startParts[1]) : 0
+            const endH = endParts[0] ? Number(endParts[0]) : 0
+            const endM = endParts[1] ? Number(endParts[1]) : 0
+            return acc + (endH + endM / 60 - (startH + startM / 60))
+          }, 0)
+        )
+      },
+      0
+    )
+  }, [formData.businessHoursConfig.schedule])
+
+  // Memoize active days
+  const activeDays = useMemo(() => {
+    return Object.entries(formData.businessHoursConfig.schedule)
+      .filter(([_, slots]) => slots.length > 0)
+      .map(([day]) => day.charAt(0).toUpperCase() + day.slice(1, 3))
+  }, [formData.businessHoursConfig.schedule])
 
   return (
     <div className="space-y-6">
@@ -248,4 +258,7 @@ export function StepReview({ formData, updateFormData, errors, goToStep }: StepR
       </div>
     </div>
   )
-}
+})
+
+// Display name for debugging
+StepReview.displayName = "StepReview"

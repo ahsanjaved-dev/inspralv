@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { CampaignCard } from "@/components/workspace/campaigns/campaign-card"
+import { WizardDraftCard } from "@/components/workspace/campaigns/wizard-draft-card"
 import { 
   useCampaigns, 
   useDeleteCampaign,
@@ -160,6 +161,9 @@ export default function CampaignsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Draft Recovery Card - shows if user has unsaved wizard progress */}
+      <WizardDraftCard />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">

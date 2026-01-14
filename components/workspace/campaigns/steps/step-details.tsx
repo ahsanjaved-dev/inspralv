@@ -1,5 +1,6 @@
 "use client"
 
+import { memo, useMemo, useCallback } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/select"
 import { Bot, Phone, AlertCircle } from "lucide-react"
 import type { AIAgent } from "@/types/database.types"
-import type { WizardFormData } from "../campaign-wizard"
+import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
 
 interface StepDetailsProps {
   formData: WizardFormData
@@ -24,20 +25,22 @@ interface StepDetailsProps {
   isLoadingAgents: boolean
 }
 
-export function StepDetails({
+export const StepDetails = memo(function StepDetails({
   formData,
   updateFormData,
   errors,
   agents,
   isLoadingAgents,
 }: StepDetailsProps) {
-  const activeAgents = agents.filter((a) => a.is_active)
+  // Memoize filtered agents to prevent recalculation
+  const activeAgents = useMemo(() => agents.filter((a) => a.is_active), [agents])
 
-  const handleAgentSelect = (agentId: string) => {
+  // Memoize handler to prevent recreation
+  const handleAgentSelect = useCallback((agentId: string) => {
     const agent = activeAgents.find((a) => a.id === agentId)
     updateFormData("agent_id", agentId)
     updateFormData("selectedAgent", agent || null)
-  }
+  }, [activeAgents, updateFormData])
 
   return (
     <div className="space-y-6">
@@ -171,5 +174,8 @@ export function StepDetails({
       </div>
     </div>
   )
-}
+})
+
+// Display name for debugging
+StepDetails.displayName = "StepDetails"
 

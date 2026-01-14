@@ -9,7 +9,7 @@ import {
   Sparkles,
   Info,
 } from "lucide-react"
-import type { WizardFormData } from "../campaign-wizard"
+import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
 
 interface StepVariablesProps {
   formData: WizardFormData

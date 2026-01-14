@@ -1,10 +1,23 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+/**
+ * Optimized Campaign Wizard
+ * 
+ * Uses Zustand store for instant local state management.
+ * State is persisted in sessionStorage and restored on page refresh.
+ * 
+ * Key improvements:
+ * - Instant UI updates (no loader for state changes)
+ * - Local state persisted in sessionStorage
+ * - DB sync only on final submission
+ * - Optimized re-renders with selectors
+ * - Proper state recovery on page refresh
+ */
+
+import { useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import {
   ArrowLeft,
@@ -15,19 +28,16 @@ import {
   Upload,
   Clock,
   CheckCircle2,
-  Cloud,
-  AlertCircle,
 } from "lucide-react"
 import type {
   CreateCampaignWizardInput,
-  BusinessHoursConfig,
   AIAgent,
 } from "@/types/database.types"
-import { useCampaignDraft, type DraftData } from "@/lib/hooks/use-campaign-draft"
-
-// Import and re-export WizardFormData from store for backward compatibility
-import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
-export type { WizardFormData }
+import {
+  useCampaignWizardStore,
+  type WizardFormData,
+} from "@/lib/stores/campaign-wizard-store"
+import { toast } from "sonner"
 
 // Step components
 import { StepDetails } from "./steps/step-details"
@@ -39,16 +49,17 @@ import { StepReview } from "./steps/step-review"
 // TYPES
 // ============================================================================
 
-export interface CampaignWizardProps {
+export interface CampaignWizardOptimizedProps {
   onSubmit: (data: CreateCampaignWizardInput) => Promise<void>
   isSubmitting: boolean
   onCancel: () => void
   agents: AIAgent[]
   isLoadingAgents: boolean
-  /** REQUIRED: The draft ID (created upfront) */
-  draftId?: string
-  /** Optional: Initial draft data (when resuming a draft) */
-  initialDraft?: DraftData
+  workspaceSlug: string
+  /** Optional: Draft ID if resuming an existing draft */
+  draftId?: string | null
+  /** Optional: Initial data if resuming a draft */
+  initialDraft?: Partial<WizardFormData>
 }
 
 interface WizardStep {
@@ -89,214 +100,145 @@ const WIZARD_STEPS: WizardStep[] = [
   },
 ]
 
-// Business hours are always enabled with sensible defaults (9 AM - 5 PM weekdays)
-const DEFAULT_BUSINESS_HOURS_CONFIG: BusinessHoursConfig = {
-  enabled: true,
-  timezone: "America/New_York",
-  schedule: {
-    monday: [{ start: "09:00", end: "17:00" }],
-    tuesday: [{ start: "09:00", end: "17:00" }],
-    wednesday: [{ start: "09:00", end: "17:00" }],
-    thursday: [{ start: "09:00", end: "17:00" }],
-    friday: [{ start: "09:00", end: "17:00" }],
-    saturday: [],
-    sunday: [],
-  },
-}
-
 // ============================================================================
 // MAIN WIZARD COMPONENT
 // ============================================================================
 
-export function CampaignWizard({
+export function CampaignWizardOptimized({
   onSubmit,
   isSubmitting,
   onCancel,
   agents,
   isLoadingAgents,
+  workspaceSlug,
   draftId,
   initialDraft,
-}: CampaignWizardProps) {
-  const [currentStep, setCurrentStep] = useState(1)
+}: CampaignWizardOptimizedProps) {
+  // Track if we've initialized to prevent re-initialization
+  const hasInitializedRef = useRef(false)
+  const agentSyncedRef = useRef(false)
+
+  // Subscribe to individual state slices to avoid unnecessary re-renders
+  const currentStep = useCampaignWizardStore((state) => state.currentStep)
+  const errors = useCampaignWizardStore((state) => state.errors)
+  const formData = useCampaignWizardStore((state) => state.formData)
+  const isInitialized = useCampaignWizardStore((state) => state.isInitialized)
+
+  // Get store actions directly (these are stable references)
+  const initialize = useCampaignWizardStore((state) => state.initialize)
+  const nextStep = useCampaignWizardStore((state) => state.nextStep)
+  const prevStep = useCampaignWizardStore((state) => state.prevStep)
+  const goToStep = useCampaignWizardStore((state) => state.goToStep)
+  const updateField = useCampaignWizardStore((state) => state.updateField)
+  const updateFields = useCampaignWizardStore((state) => state.updateFields)
+  const selectAgent = useCampaignWizardStore((state) => state.selectAgent)
+  const validateAll = useCampaignWizardStore((state) => state.validateAll)
+  const reset = useCampaignWizardStore((state) => state.reset)
+
   const totalSteps = WIZARD_STEPS.length
 
-  // Initialize form data from draft if provided
-  const getInitialFormData = (): WizardFormData => {
-    if (initialDraft) {
-      const selectedAgent = agents.find(a => a.id === initialDraft.agent_id) || null
-      return {
-        name: initialDraft.name || "",
-        description: initialDraft.description || "",
-        agent_id: initialDraft.agent_id || "",
-        selectedAgent,
-        recipients: initialDraft.recipients || [],
-        csvColumnHeaders: initialDraft.csv_column_headers || [],
-        importedFileName: null,
-        scheduleType: initialDraft.schedule_type || "immediate",
-        scheduledStartAt: initialDraft.scheduled_start_at || null,
-        scheduledExpiresAt: initialDraft.scheduled_expires_at || null,
-        businessHoursConfig: initialDraft.business_hours_config || DEFAULT_BUSINESS_HOURS_CONFIG,
-      }
-    }
-    return {
-      name: "",
-      description: "",
-      agent_id: "",
-      selectedAgent: null,
-      recipients: [],
-      csvColumnHeaders: [],
-      importedFileName: null,
-      scheduleType: "immediate",
-      scheduledStartAt: null,
-      scheduledExpiresAt: null,
-      businessHoursConfig: DEFAULT_BUSINESS_HOURS_CONFIG,
-    }
-  }
+  // ============================================================================
+  // INITIALIZATION - Only run once per mount
+  // ============================================================================
 
-  const [formData, setFormData] = useState<WizardFormData>(getInitialFormData)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  // Draft auto-save hook - simplified version that only updates
-  const {
-    isSaving: isDraftSaving,
-    lastSavedAt,
-    error: draftError,
-    updateDraft,
-  } = useCampaignDraft({
-    debounceMs: 1000,
-    autoSave: true,
-    draftId: draftId,
-    onSaved: () => {
-      console.log("[CampaignWizard] Draft auto-saved")
-    },
-    onError: (error) => {
-      console.error("[CampaignWizard] Draft save error:", error)
-    },
-  })
-
-  // Update selected agent when agents list loads and we have an agent_id
   useEffect(() => {
-    if (formData.agent_id && !formData.selectedAgent && agents.length > 0) {
-      const agent = agents.find(a => a.id === formData.agent_id)
-      if (agent) {
-        setFormData(prev => ({ ...prev, selectedAgent: agent }))
-      }
+    // Only initialize once per mount
+    if (hasInitializedRef.current) {
+      return
     }
-  }, [agents, formData.agent_id, formData.selectedAgent])
+    hasInitializedRef.current = true
+    
+    // Initialize store with workspace and optional draft data
+    // The store will handle checking for existing persisted state
+    initialize(workspaceSlug, draftId || null, initialDraft)
+  }, [workspaceSlug, draftId, initialDraft, initialize])
 
-  // ============================================================================
-  // VALIDATION
-  // ============================================================================
-
-  const validateStep = useCallback(
-    (step: number): boolean => {
-      const newErrors: Record<string, string> = {}
-
-      if (step === 1) {
-        if (!formData.name.trim()) {
-          newErrors.name = "Campaign name is required"
-        }
-        if (!formData.agent_id) {
-          newErrors.agent_id = "Please select an AI agent"
-        }
-      }
-
-      // Step 2 is optional - can have 0 recipients and add later
-      // Step 3 validation if scheduled
-      if (step === 3) {
-        if (formData.scheduleType === "scheduled" && !formData.scheduledStartAt) {
-          newErrors.scheduledStartAt = "Please select a start date/time"
-        }
-      }
-
-      setErrors(newErrors)
-      return Object.keys(newErrors).length === 0
-    },
-    [formData]
-  )
-
-  // ============================================================================
-  // NAVIGATION
-  // ============================================================================
-
-  const nextStep = useCallback(() => {
-    if (!validateStep(currentStep)) return
-    if (currentStep < totalSteps) {
-      setCurrentStep(currentStep + 1)
+  // Reset the ref when unmounting
+  useEffect(() => {
+    return () => {
+      hasInitializedRef.current = false
+      agentSyncedRef.current = false
     }
-  }, [currentStep, totalSteps, validateStep])
+  }, [])
 
-  const prevStep = useCallback(() => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1)
+  // ============================================================================
+  // SYNC AGENT - Only when agents load and we have an agent_id without selectedAgent
+  // ============================================================================
+
+  useEffect(() => {
+    // Guard: only sync once, and only if needed
+    if (agentSyncedRef.current) return
+    if (!isInitialized) return
+    if (!formData.agent_id) return
+    if (formData.selectedAgent) return
+    if (agents.length === 0) return
+
+    const agent = agents.find(a => a.id === formData.agent_id)
+    if (agent) {
+      agentSyncedRef.current = true
+      selectAgent(agent)
     }
-  }, [currentStep])
-
-  const goToStep = useCallback(
-    (step: number) => {
-      // Only allow going to previous steps
-      if (step < currentStep) {
-        setCurrentStep(step)
-      }
-    },
-    [currentStep]
-  )
+  }, [isInitialized, formData.agent_id, formData.selectedAgent, agents, selectAgent])
 
   // ============================================================================
-  // FORM UPDATE HANDLERS
+  // HANDLERS
   // ============================================================================
 
-  // Helper to convert form data to draft data
-  const formToDraft = useCallback((form: WizardFormData): DraftData => ({
-    draft_id: draftId,
-    name: form.name,
-    description: form.description,
-    agent_id: form.agent_id || undefined,
-    recipients: form.recipients,
-    csv_column_headers: form.csvColumnHeaders,
-    schedule_type: form.scheduleType,
-    scheduled_start_at: form.scheduledStartAt,
-    scheduled_expires_at: form.scheduledExpiresAt,
-    timezone: form.businessHoursConfig.timezone,
-    business_hours_config: form.businessHoursConfig,
-    current_step: currentStep,
-  }), [draftId, currentStep])
+  const handleNext = useCallback(() => {
+    nextStep()
+  }, [nextStep])
 
-  const updateFormData = useCallback(
+  const handlePrev = useCallback(() => {
+    prevStep()
+  }, [prevStep])
+
+  const handleGoToStep = useCallback((step: number) => {
+    goToStep(step)
+  }, [goToStep])
+
+  const handleCancel = useCallback(() => {
+    reset()
+    onCancel()
+  }, [reset, onCancel])
+
+  // Form update handler - creates a stable callback for step components
+  const handleUpdateFormData = useCallback(
     <K extends keyof WizardFormData>(key: K, value: WizardFormData[K]) => {
-      setFormData((prev) => {
-        const updated = { ...prev, [key]: value }
-        // Auto-save draft on each change
-        updateDraft(formToDraft(updated))
-        return updated
-      })
-      // Clear error for this field
-      if (errors[key]) {
-        setErrors((prev) => {
-          const next = { ...prev }
-          delete next[key]
-          return next
-        })
-      }
+      updateField(key, value)
     },
-    [errors, formToDraft, updateDraft]
+    [updateField]
   )
 
-  const updateMultipleFields = useCallback((updates: Partial<WizardFormData>) => {
-    setFormData((prev) => {
-      const updated = { ...prev, ...updates }
-      // Auto-save draft on batch update
-      updateDraft(formToDraft(updated))
-      return updated
-    })
-  }, [formToDraft, updateDraft])
+  // Batch update handler for import step
+  const handleUpdateMultipleFields = useCallback(
+    (updates: Partial<WizardFormData>) => {
+      updateFields(updates)
+    },
+    [updateFields]
+  )
 
   // ============================================================================
   // SUBMIT HANDLER
   // ============================================================================
 
-  const handleSubmit = async () => {
-    if (!validateStep(currentStep)) return
+  const handleSubmit = useCallback(async () => {
+    // Validate all steps before submission
+    const isValid = validateAll()
+    if (!isValid) {
+      toast.error("Please fill in all required fields")
+      return
+    }
+
+    // Additional validation before API call
+    if (!formData.name || !formData.name.trim()) {
+      toast.error("Campaign name is required")
+      return
+    }
+
+    if (!formData.agent_id) {
+      toast.error("Please select an AI agent")
+      return
+    }
 
     // Convert datetime-local format to ISO 8601 format
     let scheduledStartAt: string | null = null
@@ -310,32 +252,50 @@ export function CampaignWizard({
       scheduledExpiresAt = new Date(formData.scheduledExpiresAt).toISOString()
     }
 
+    // Build the submission data
+    // Note: For optional fields (not nullable), we must use undefined, not null
     const wizardData: CreateCampaignWizardInput = {
-      name: formData.name,
-      description: formData.description || null,
+      name: formData.name.trim(),
+      description: formData.description?.trim() || null, // nullable field, null is OK
       agent_id: formData.agent_id,
       recipients: formData.recipients,
       csv_column_headers: formData.csvColumnHeaders,
       variable_mappings: [],
-      agent_prompt_overrides: null,
+      agent_prompt_overrides: null, // nullable field, null is OK
       schedule_type: formData.scheduleType,
-      scheduled_start_at: scheduledStartAt,
-      scheduled_expires_at: scheduledExpiresAt,
+      scheduled_start_at: scheduledStartAt, // nullable field
+      scheduled_expires_at: scheduledExpiresAt, // nullable field
       business_hours_config: formData.businessHoursConfig,
       business_hours_only: formData.businessHoursConfig.enabled,
-      business_hours_start: null,
-      business_hours_end: null,
+      business_hours_start: undefined, // optional field, use undefined not null
+      business_hours_end: undefined, // optional field, use undefined not null
       timezone: formData.businessHoursConfig.timezone,
       concurrency_limit: 1,
       max_attempts: 3,
       retry_delay_minutes: 30,
       wizard_completed: true,
       // Pass draft ID to convert existing draft instead of creating new
-      draft_id: draftId,
+      // optional field (not nullable), must use undefined not null
+      ...(draftId ? { draft_id: draftId } : {}),
     }
 
-    await onSubmit(wizardData)
-  }
+    console.log("[CampaignWizard] Submitting campaign:", {
+      name: wizardData.name,
+      agent_id: wizardData.agent_id,
+      recipients: wizardData.recipients.length,
+      schedule_type: wizardData.schedule_type,
+    })
+
+    try {
+      await onSubmit(wizardData)
+      // Reset store after successful submission
+      reset()
+    } catch (error) {
+      // Error handling is done in parent component
+      console.error("[CampaignWizard] Submit error:", error)
+      throw error
+    }
+  }, [formData, draftId, onSubmit, validateAll, reset])
 
   // ============================================================================
   // PROGRESS CALCULATION
@@ -365,7 +325,7 @@ export function CampaignWizard({
                   <div key={step.id} className="flex items-center flex-1">
                     <button
                       type="button"
-                      onClick={() => isClickable && goToStep(step.id)}
+                      onClick={() => isClickable && handleGoToStep(step.id)}
                       disabled={!isClickable}
                       className={cn(
                         "flex flex-col items-center gap-2 transition-all",
@@ -418,30 +378,6 @@ export function CampaignWizard({
               <p className="text-sm text-muted-foreground">
                 Step {currentStep} of {totalSteps}
               </p>
-              {/* Draft Status Indicator */}
-              <div className="flex items-center gap-2">
-                {draftError ? (
-                  <Badge variant="outline" className="gap-1 text-red-600 dark:text-red-400">
-                    <AlertCircle className="h-3 w-3" />
-                    Save failed
-                  </Badge>
-                ) : isDraftSaving ? (
-                  <Badge variant="outline" className="gap-1 text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Saving...
-                  </Badge>
-                ) : lastSavedAt ? (
-                  <Badge variant="outline" className="gap-1 text-green-600 dark:text-green-400">
-                    <Cloud className="h-3 w-3" />
-                    Saved
-                  </Badge>
-                ) : draftId ? (
-                  <Badge variant="outline" className="gap-1 text-blue-600 dark:text-blue-400">
-                    <Cloud className="h-3 w-3" />
-                    Draft
-                  </Badge>
-                ) : null}
-              </div>
             </div>
           </div>
         </CardContent>
@@ -457,7 +393,7 @@ export function CampaignWizard({
           {currentStep === 1 && (
             <StepDetails
               formData={formData}
-              updateFormData={updateFormData}
+              updateFormData={handleUpdateFormData}
               errors={errors}
               agents={agents}
               isLoadingAgents={isLoadingAgents}
@@ -466,19 +402,23 @@ export function CampaignWizard({
           {currentStep === 2 && (
             <StepImport
               formData={formData}
-              updateMultipleFields={updateMultipleFields}
+              updateMultipleFields={handleUpdateMultipleFields}
               errors={errors}
             />
           )}
           {currentStep === 3 && (
-            <StepSchedule formData={formData} updateFormData={updateFormData} errors={errors} />
+            <StepSchedule 
+              formData={formData} 
+              updateFormData={handleUpdateFormData} 
+              errors={errors} 
+            />
           )}
           {currentStep === 4 && (
             <StepReview
               formData={formData}
-              updateFormData={updateFormData}
+              updateFormData={handleUpdateFormData}
               errors={errors}
-              goToStep={goToStep}
+              goToStep={handleGoToStep}
             />
           )}
         </CardContent>
@@ -486,13 +426,17 @@ export function CampaignWizard({
 
       {/* Navigation Buttons */}
       <div className="flex items-center justify-between">
-        <Button type="button" variant="outline" onClick={currentStep === 1 ? onCancel : prevStep}>
+        <Button 
+          type="button" 
+          variant="outline" 
+          onClick={currentStep === 1 ? handleCancel : handlePrev}
+        >
           <ArrowLeft className="h-4 w-4 mr-2" />
           {currentStep === 1 ? "Cancel" : "Previous"}
         </Button>
 
         {currentStep < totalSteps ? (
-          <Button type="button" onClick={nextStep}>
+          <Button type="button" onClick={handleNext}>
             Next
             <ArrowRight className="h-4 w-4 ml-2" />
           </Button>

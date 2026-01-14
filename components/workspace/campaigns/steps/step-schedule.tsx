@@ -1,5 +1,6 @@
 "use client"
 
+import { memo, useCallback } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -22,7 +23,7 @@ import {
   Info,
 } from "lucide-react"
 import type { BusinessHoursConfig, BusinessHoursTimeSlot, DayOfWeek } from "@/types/database.types"
-import type { WizardFormData } from "../campaign-wizard"
+import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
 
 interface StepScheduleProps {
   formData: WizardFormData
@@ -87,21 +88,21 @@ const ALLOWED_TIMES = [
   { value: "20:00", label: "8:00 PM" },
 ]
 
-export function StepSchedule({
+export const StepSchedule = memo(function StepSchedule({
   formData,
   updateFormData,
   errors,
 }: StepScheduleProps) {
   const config = formData.businessHoursConfig
 
-  const updateConfig = (updates: Partial<BusinessHoursConfig>) => {
+  const updateConfig = useCallback((updates: Partial<BusinessHoursConfig>) => {
     updateFormData("businessHoursConfig", {
       ...config,
       ...updates,
     })
-  }
+  }, [config, updateFormData])
 
-  const updateDaySchedule = (day: DayOfWeek, slots: BusinessHoursTimeSlot[]) => {
+  const updateDaySchedule = useCallback((day: DayOfWeek, slots: BusinessHoursTimeSlot[]) => {
     updateFormData("businessHoursConfig", {
       ...config,
       schedule: {
@@ -109,9 +110,9 @@ export function StepSchedule({
         [day]: slots,
       },
     })
-  }
+  }, [config, updateFormData])
 
-  const addTimeSlot = (day: DayOfWeek) => {
+  const addTimeSlot = useCallback((day: DayOfWeek) => {
     const currentSlots = config.schedule[day]
     const lastSlot = currentSlots[currentSlots.length - 1]
     // Default new slot starts after the last one ends, capped at allowed range
@@ -119,14 +120,14 @@ export function StepSchedule({
     const newEnd = "17:00"
     const newSlot: BusinessHoursTimeSlot = { start: newStart, end: newEnd }
     updateDaySchedule(day, [...currentSlots, newSlot])
-  }
+  }, [config.schedule, updateDaySchedule])
 
-  const removeTimeSlot = (day: DayOfWeek, index: number) => {
+  const removeTimeSlot = useCallback((day: DayOfWeek, index: number) => {
     const currentSlots = config.schedule[day]
     updateDaySchedule(day, currentSlots.filter((_, i) => i !== index))
-  }
+  }, [config.schedule, updateDaySchedule])
 
-  const updateTimeSlot = (
+  const updateTimeSlot = useCallback((
     day: DayOfWeek,
     index: number,
     field: "start" | "end",
@@ -136,9 +137,9 @@ export function StepSchedule({
     const updated = [...currentSlots]
     updated[index] = { ...updated[index], [field]: value } as BusinessHoursTimeSlot
     updateDaySchedule(day, updated)
-  }
+  }, [config.schedule, updateDaySchedule])
 
-  const toggleDay = (day: DayOfWeek, enabled: boolean) => {
+  const toggleDay = useCallback((day: DayOfWeek, enabled: boolean) => {
     if (enabled && config.schedule[day].length === 0) {
       // Add default slot when enabling a day
       updateDaySchedule(day, [{ start: "09:00", end: "17:00" }])
@@ -146,13 +147,13 @@ export function StepSchedule({
       // Clear slots when disabling
       updateDaySchedule(day, [])
     }
-  }
+  }, [config.schedule, updateDaySchedule])
 
   // Get available end times (must be after start time)
-  const getEndTimeOptions = (startTime: string) => {
+  const getEndTimeOptions = useCallback((startTime: string) => {
     const startIndex = ALLOWED_TIMES.findIndex(t => t.value === startTime)
     return ALLOWED_TIMES.filter((_, index) => index > startIndex)
-  }
+  }, [])
 
   return (
     <div className="space-y-8">
@@ -407,4 +408,7 @@ export function StepSchedule({
       </div>
     </div>
   )
-}
+})
+
+// Display name for debugging
+StepSchedule.displayName = "StepSchedule"

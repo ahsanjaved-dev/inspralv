@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, memo } from "react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import {
@@ -30,7 +30,7 @@ import {
   AlertTriangle,
 } from "lucide-react"
 import type { CreateRecipientInput } from "@/types/database.types"
-import type { WizardFormData } from "../campaign-wizard"
+import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
 
 interface StepImportProps {
   formData: WizardFormData
@@ -78,7 +78,7 @@ interface DataQualityReport {
   overallCompleteness: number
 }
 
-export function StepImport({ formData, updateMultipleFields, errors }: StepImportProps) {
+export const StepImport = memo(function StepImport({ formData, updateMultipleFields, errors }: StepImportProps) {
   const [file, setFile] = useState<File | null>(null)
   const [csvData, setCsvData] = useState<string[][]>([])
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([])
@@ -715,4 +715,7 @@ export function StepImport({ formData, updateMultipleFields, errors }: StepImpor
       </div>
     </div>
   )
-}
+})
+
+// Display name for debugging
+StepImport.displayName = "StepImport"
