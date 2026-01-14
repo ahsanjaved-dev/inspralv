@@ -2202,7 +2202,7 @@ export type UpdatePhoneNumberInput = z.infer<typeof updatePhoneNumberSchema>
 // ============================================================================
 
 export interface ConversationWithAgent extends Conversation {
-  agent?: Pick<Tables<"ai_agents">, "id" | "name" | "provider"> | null
+  agent?: Pick<Tables<"ai_agents">, "id" | "name" | "provider" | "voice_provider" | "model_provider" | "transcriber_provider"> | null
 }
 
 // ============================================================================

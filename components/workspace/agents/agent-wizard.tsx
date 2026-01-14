@@ -45,6 +45,8 @@ import {
   X,
   Variable,
   Info,
+  Lock,
+  Copy,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { functionToolsArraySchema, type CreateWorkspaceAgentInput } from "@/types/api.types"
@@ -57,6 +59,8 @@ import type {
 import { FunctionToolEditor } from "./function-tool-editor"
 import { useActiveKnowledgeDocuments } from "@/lib/hooks/use-workspace-knowledge-base"
 import { useAvailablePhoneNumbers } from "@/lib/hooks/use-workspace-agents"
+import { useWorkspaceSettings } from "@/lib/hooks/use-workspace-settings"
+import { toast } from "sonner"
 import {
   getVoicesForProvider,
   getDefaultVoice,
@@ -105,7 +109,6 @@ interface WizardFormData {
   greeting: string
   style: "formal" | "friendly" | "casual"
   tools: FunctionTool[]
-  toolsServerUrl: string
   // Custom variables for campaign personalization
   customVariables: CustomVariable[]
 }
@@ -204,6 +207,10 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   const [currentStep, setCurrentStep] = useState(1)
   const totalSteps = 2
 
+  // Get workspace settings to access workspace ID for webhook URL
+  const { data: workspace } = useWorkspaceSettings()
+  const workspaceId = workspace?.id || ""
+
   // Get initial default voice for VAPI
   const initialDefaultVoice = getDefaultVoice("vapi")
 
@@ -225,7 +232,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     greeting: "Hello! Thank you for calling. How can I help you today?",
     style: "friendly",
     tools: [],
-    toolsServerUrl: "",
     customVariables: [],
   })
 
@@ -360,7 +366,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
         },
         // Include function tools if any are configured
         tools,
-        tools_server_url: formData.toolsServerUrl || undefined,
         // Include knowledge base configuration
         knowledge_base: formData.enableKnowledgeBase
           ? {
@@ -1179,7 +1184,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
             </CardContent>
           </Card>
 
-          {/* Webhook URL - For Retell and VAPI */}
+          {/* Webhook URL - For Retell and VAPI (Read-Only, Auto-Generated) */}
           {(formData.provider === "retell" || formData.provider === "vapi") && (
             <Card>
               <CardHeader>
@@ -1188,19 +1193,47 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                   Webhook URL
                 </CardTitle>
                 <CardDescription>
-                  Your server endpoint that receives{" "}
-                  {formData.provider === "retell"
-                    ? "tool execution requests and call data"
-                    : "function tool calls and call events"}
-                  .
+                  Auto-generated endpoint that receives call events from{" "}
+                  {formData.provider === "retell" ? "Retell" : "VAPI"}.
+                  This URL is configured automatically when the agent syncs.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Input
-                  placeholder="https://your-server.com/webhook"
-                  value={formData.toolsServerUrl}
-                  onChange={(e) => updateFormData("toolsServerUrl", e.target.value)}
-                />
+                {(() => {
+                  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://genius365.vercel.app").replace(/\/$/, "")
+                  const webhookUrl = `${baseUrl}/api/webhooks/w/${workspaceId}/${formData.provider}`
+                  return (
+                    <>
+                      <div className="flex gap-2">
+                        <div className="flex-1 relative">
+                          <Input
+                            value={webhookUrl}
+                            readOnly
+                            disabled
+                            className="bg-muted/50 font-mono text-sm pr-10"
+                          />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <Lock className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            navigator.clipboard.writeText(webhookUrl)
+                            toast.success("Webhook URL copied!")
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        This URL cannot be edited. It will be automatically configured with {formData.provider === "retell" ? "Retell" : "VAPI"} when the agent is created.
+                      </p>
+                    </>
+                  )
+                })()}
               </CardContent>
             </Card>
           )}
@@ -1218,7 +1251,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               <FunctionToolEditor
                 tools={formData.tools}
                 onChange={(tools) => updateFormData("tools", tools)}
-                serverUrl={formData.toolsServerUrl}
                 provider={formData.provider}
               />
             </CardContent>

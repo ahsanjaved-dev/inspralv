@@ -7,6 +7,7 @@ import type { AIAgent, AgentConfig, FunctionTool } from "@/types/database.types"
 import { mapFunctionToolsToRetell } from "@/lib/integrations/function_tools/retell"
 import type { RetellGeneralTool } from "@/lib/integrations/function_tools/retell/types"
 import { getRetellVoices, getDefaultVoice } from "@/lib/voice"
+import { env } from "@/lib/env"
 
 // Re-export for backwards compatibility
 export type { RetellGeneralTool }
@@ -203,11 +204,18 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
   }
 
   // Set webhook URL for tool calls
-  // This is the default URL that Retell will call when a tool is triggered
-  // Individual tools can override this with their own URL
-  if (config.tools_server_url) {
-    payload.webhook_url = config.tools_server_url
-  }
+  // NEW: Use workspace-level webhook URL so we can route by workspace
+  // Format: {APP_URL}/api/webhooks/w/{workspaceId}/retell
+  const baseUrl = env.appUrl || "https://genius365.vercel.app"
+  
+  // If workspace_id is available, use workspace-level webhook
+  // Otherwise fall back to user's custom URL
+  const webhookUrl = agent.workspace_id
+    ? `${baseUrl}/api/webhooks/w/${agent.workspace_id}/retell`
+    : config.tools_server_url
+  
+  // Use user's custom tools_server_url if configured, otherwise use our webhook
+  payload.webhook_url = config.tools_server_url || webhookUrl
 
   return payload
 }
@@ -253,11 +261,18 @@ export function mapToRetellAgent(agent: AIAgent, llmId: string): RetellAgentPayl
     payload.max_call_duration_ms = config.max_duration_seconds * 1000
   }
 
-  // Set webhook URL at agent level for call events (call_ended, etc)
+  // Set webhook URL at agent level for call events (call_started, call_ended, etc)
+  // NEW: Use workspace-level webhook URL for call events
   // This is separate from LLM webhook_url which handles function calls
-  if (config.tools_server_url) {
-    payload.webhook_url = config.tools_server_url
-  }
+  const baseUrl = env.appUrl || "https://genius365.vercel.app"
+  
+  // If workspace_id is available, use workspace-level webhook
+  const webhookUrl = agent.workspace_id
+    ? `${baseUrl}/api/webhooks/w/${agent.workspace_id}/retell`
+    : config.tools_server_url
+  
+  // Use our workspace webhook for call events, fallback to user's custom URL
+  payload.webhook_url = webhookUrl || config.tools_server_url
 
   return payload
 }

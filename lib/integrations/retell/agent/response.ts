@@ -7,6 +7,7 @@ import { createClient } from "@supabase/supabase-js"
 import type { AIAgent } from "@/types/database.types"
 import type { RetellResponse } from "./config"
 import { mapFromRetell, type RetellAgentResponse, type RetellLLMResponse } from "./mapper"
+import { env } from "@/lib/env"
 
 // ============================================================================
 // TYPES
@@ -56,10 +57,10 @@ export async function processRetellResponse(
     // Pass both agent and LLM data to mapper
     const mappedData = mapFromRetell(retellData, llmData)
 
-    // Get current agent to merge config
+    // Get current agent to merge config and get workspace_id
     const { data: currentAgent, error: fetchError } = await supabase
       .from("ai_agents")
-      .select("config")
+      .select("config, workspace_id")
       .eq("id", agentId)
       .single()
 
@@ -70,10 +71,23 @@ export async function processRetellResponse(
       }
     }
 
+    // Generate webhook URL based on workspace
+    // This URL is stored in config as read-only for user reference
+    const baseUrl = env.appUrl || "https://genius365.vercel.app"
+    const webhookUrl = currentAgent?.workspace_id
+      ? `${baseUrl}/api/webhooks/w/${currentAgent.workspace_id}/retell`
+      : null
+
     // Merge existing config with updates from Retell
+    // Include the generated webhook URL as a read-only field
     const mergedConfig = {
       ...(currentAgent?.config || {}),
       ...(mappedData.config || {}),
+      // Store webhook URL in config (read-only, auto-generated)
+      ...(webhookUrl && {
+        provider_webhook_url: webhookUrl,
+        provider_webhook_configured_at: new Date().toISOString(),
+      }),
     }
 
     // Update agent in Supabase
@@ -82,6 +96,10 @@ export async function processRetellResponse(
       .update({
         external_agent_id: mappedData.external_agent_id,
         config: mergedConfig,
+        sync_status: "synced",
+        needs_resync: false,
+        last_synced_at: new Date().toISOString(),
+        last_sync_error: null,
         ...(mappedData.voice_provider && { voice_provider: mappedData.voice_provider }),
         updated_at: new Date().toISOString(),
       })
@@ -95,6 +113,8 @@ export async function processRetellResponse(
         error: `Failed to update agent: ${updateError.message}`,
       }
     }
+
+    console.log(`[RetellResponse] Agent synced successfully. Webhook URL: ${webhookUrl}`)
 
     return {
       success: true,

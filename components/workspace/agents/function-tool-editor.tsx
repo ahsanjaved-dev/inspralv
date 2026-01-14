@@ -84,8 +84,6 @@ function getToolIcon(iconName: string): React.ComponentType<{ className?: string
 interface FunctionToolEditorProps {
   tools: FunctionTool[]
   onChange: (tools: FunctionTool[]) => void
-  serverUrl?: string
-  onServerUrlChange?: (url: string) => void
   disabled?: boolean
   provider?: "vapi" | "retell" | "synthflow"
 }
@@ -673,8 +671,6 @@ function AvailableToolItem({ def, isSelected, isAvailable, onToggle, disabled }:
 export function FunctionToolEditor({
   tools,
   onChange,
-  serverUrl,
-  onServerUrlChange,
   disabled,
   provider = "vapi",
 }: FunctionToolEditorProps) {

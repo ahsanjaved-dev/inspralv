@@ -9,6 +9,7 @@ import { z } from "zod"
 import { getPartnerAuthContext } from "@/lib/api/auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import { prisma } from "@/lib/prisma"
+import { startBackgroundBulkSync } from "@/lib/algolia/sync"
 
 // Provider type enum
 const providerEnum = z.enum(["vapi", "retell", "algolia"])
@@ -242,6 +243,12 @@ export async function POST(request: NextRequest) {
             assignedBy: auth.user.id,
           })),
         })
+      }
+
+      // If this is an Algolia integration, trigger background sync of existing call data
+      if (data.provider === "algolia") {
+        console.log(`[Integrations] Triggering Algolia sync for partner: ${auth.partner.id}`)
+        startBackgroundBulkSync(auth.partner.id, integration.id)
       }
     }
 

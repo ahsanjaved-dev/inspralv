@@ -132,6 +132,27 @@ export interface VapiAssistantPayload {
   serverUrl?: string
   /** Filter which webhook events VAPI sends to serverUrl */
   serverMessages?: string[]
+  /** Enable recording and transcript collection */
+  artifactPlan?: {
+    recordingEnabled?: boolean
+    transcriptPlan?: {
+      enabled?: boolean
+      assistantName?: string
+      userName?: string
+    }
+  }
+  /** Enable call analysis (summary, sentiment, etc.) */
+  analysisPlan?: {
+    summaryPlan?: {
+      enabled?: boolean
+    }
+    structuredDataPlan?: {
+      enabled?: boolean
+    }
+    successEvaluationPlan?: {
+      enabled?: boolean
+    }
+  }
 }
 
 // ============================================================================
@@ -339,10 +360,32 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
   }
 
   // Set server URL for webhooks and tool calls
-  // Priority: 1. Custom tools_server_url from config, 2. App URL from env, 3. Hardcoded fallback
-  const baseUrl = env.appUrl || "https://genius365.vercel.app"
-  const defaultWebhookUrl = `${baseUrl}/api/webhooks/vapi`
-  payload.serverUrl = config.tools_server_url || defaultWebhookUrl
+  // NEW: Use workspace-level webhook URL so we can route by workspace
+  // The webhook URL is constructed using workspace_id from agent metadata
+  // Format: {APP_URL}/api/webhooks/w/{workspaceId}/vapi
+  const baseUrl = (env.appUrl || "https://genius365.vercel.app").replace(/\/$/, "")
+  
+  // If workspace_id is available, use workspace-level webhook
+  // Otherwise fall back to legacy global webhook
+  const webhookUrl = agent.workspace_id
+    ? `${baseUrl}/api/webhooks/w/${agent.workspace_id}/vapi`
+    : `${baseUrl}/api/webhooks/vapi`
+  
+  console.log("[VapiMapper] Webhook URL:", {
+    workspace_id: agent.workspace_id,
+    webhookUrl,
+    baseUrl,
+  })
+  
+  // Store the generated webhook URL in metadata for reference
+  payload.metadata = {
+    ...payload.metadata,
+    webhook_url: webhookUrl,
+  }
+  
+  // Use user's custom tools_server_url if configured, otherwise use our webhook
+  payload.serverUrl = config.tools_server_url || webhookUrl
+  console.log("[VapiMapper] Setting serverUrl:", payload.serverUrl)
 
   // Filter webhook events: only send essential events to avoid webhook spam
   // Valid values from VAPI API:
@@ -376,6 +419,29 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
 
   if (config.max_duration_seconds) {
     payload.maxDurationSeconds = config.max_duration_seconds
+  }
+
+  // Enable recording, transcript, and analysis by default
+  payload.artifactPlan = {
+    recordingEnabled: true,
+    transcriptPlan: {
+      enabled: true,
+      assistantName: "Agent",
+      userName: "Customer",
+    },
+  }
+
+  // Enable call analysis for summary, structured data, and success evaluation
+  payload.analysisPlan = {
+    summaryPlan: {
+      enabled: true,
+    },
+    structuredDataPlan: {
+      enabled: true,
+    },
+    successEvaluationPlan: {
+      enabled: true,
+    },
   }
 
   return payload

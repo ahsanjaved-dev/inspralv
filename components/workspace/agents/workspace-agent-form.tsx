@@ -91,9 +91,6 @@ export function WorkspaceAgentForm({
 
   // Function tools state
   const [tools, setTools] = useState<FunctionTool[]>((initialData?.config as any)?.tools || [])
-  const [toolsServerUrl, setToolsServerUrl] = useState<string>(
-    (initialData?.config as any)?.tools_server_url || ""
-  )
 
   // Agent direction state
   const [agentDirection, setAgentDirection] = useState<AgentDirection>(
@@ -164,7 +161,6 @@ export function WorkspaceAgentForm({
       voice_settings: currentConfig.voice_settings || {},
       // Include function tools
       tools: tools.length > 0 ? tools : undefined,
-      tools_server_url: toolsServerUrl || undefined,
     }
 
     const submitData = {
@@ -819,54 +815,84 @@ export function WorkspaceAgentForm({
         </CardContent>
       </Card>
 
-      {/* Webhook URL Configuration - For Retell and VAPI */}
+      {/* Webhook URL - Read-Only, Auto-Generated */}
       {(selectedProvider === "retell" || selectedProvider === "vapi") && (
-        <Card>
+        <Card className={initialData && (initialData.config as any)?.provider_webhook_url ? "border-primary/20 bg-primary/5" : ""}>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="h-5 w-5" />
-              Webhook URL
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="h-5 w-5" />
+                Webhook URL
+              </CardTitle>
+              {initialData && (initialData.config as any)?.provider_webhook_url && (
+                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
+                  <Check className="w-3 h-3 mr-1" />
+                  Active
+                </Badge>
+              )}
+            </div>
             <CardDescription>
-              Your server endpoint that receives{" "}
-              {selectedProvider === "retell"
-                ? "tool execution requests and call data"
-                : "function tool calls and call events"}
-              .
+              {initialData && (initialData.config as any)?.provider_webhook_url
+                ? `This URL receives call events from ${getProviderDisplayName(selectedProvider)}. It's automatically configured and cannot be edited.`
+                : `A webhook URL will be automatically generated when the agent is synced with ${getProviderDisplayName(selectedProvider)}.`
+              }
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex gap-2">
-              <div className="flex-1 relative">
-                <Input
-                  id="tools-server-url"
-                  placeholder="https://your-server.com/webhook"
-                  value={toolsServerUrl}
-                  onChange={(e) => setToolsServerUrl(e.target.value)}
-                  disabled={isSubmitting}
-                  className="pr-10"
-                />
-                {toolsServerUrl && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Check className="h-4 w-4 text-green-600" />
+          <CardContent className="space-y-3">
+            {initialData && (initialData.config as any)?.provider_webhook_url ? (
+              <>
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <Input
+                      value={(initialData.config as any)?.provider_webhook_url || ""}
+                      readOnly
+                      disabled
+                      className="bg-muted/50 font-mono text-sm pr-10"
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <Lock className="h-4 w-4 text-muted-foreground" />
+                    </div>
                   </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      const url = (initialData.config as any)?.provider_webhook_url
+                      if (url) {
+                        navigator.clipboard.writeText(url)
+                        toast.success("Webhook URL copied!")
+                      }
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                {(initialData.config as any)?.provider_webhook_configured_at && (
+                  <p className="text-xs text-muted-foreground">
+                    Configured on:{" "}
+                    {new Date((initialData.config as any).provider_webhook_configured_at).toLocaleString()}
+                  </p>
                 )}
+              </>
+            ) : (
+              <div className="p-4 rounded-lg bg-muted/50 border border-dashed">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-900/30">
+                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Webhook not configured yet</p>
+                    <p className="text-xs text-muted-foreground">
+                      {initialData 
+                        ? "Save the agent to sync and generate the webhook URL."
+                        : "Create the agent first. The webhook URL will be generated when the agent syncs."
+                      }
+                    </p>
+                  </div>
+                </div>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                disabled={!toolsServerUrl || isSubmitting}
-                onClick={() => {
-                  if (toolsServerUrl) {
-                    navigator.clipboard.writeText(toolsServerUrl)
-                    toast.success("Copied!")
-                  }
-                }}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -887,7 +913,6 @@ export function WorkspaceAgentForm({
           <FunctionToolEditor
             tools={tools}
             onChange={setTools}
-            serverUrl={toolsServerUrl}
             disabled={isSubmitting}
             provider={selectedProvider}
           />

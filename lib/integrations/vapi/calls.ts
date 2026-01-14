@@ -189,6 +189,8 @@ export async function createOutboundCall(params: {
       },
     }
 
+    console.log("[VapiCalls] Outbound call payload:", JSON.stringify(payload, null, 2))
+
     const response = await fetch(`${VAPI_BASE_URL}/call`, {
       method: "POST",
       headers: {
@@ -218,6 +220,7 @@ export async function createOutboundCall(params: {
 
     const data: VapiCall = await response.json()
     console.log("[VapiCalls] Outbound call created:", data.id, "status:", data.status)
+    console.log("[VapiCalls] Call object:", JSON.stringify(data, null, 2))
     return {
       success: true,
       data,

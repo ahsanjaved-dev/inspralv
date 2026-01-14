@@ -301,6 +301,11 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
         _count: {
           select: { assignments: true },
         },
+        assignments: {
+          select: {
+            workspaceId: true,
+          },
+        },
       },
     })
 
@@ -308,10 +313,10 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       return notFound("Integration")
     }
 
-    // Warn if there are active assignments
+    // Cannot delete if assigned to workspaces
     if (existing._count.assignments > 0) {
       return apiError(
-        `Cannot delete integration with ${existing._count.assignments} workspace assignment(s). Reassign workspaces first.`,
+        `Cannot delete ${existing.provider} integration with ${existing._count.assignments} workspace assignment(s). Reassign workspaces first.`,
         400
       )
     }
@@ -336,10 +341,16 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
           where: { id: nextDefault.id },
           data: { isDefault: true },
         })
+        console.log(
+          `[IntegrationDelete] Set ${nextDefault.id} as default for provider ${existing.provider}`
+        )
       }
     }
 
-    return apiResponse({ success: true })
+    return apiResponse({ 
+      success: true,
+      message: `${existing.provider} integration deleted successfully`,
+    })
   } catch (error) {
     console.error("DELETE /api/partner/integrations/[id] error:", error)
     return serverError((error as Error).message)

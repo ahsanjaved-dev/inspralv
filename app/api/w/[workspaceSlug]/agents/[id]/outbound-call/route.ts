@@ -149,8 +149,10 @@ async function getVapiIntegrationDetails(agent: AIAgent): Promise<VapiIntegratio
 // ============================================================================
 
 export async function POST(request: NextRequest, { params }: RouteContext) {
+  console.log("[OutboundCall] Route handler invoked")
   try {
     const { workspaceSlug, id } = await params
+    console.log("[OutboundCall] Params:", { workspaceSlug, id })
     const ctx = await getWorkspaceContext(workspaceSlug, ["owner", "admin", "member"])
 
     if (!ctx) {
@@ -285,6 +287,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     // Create the outbound call
     // Key: assistantId = agent's Vapi assistant (determines behavior)
     //      phoneNumberId = shared outbound number (determines caller ID/trunk)
+    // NOTE: Webhooks are configured on the agent, not on individual calls
     const callResult = await createOutboundCall({
       apiKey: secretKey,
       assistantId: typedAgent.external_agent_id,

@@ -9,6 +9,7 @@ import { z } from "zod"
 import { getPartnerAuthContext } from "@/lib/api/auth"
 import { apiResponse, apiError, unauthorized, forbidden, notFound, serverError } from "@/lib/api/helpers"
 import { prisma } from "@/lib/prisma"
+import { startBackgroundSync } from "@/lib/algolia/sync"
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -203,6 +204,12 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         },
       },
     })
+
+    // If this is an Algolia integration assignment, trigger background sync of existing call data
+    if (provider === "algolia") {
+      console.log(`[Integrations] Triggering Algolia sync for workspace: ${workspaceId}`)
+      startBackgroundSync(workspaceId, auth.partner.id)
+    }
 
     return apiResponse({
       assignment: {

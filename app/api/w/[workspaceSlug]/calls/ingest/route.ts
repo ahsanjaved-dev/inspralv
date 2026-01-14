@@ -1,3 +1,23 @@
+/**
+ * POST /api/w/[workspaceSlug]/calls/ingest
+ * 
+ * BACKUP/FALLBACK call ingestion endpoint.
+ * 
+ * Primary call data now comes through webhooks:
+ * - VAPI webhook creates/updates conversations on call events
+ * - Retell webhook creates/updates conversations on call events
+ * 
+ * This endpoint is used as a BACKUP for:
+ * 1. Web calls initiated from the UI (test calls) where webhook might be delayed
+ * 2. Manual ingestion requests
+ * 3. Cases where webhook delivery fails
+ * 
+ * The endpoint is idempotent - if the conversation already exists from the
+ * webhook, it will either:
+ * - Skip if data is complete
+ * - Update with additional data (e.g., backfill transcript)
+ */
+
 import { NextRequest } from "next/server"
 import { z } from "zod"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
@@ -31,7 +51,7 @@ const ingestCallSchema = z.object({
 
 // ============================================================================
 // POST /api/w/[workspaceSlug]/calls/ingest
-// Ingest call data from provider after call ends
+// Backup ingestion for web calls and failed webhook deliveries
 // ============================================================================
 
 export async function POST(request: NextRequest, { params }: RouteContext) {
@@ -54,12 +74,24 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const { call_id, agent_id, provider } = validation.data
 
     // Check if call already exists (idempotency)
+    // Webhooks now create conversations automatically, so this is often already done
     const { data: existingCall } = await ctx.adminClient
       .from("conversations")
-      .select("id, transcript")
+      .select("id, transcript, status, recording_url, duration_seconds")
       .eq("external_id", call_id)
       .eq("workspace_id", ctx.workspace.id)
       .single()
+    
+    // If the call already exists and has complete data, skip polling
+    if (existingCall && existingCall.transcript && existingCall.status === "completed") {
+      console.log("[CallIngest] Call already fully ingested via webhook:", call_id)
+      return apiResponse({
+        success: true,
+        message: "Call already ingested via webhook",
+        conversation_id: existingCall.id,
+        source: "webhook",
+      })
+    }
 
     // Get agent to verify it belongs to this workspace
     const { data: agent, error: agentError } = await ctx.adminClient
