@@ -38,6 +38,9 @@ interface CampaignCardProps {
   onPause?: (campaign: CallCampaignWithAgent) => void
   onResume?: (campaign: CallCampaignWithAgent) => void
   onDelete?: (campaign: CallCampaignWithAgent) => void
+  isStarting?: boolean
+  isPausing?: boolean
+  isResuming?: boolean
 }
 
 const statusConfig: Record<CampaignStatus, { label: string; color: string; icon: React.ReactNode }> = {
@@ -83,7 +86,10 @@ export function CampaignCard({
   onStart, 
   onPause, 
   onResume,
-  onDelete 
+  onDelete,
+  isStarting = false,
+  isPausing = false,
+  isResuming = false,
 }: CampaignCardProps) {
   const params = useParams()
   const router = useRouter()
@@ -223,9 +229,19 @@ export function CampaignCard({
                   variant="default" 
                   size="sm" 
                   onClick={() => onStart(campaign)}
+                  disabled={isStarting}
                 >
-                  <Play className="h-4 w-4 mr-1" />
-                  Start Now
+                  {isStarting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-1" />
+                      Start Now
+                    </>
+                  )}
                 </Button>
               )}
 
@@ -248,23 +264,44 @@ export function CampaignCard({
                 <DropdownMenuContent align="end">
                   {/* Start option for ready campaigns (also in main button) */}
                   {canStart && onStart && (
-                    <DropdownMenuItem onClick={() => onStart(campaign)}>
-                      <Play className="h-4 w-4 mr-2" />
-                      Start Now
+                    <DropdownMenuItem 
+                      onClick={() => onStart(campaign)}
+                      disabled={isStarting}
+                    >
+                      {isStarting ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4 mr-2" />
+                      )}
+                      {isStarting ? "Starting..." : "Start Now"}
                     </DropdownMenuItem>
                   )}
                   {/* Resume option for paused campaigns */}
                   {canResume && onResume && (
-                    <DropdownMenuItem onClick={() => onResume(campaign)}>
-                      <Play className="h-4 w-4 mr-2" />
-                      Resume Campaign
+                    <DropdownMenuItem 
+                      onClick={() => onResume(campaign)}
+                      disabled={isResuming}
+                    >
+                      {isResuming ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4 mr-2" />
+                      )}
+                      {isResuming ? "Resuming..." : "Resume Campaign"}
                     </DropdownMenuItem>
                   )}
                   {/* Pause option for active campaigns */}
                   {canPause && onPause && (
-                    <DropdownMenuItem onClick={() => onPause(campaign)}>
-                      <Pause className="h-4 w-4 mr-2" />
-                      Pause Campaign
+                    <DropdownMenuItem 
+                      onClick={() => onPause(campaign)}
+                      disabled={isPausing}
+                    >
+                      {isPausing ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Pause className="h-4 w-4 mr-2" />
+                      )}
+                      {isPausing ? "Pausing..." : "Pause Campaign"}
                     </DropdownMenuItem>
                   )}
                   {/* View details - always available */}

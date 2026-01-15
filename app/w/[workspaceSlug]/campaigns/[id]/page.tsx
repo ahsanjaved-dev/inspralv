@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -57,6 +57,11 @@ import {
   useStartCampaign,
 } from "@/lib/hooks/use-campaigns"
 import {
+  useRealtimeCampaignRecipients,
+  useRealtimeCampaignStatus,
+  type RecipientCallStatus as RealtimeRecipientStatus,
+} from "@/lib/hooks/use-realtime-campaign"
+import {
   ArrowLeft,
   Loader2,
   Bot,
@@ -73,6 +78,7 @@ import {
   MoreVertical,
   RefreshCw,
   Calendar,
+  Radio,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -135,6 +141,46 @@ export default function CampaignDetailPage() {
   const recipients = recipientsData?.data || []
   const totalRecipients = recipientsData?.total || 0
   const totalPages = recipientsData?.totalPages || 1
+
+  // Real-time updates for campaign recipients
+  const {
+    isConnected: realtimeConnected,
+    recipientStatuses: realtimeStatuses,
+    recentUpdates,
+  } = useRealtimeCampaignRecipients({
+    campaignId,
+    workspaceId: campaign?.workspace_id,
+    onCallComplete: useCallback((recipient) => {
+      toast.success(`Call completed: ${recipient.phone_number}`, {
+        description: recipient.call_outcome === "answered" ? "Answered" : recipient.call_outcome || "Completed",
+      })
+    }, []),
+    onCallFailed: useCallback((recipient) => {
+      toast.error(`Call failed: ${recipient.phone_number}`, {
+        description: recipient.error_message || "Call could not be completed",
+      })
+    }, []),
+  })
+
+  // Real-time campaign status updates
+  const { status: realtimeCampaignStatus } = useRealtimeCampaignStatus({
+    campaignId,
+    onStatusChange: useCallback((newStatus, oldStatus) => {
+      if (newStatus === "completed") {
+        toast.success("Campaign completed!", {
+          description: "All calls have been processed.",
+        })
+      } else if (newStatus === "paused" && oldStatus === "active") {
+        toast.info("Campaign paused")
+      }
+      refetchCampaign()
+    }, [refetchCampaign]),
+  })
+
+  // Get real-time status for a recipient (fallback to API status)
+  const getRecipientStatus = useCallback((recipient: CallRecipient): RecipientCallStatus => {
+    return (realtimeStatuses.get(recipient.id) as RecipientCallStatus) || recipient.call_status
+  }, [realtimeStatuses])
 
   // Generate page numbers for pagination
   const getPageNumbers = () => {
@@ -551,6 +597,21 @@ export default function CampaignDetailPage() {
               <CardTitle className="flex items-center gap-2">
                 <Phone className="h-5 w-5" />
                 Recipients
+                {/* Real-time connection indicator */}
+                {realtimeConnected ? (
+                  <span className="flex items-center gap-1 text-xs font-normal text-green-600">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    Live
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
+                    <span className="h-2 w-2 rounded-full bg-gray-300"></span>
+                    Connecting...
+                  </span>
+                )}
               </CardTitle>
               <CardDescription>{totalRecipients} phone numbers</CardDescription>
             </div>

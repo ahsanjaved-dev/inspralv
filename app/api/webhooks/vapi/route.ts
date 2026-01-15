@@ -14,12 +14,25 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
+import { createClient } from "@supabase/supabase-js"
 import { prisma } from "@/lib/prisma"
 import { processCallCompletion } from "@/lib/billing/usage"
 import { indexCallLogToAlgolia } from "@/lib/algolia"
 import type { AgentProvider, Conversation } from "@/types/database.types"
 
 export const dynamic = "force-dynamic"
+
+// Supabase admin client for campaign recipient updates (triggers Realtime)
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error("Missing Supabase environment variables")
+  }
+
+  return createClient(supabaseUrl, supabaseServiceKey)
+}
 
 // =============================================================================
 // TYPES (Based on VAPI webhook payload structure - comprehensive)
@@ -1029,6 +1042,18 @@ async function handleEndOfCallReport(payload: VapiWebhookPayload) {
     ended_reason: call.endedReason,
     cost: call.cost,
   })
+
+  // =========================================================================
+  // UPDATE CAMPAIGN RECIPIENT STATUS (for real-time UI updates)
+  // =========================================================================
+  // This updates call_recipients table which triggers Supabase Realtime events
+  const callOutcome = mapEndedReasonToOutcome(call.endedReason)
+  await updateCampaignRecipientStatus(
+    call.id,
+    callOutcome,
+    durationSeconds,
+    call.cost
+  )
 }
 
 /**
@@ -1063,6 +1088,7 @@ function mapEndedReasonToOutcome(endedReason?: string): string {
 
 /**
  * Update campaign recipient status when a call completes
+ * Uses Supabase client to ensure Realtime events are triggered for UI updates
  */
 async function updateCampaignRecipientStatus(
   externalCallId: string,
@@ -1070,87 +1096,119 @@ async function updateCampaignRecipientStatus(
   durationSeconds: number,
   cost?: number
 ): Promise<void> {
-  if (!prisma) return
-
   try {
+    const supabase = getSupabaseAdmin()
+
     // Find recipient by external_call_id
-    const recipient = await prisma.$queryRaw<Array<{ id: string; campaign_id: string }>>`
-      SELECT id, campaign_id FROM call_recipients 
-      WHERE external_call_id = ${externalCallId}
-      LIMIT 1
-    `
+    const { data: recipient, error: findError } = await supabase
+      .from("call_recipients")
+      .select("id, campaign_id")
+      .eq("external_call_id", externalCallId)
+      .single()
 
-    if (!recipient || recipient.length === 0) {
-      // Not a campaign call, skip
+    if (findError || !recipient) {
+      // Not a campaign call or not found - this is normal for non-campaign calls
+      if (findError?.code !== "PGRST116") { // PGRST116 = no rows returned
+        console.log(`[VAPI Webhook] No campaign recipient found for call ${externalCallId}`)
+      }
       return
     }
 
-    const recipientData = recipient[0]
-    if (!recipientData) {
-      // Should never happen after length check, but TypeScript needs this
-      return
-    }
     console.log(
-      `[VAPI Webhook] Updating campaign recipient ${recipientData.id} with outcome: ${callOutcome}`
+      `[VAPI Webhook] Updating campaign recipient ${recipient.id} with outcome: ${callOutcome}`
     )
 
-    // Update recipient status
-    await prisma.$executeRaw`
-      UPDATE call_recipients 
-      SET 
-        call_status = ${callOutcome === "completed" ? "completed" : "failed"},
-        call_outcome = ${callOutcome},
-        call_ended_at = NOW(),
-        call_duration_seconds = ${durationSeconds},
-        call_cost = ${cost || 0},
-        updated_at = NOW()
-      WHERE id = ${recipientData.id}
-    `
+    // Determine final status based on outcome
+    // "completed" means successful call, anything else is "failed"
+    const finalStatus = callOutcome === "completed" ? "completed" : "failed"
 
-    // Update campaign statistics
-    if (callOutcome === "completed") {
-      await prisma.$executeRaw`
-        UPDATE call_campaigns 
-        SET 
-          completed_calls = completed_calls + 1,
-          successful_calls = successful_calls + 1,
-          updated_at = NOW()
-        WHERE id = ${recipientData.campaign_id}
-      `
-    } else {
-      await prisma.$executeRaw`
-        UPDATE call_campaigns 
-        SET 
-          completed_calls = completed_calls + 1,
-          failed_calls = failed_calls + 1,
-          updated_at = NOW()
-        WHERE id = ${recipientData.campaign_id}
-      `
+    // Update recipient status - this triggers Supabase Realtime!
+    const { error: updateError } = await supabase
+      .from("call_recipients")
+      .update({
+        call_status: finalStatus,
+        call_outcome: callOutcome,
+        call_ended_at: new Date().toISOString(),
+        call_duration_seconds: durationSeconds,
+        call_cost: cost || 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", recipient.id)
+
+    if (updateError) {
+      console.error("[VAPI Webhook] Error updating recipient:", updateError)
+      return
     }
 
-    // Check if campaign is complete (no more pending or in_progress recipients)
-    const pendingCount = await prisma.$queryRaw<Array<{ count: bigint }>>`
-      SELECT COUNT(*) as count FROM call_recipients 
-      WHERE campaign_id = ${recipientData.campaign_id}
-      AND call_status IN ('pending', 'in_progress')
-    `
+    // Update campaign statistics - also triggers Realtime!
+    // First, get current campaign stats
+    const { data: campaign, error: campaignError } = await supabase
+      .from("call_campaigns")
+      .select("completed_calls, successful_calls, failed_calls, pending_calls")
+      .eq("id", recipient.campaign_id)
+      .single()
 
-    if (pendingCount && pendingCount[0] && pendingCount[0].count === BigInt(0)) {
+    if (campaignError || !campaign) {
+      console.error("[VAPI Webhook] Error fetching campaign:", campaignError)
+      return
+    }
+
+    // Calculate new stats
+    const newCompletedCalls = (campaign.completed_calls || 0) + 1
+    const newSuccessfulCalls = callOutcome === "completed" 
+      ? (campaign.successful_calls || 0) + 1 
+      : campaign.successful_calls || 0
+    const newFailedCalls = callOutcome !== "completed" 
+      ? (campaign.failed_calls || 0) + 1 
+      : campaign.failed_calls || 0
+    const newPendingCalls = Math.max(0, (campaign.pending_calls || 0) - 1)
+
+    // Update campaign stats
+    const { error: statsError } = await supabase
+      .from("call_campaigns")
+      .update({
+        completed_calls: newCompletedCalls,
+        successful_calls: newSuccessfulCalls,
+        failed_calls: newFailedCalls,
+        pending_calls: newPendingCalls,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", recipient.campaign_id)
+
+    if (statsError) {
+      console.error("[VAPI Webhook] Error updating campaign stats:", statsError)
+    }
+
+    // Check if campaign is complete (no more pending or calling recipients)
+    const { count: remainingCount, error: countError } = await supabase
+      .from("call_recipients")
+      .select("*", { count: "exact", head: true })
+      .eq("campaign_id", recipient.campaign_id)
+      .in("call_status", ["pending", "calling", "queued"])
+
+    if (countError) {
+      console.error("[VAPI Webhook] Error counting remaining recipients:", countError)
+      return
+    }
+
+    if (remainingCount === 0) {
       console.log(
-        `[VAPI Webhook] Campaign ${recipientData.campaign_id} completed - all recipients processed`
+        `[VAPI Webhook] Campaign ${recipient.campaign_id} completed - all recipients processed`
       )
-      await prisma.$executeRaw`
-        UPDATE call_campaigns 
-        SET 
-          status = 'completed',
-          completed_at = NOW(),
-          updated_at = NOW()
-        WHERE id = ${recipientData.campaign_id}
-        AND status = 'active'
-      `
+      
+      // Mark campaign as completed
+      await supabase
+        .from("call_campaigns")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", recipient.campaign_id)
+        .eq("status", "active")
     }
 
-    console.log(`[VAPI Webhook] Campaign recipient ${recipientData.id} updated successfully`)
+    console.log(`[VAPI Webhook] Campaign recipient ${recipient.id} updated successfully`)
   } catch (error) {
     console.error("[VAPI Webhook] Error updating campaign recipient:", error)
     // Don't throw - this is a secondary operation

@@ -519,7 +519,8 @@ async function handleEndOfCallReport(
   console.log("[VAPI Webhook] RAW PAYLOAD KEYS:", Object.keys(payload))
   console.log("[VAPI Webhook] MESSAGE KEYS:", Object.keys(payload.message || {}))
   
-  const { call, artifact, analysis } = payload.message
+  const message = payload.message
+  const { call, artifact, analysis } = message
 
   if (!call?.id || !prisma) {
     console.error("[VAPI Webhook] No call ID or Prisma not configured")
@@ -528,10 +529,15 @@ async function handleEndOfCallReport(
 
   // Get assistantId from either direct field or nested assistant object
   const assistantId = call.assistantId || call.assistant?.id
+  
+  // endedReason can be at message level or call level - check both
+  const endedReason = call.endedReason || (message as any).endedReason
 
   console.log(`[VAPI Webhook] End of call report: ${call.id}`, {
     type: call.type,
     assistantId: assistantId,
+    endedReason: endedReason || "NOT PROVIDED",
+    cost: call.cost || (message as any).cost,
   })
 
   // Log message.artifact data (CORRECT location per VAPI docs!)
@@ -843,6 +849,15 @@ async function handleEndOfCallReport(
   } else {
     console.error(`[VAPI Webhook] Billing failed: ${billingResult.error || billingResult.reason}`)
   }
+
+  // =========================================================================
+  // UPDATE CAMPAIGN RECIPIENT STATUS (for real-time UI updates)
+  // This updates call_recipients table which triggers Supabase Realtime events
+  // =========================================================================
+  // Determine if there was a transcript (indicates actual conversation happened)
+  const hasTranscript = !!(transcript && transcript.length > 0)
+  const callOutcome = mapEndedReasonToOutcome(endedReason, durationSeconds, hasTranscript)
+  await updateCampaignRecipientStatus(call.id, callOutcome, durationSeconds, call.cost)
 }
 
 async function handleFunctionCall(payload: VapiWebhookPayload, workspaceId: string) {
@@ -989,5 +1004,256 @@ function mapVapiStatus(status: string | undefined): "initiated" | "ringing" | "i
     "ended": "completed",
   }
   return statusMap[status || ""] || "initiated"
+}
+
+/**
+ * Map VAPI ended reason to call outcome
+ * 
+ * VAPI endedReason values:
+ * - assistant-ended-call: Assistant ended the call (answered)
+ * - customer-ended-call: Customer hung up (answered)
+ * - silence-timed-out: No speech detected after answer
+ * - customer-did-not-answer: No answer
+ * - voicemail-reached: Went to voicemail
+ * - customer-busy: Line busy
+ * - assistant-error: Error occurred
+ * - dial-busy-or-failed: Couldn't connect
+ * - phone-call-provider-closed-websocket: Provider issue
+ * - pipeline-error: System error
+ * - max-duration-reached: Hit time limit (was answered)
+ * - exceeded-max-cost: Cost limit hit
+ * 
+ * @param endedReason - VAPI's endedReason string
+ * @param durationSeconds - Call duration to help determine if answered
+ * @param hasTranscript - Whether there was a transcript (indicates conversation happened)
+ */
+function mapEndedReasonToOutcome(
+  endedReason?: string,
+  durationSeconds?: number,
+  hasTranscript?: boolean
+): string {
+  console.log(`[VAPI Webhook] Mapping endedReason: "${endedReason}", duration: ${durationSeconds}s, hasTranscript: ${hasTranscript}`)
+
+  if (!endedReason) {
+    // No ended reason - check duration to guess
+    if (durationSeconds && durationSeconds > 10) {
+      return "answered"
+    }
+    return "no_answer"
+  }
+
+  const reason = endedReason.toLowerCase()
+
+  // Definitely answered - conversation happened
+  if (
+    reason.includes("customer-ended-call") || 
+    reason.includes("assistant-ended-call") ||
+    reason.includes("max-duration-reached") ||
+    reason.includes("exceeded-max-cost")
+  ) {
+    return "answered"
+  }
+
+  // Definitely not answered
+  if (
+    reason.includes("customer-did-not-answer") ||
+    reason.includes("no-answer") ||
+    reason.includes("no_answer")
+  ) {
+    return "no_answer"
+  }
+
+  // Busy signal
+  if (
+    reason.includes("customer-busy") ||
+    reason.includes("busy") ||
+    reason.includes("dial-busy")
+  ) {
+    return "busy"
+  }
+
+  // Voicemail
+  if (
+    reason.includes("voicemail") ||
+    reason.includes("machine-detected") ||
+    reason.includes("answering-machine")
+  ) {
+    return "voicemail"
+  }
+
+  // Errors and failures
+  if (
+    reason.includes("failed") ||
+    reason.includes("error") ||
+    reason.includes("pipeline-error") ||
+    reason.includes("websocket")
+  ) {
+    return "error"
+  }
+
+  // Cancelled
+  if (reason.includes("cancelled") || reason.includes("canceled")) {
+    return "declined"
+  }
+
+  // Silence timeout - call was answered but no conversation
+  if (reason.includes("silence-timed-out")) {
+    // If there's a transcript or significant duration, count as answered
+    if (hasTranscript || (durationSeconds && durationSeconds > 15)) {
+      return "answered"
+    }
+    return "no_answer"
+  }
+
+  // Unknown reason - use duration and transcript to determine
+  // If call lasted more than 10 seconds or has transcript, likely answered
+  if (hasTranscript || (durationSeconds && durationSeconds > 10)) {
+    console.log(`[VAPI Webhook] Unknown endedReason "${endedReason}" - assuming answered based on duration/transcript`)
+    return "answered"
+  }
+
+  // Default to no_answer for short calls with unknown reasons
+  console.log(`[VAPI Webhook] Unknown endedReason "${endedReason}" - assuming no_answer (short duration, no transcript)`)
+  return "no_answer"
+}
+
+/**
+ * Update campaign recipient status when a call completes
+ * Uses Supabase client to ensure Realtime events are triggered for UI updates
+ */
+async function updateCampaignRecipientStatus(
+  externalCallId: string,
+  callOutcome: string,
+  durationSeconds: number,
+  cost?: number
+): Promise<void> {
+  try {
+    const supabase = getSupabaseAdmin()
+
+    // Find recipient by external_call_id
+    const { data: recipient, error: findError } = await supabase
+      .from("call_recipients")
+      .select("id, campaign_id")
+      .eq("external_call_id", externalCallId)
+      .single()
+
+    if (findError || !recipient) {
+      // Not a campaign call or not found - this is normal for non-campaign calls
+      if (findError?.code !== "PGRST116") { // PGRST116 = no rows returned
+        console.log(`[VAPI Webhook] No campaign recipient found for call ${externalCallId}`)
+      }
+      return
+    }
+
+    console.log(
+      `[VAPI Webhook] Updating campaign recipient ${recipient.id} with outcome: ${callOutcome}`
+    )
+
+    // Determine final status based on outcome
+    // "answered" means successful call, anything else depends on outcome
+    const isSuccessful = callOutcome === "answered"
+    const finalStatus = isSuccessful ? "completed" : "failed"
+
+    // Update recipient status - this triggers Supabase Realtime!
+    const { error: updateError } = await supabase
+      .from("call_recipients")
+      .update({
+        call_status: finalStatus,
+        call_outcome: callOutcome,
+        call_ended_at: new Date().toISOString(),
+        call_duration_seconds: durationSeconds,
+        call_cost: cost || 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", recipient.id)
+
+    if (updateError) {
+      console.error("[VAPI Webhook] Error updating recipient:", updateError)
+      return
+    }
+
+    console.log(`[VAPI Webhook] Campaign recipient ${recipient.id} updated: status=${finalStatus}, outcome=${callOutcome}`)
+
+    // Update campaign statistics
+    const { data: campaign, error: campaignError } = await supabase
+      .from("call_campaigns")
+      .select("completed_calls, successful_calls, failed_calls, pending_calls, total_recipients, status")
+      .eq("id", recipient.campaign_id)
+      .single()
+
+    if (campaignError || !campaign) {
+      console.error("[VAPI Webhook] Error fetching campaign:", campaignError)
+      return
+    }
+
+    // Calculate new stats
+    const newCompletedCalls = (campaign.completed_calls || 0) + 1
+    const newSuccessfulCalls = isSuccessful 
+      ? (campaign.successful_calls || 0) + 1 
+      : campaign.successful_calls || 0
+    const newFailedCalls = !isSuccessful 
+      ? (campaign.failed_calls || 0) + 1 
+      : campaign.failed_calls || 0
+    
+    // Note: pending_calls is decremented when calls START, not when they end
+    // So we don't change it here
+
+    // Update campaign stats
+    const { error: statsError } = await supabase
+      .from("call_campaigns")
+      .update({
+        completed_calls: newCompletedCalls,
+        successful_calls: newSuccessfulCalls,
+        failed_calls: newFailedCalls,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", recipient.campaign_id)
+
+    if (statsError) {
+      console.error("[VAPI Webhook] Error updating campaign stats:", statsError)
+    } else {
+      console.log(`[VAPI Webhook] Campaign stats updated: completed=${newCompletedCalls}, successful=${newSuccessfulCalls}, failed=${newFailedCalls}`)
+    }
+
+    // Check if campaign is complete (all recipients processed)
+    const { count: remainingCount, error: countError } = await supabase
+      .from("call_recipients")
+      .select("*", { count: "exact", head: true })
+      .eq("campaign_id", recipient.campaign_id)
+      .in("call_status", ["pending", "calling", "queued"])
+
+    if (countError) {
+      console.error("[VAPI Webhook] Error counting remaining recipients:", countError)
+      return
+    }
+
+    console.log(`[VAPI Webhook] Remaining recipients to process: ${remainingCount}`)
+
+    if (remainingCount === 0 && campaign.status === "active") {
+      console.log(
+        `[VAPI Webhook] Campaign ${recipient.campaign_id} completed - all recipients processed`
+      )
+      
+      // Mark campaign as completed
+      const { error: completeError } = await supabase
+        .from("call_campaigns")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", recipient.campaign_id)
+        .eq("status", "active") // Only if still active
+
+      if (completeError) {
+        console.error("[VAPI Webhook] Error marking campaign complete:", completeError)
+      } else {
+        console.log(`[VAPI Webhook] Campaign ${recipient.campaign_id} marked as completed`)
+      }
+    }
+  } catch (error) {
+    console.error("[VAPI Webhook] Error updating campaign recipient:", error)
+    // Don't throw - this is a secondary operation
+  }
 }
 

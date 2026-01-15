@@ -1,29 +1,9 @@
 /**
- * Campaign Provider - Unified Interface for Outbound Calling
+ * Campaign Provider - VAPI-Only Outbound Calling
  * 
- * This module provides a unified interface for campaign outbound calling
- * with automatic fallback from Inspra to VAPI when the primary fails.
- * 
- * Flow:
- * 1. Try Inspra API first (primary provider)
- * 2. If Inspra fails, automatically fallback to VAPI
- * 3. Return combined result with provider used
+ * This module provides the interface for campaign outbound calling using VAPI.
+ * Inspra integration has been deprecated in favor of direct VAPI calls.
  */
-
-import {
-  loadJsonBatch,
-  pauseBatch,
-  terminateBatch,
-  queueTestCall,
-  buildLoadJsonPayload,
-  convertBusinessHoursToBlockRules,
-  type InspraLoadJsonPayload,
-  type InspraBatchPayload,
-  type InspraTestCallPayload,
-  type InspraApiResponse,
-  type CampaignData,
-  type RecipientData,
-} from "./inspra/client"
 
 import {
   startVapiBatch,
@@ -40,14 +20,10 @@ import type { BusinessHoursConfig } from "@/types/database.types"
 // TYPES
 // ============================================================================
 
-export type CampaignProvider = "inspra" | "vapi"
+export type CampaignProvider = "vapi"
 
 export interface CampaignProviderConfig {
-  // Inspra config (primary)
-  inspra?: {
-    enabled: boolean
-  }
-  // VAPI config (fallback)
+  // VAPI config (required)
   vapi?: {
     apiKey: string
     phoneNumberId: string  // VAPI phone number ID for outbound calls
@@ -62,33 +38,45 @@ export interface CampaignBatchResult {
   recipientCount?: number
   // VAPI-specific results
   vapiResults?: VapiBatchResult
-  // Additional context
-  fallbackUsed?: boolean
-  primaryError?: string
 }
 
 export interface CampaignTestCallResult {
   success: boolean
   provider: CampaignProvider
   error?: string
-  fallbackUsed?: boolean
-  primaryError?: string
 }
 
-// ============================================================================
-// INSPRA CONFIGURATION CHECK
-// ============================================================================
+// Re-export types from inspra client for backward compatibility
+export interface CampaignData {
+  id: string
+  workspace_id: string
+  agent: {
+    external_agent_id: string
+    external_phone_number?: string | null
+    assigned_phone_number_id?: string | null
+  }
+  cli: string // Resolved caller ID
+  schedule_type: string
+  scheduled_start_at?: string | null
+  scheduled_expires_at?: string | null
+  business_hours_config?: BusinessHoursConfig | null
+  timezone: string
+}
 
-const INSPRA_API_URL = process.env.INSPRA_OUTBOUND_API_URL
-const INSPRA_API_KEY = process.env.INSPRA_API_KEY
-
-function isInspraConfigured(): boolean {
-  // Check if Inspra is configured and not pointing to webhook.site
-  return !!(
-    INSPRA_API_URL &&
-    !INSPRA_API_URL.includes("webhook.site") &&
-    INSPRA_API_URL.length > 0
-  )
+export interface RecipientData {
+  id?: string  // Database ID for tracking call results
+  phone_number: string
+  first_name?: string | null
+  last_name?: string | null
+  email?: string | null
+  company?: string | null
+  reason_for_call?: string | null
+  address_line_1?: string | null
+  address_line_2?: string | null
+  suburb?: string | null
+  state?: string | null
+  post_code?: string | null
+  country?: string | null
 }
 
 // ============================================================================
@@ -96,11 +84,11 @@ function isInspraConfigured(): boolean {
 // ============================================================================
 
 /**
- * Start a campaign batch with automatic fallback
+ * Start a campaign batch using VAPI
  * 
  * @param campaign - Campaign data
  * @param recipients - List of recipients
- * @param vapiConfig - VAPI configuration for fallback
+ * @param vapiConfig - VAPI configuration (required)
  * @param options - Additional options
  */
 export async function startCampaignBatch(
@@ -114,96 +102,32 @@ export async function startCampaignBatch(
   
   console.log(`[CampaignProvider] Starting batch: ${batchRef}`)
   console.log(`[CampaignProvider] Recipients: ${recipients.length}`)
-  console.log(`[CampaignProvider] Inspra configured: ${isInspraConfigured()}`)
-  console.log(`[CampaignProvider] VAPI fallback available: ${!!vapiConfig?.apiKey}`)
+  console.log(`[CampaignProvider] VAPI config available: ${!!vapiConfig?.apiKey}`)
   
   // =========================================================================
-  // TRY INSPRA FIRST (Primary Provider)
+  // VAPI ONLY
   // =========================================================================
   
-  if (isInspraConfigured()) {
-    console.log(`[CampaignProvider] Attempting Inspra API...`)
-    
-    try {
-      const inspraPayload = buildLoadJsonPayload(campaign, recipients, { startNow })
-      const inspraResult = await loadJsonBatch(inspraPayload)
-      
-      if (inspraResult.success) {
-        console.log(`[CampaignProvider] Inspra success!`)
-        return {
-          success: true,
-          provider: "inspra",
-          batchRef,
-          recipientCount: recipients.length,
-        }
-      }
-      
-      // Inspra failed - log error and try fallback
-      console.error(`[CampaignProvider] Inspra failed:`, inspraResult.error)
-      
-      // If VAPI fallback is not available, return Inspra error
-      if (!vapiConfig?.apiKey) {
-        return {
-          success: false,
-          provider: "inspra",
-          error: inspraResult.error || "Inspra API error",
-          batchRef,
-        }
-      }
-      
-      // Try VAPI fallback
-      console.log(`[CampaignProvider] Falling back to VAPI...`)
-      const vapiResult = await executeVapiBatch(campaign, recipients, vapiConfig, startNow)
-      
-      return {
-        ...vapiResult,
-        fallbackUsed: true,
-        primaryError: inspraResult.error || "Inspra API error",
-      }
-    } catch (error) {
-      console.error(`[CampaignProvider] Inspra exception:`, error)
-      
-      // If VAPI fallback is not available, return error
-      if (!vapiConfig?.apiKey) {
-        return {
-          success: false,
-          provider: "inspra",
-          error: error instanceof Error ? error.message : "Unknown error",
-          batchRef,
-        }
-      }
-      
-      // Try VAPI fallback
-      console.log(`[CampaignProvider] Falling back to VAPI after exception...`)
-      const vapiResult = await executeVapiBatch(campaign, recipients, vapiConfig, startNow)
-      
-      return {
-        ...vapiResult,
-        fallbackUsed: true,
-        primaryError: error instanceof Error ? error.message : "Unknown error",
-      }
+  if (!vapiConfig?.apiKey) {
+    return {
+      success: false,
+      provider: "vapi",
+      error: "VAPI configuration is required. Please configure VAPI integration.",
+      batchRef,
+    }
+  }
+
+  if (!vapiConfig.phoneNumberId) {
+    return {
+      success: false,
+      provider: "vapi",
+      error: "VAPI phone number ID is required for outbound calls.",
+      batchRef,
     }
   }
   
-  // =========================================================================
-  // VAPI ONLY (Inspra not configured)
-  // =========================================================================
-  
-  if (vapiConfig?.apiKey) {
-    console.log(`[CampaignProvider] Using VAPI (Inspra not configured)`)
-    return executeVapiBatch(campaign, recipients, vapiConfig, startNow)
-  }
-  
-  // =========================================================================
-  // NO PROVIDER AVAILABLE
-  // =========================================================================
-  
-  return {
-    success: false,
-    provider: "inspra",
-    error: "No outbound calling provider configured. Configure Inspra or VAPI.",
-    batchRef,
-  }
+  console.log(`[CampaignProvider] Using VAPI for campaign`)
+  return executeVapiBatch(campaign, recipients, vapiConfig, startNow)
 }
 
 /**
@@ -288,7 +212,7 @@ async function executeVapiBatch(
 /**
  * Pause a campaign batch
  * 
- * Note: VAPI doesn't have native batch pause - we track state locally
+ * Note: VAPI doesn't have native batch pause - we track state locally via DB
  */
 export async function pauseCampaignBatch(
   workspaceId: string,
@@ -297,26 +221,6 @@ export async function pauseCampaignBatch(
   vapiConfig?: CampaignProviderConfig["vapi"]
 ): Promise<CampaignBatchResult> {
   const batchRef = `campaign-${campaignId}`
-  
-  // Try Inspra first
-  if (isInspraConfigured()) {
-    console.log(`[CampaignProvider] Pausing via Inspra: ${batchRef}`)
-    
-    const payload: InspraBatchPayload = {
-      workspaceId,
-      agentId,
-      batchRef,
-    }
-    
-    const result = await pauseBatch(payload)
-    
-    return {
-      success: result.success,
-      provider: "inspra",
-      error: result.error,
-      batchRef,
-    }
-  }
   
   // VAPI doesn't have native pause - just return success
   // The campaign status in DB controls whether we continue making calls
@@ -335,6 +239,8 @@ export async function pauseCampaignBatch(
 
 /**
  * Terminate a campaign batch
+ * 
+ * Note: VAPI doesn't have native batch terminate - we track state locally via DB
  */
 export async function terminateCampaignBatch(
   workspaceId: string,
@@ -343,26 +249,6 @@ export async function terminateCampaignBatch(
   vapiConfig?: CampaignProviderConfig["vapi"]
 ): Promise<CampaignBatchResult> {
   const batchRef = `campaign-${campaignId}`
-  
-  // Try Inspra first
-  if (isInspraConfigured()) {
-    console.log(`[CampaignProvider] Terminating via Inspra: ${batchRef}`)
-    
-    const payload: InspraBatchPayload = {
-      workspaceId,
-      agentId,
-      batchRef,
-    }
-    
-    const result = await terminateBatch(payload)
-    
-    return {
-      success: result.success,
-      provider: "inspra",
-      error: result.error,
-      batchRef,
-    }
-  }
   
   // VAPI doesn't have native terminate - just return success
   // The campaign status in DB controls whether we continue making calls
@@ -380,7 +266,7 @@ export async function terminateCampaignBatch(
 // ============================================================================
 
 /**
- * Make a test call with automatic fallback
+ * Make a test call via VAPI
  */
 export async function makeTestCall(
   campaign: CampaignData,
@@ -388,75 +274,24 @@ export async function makeTestCall(
   variables: Record<string, string>,
   vapiConfig?: CampaignProviderConfig["vapi"]
 ): Promise<CampaignTestCallResult> {
-  // Try Inspra first
-  if (isInspraConfigured()) {
-    console.log(`[CampaignProvider] Test call via Inspra to: ${phoneNumber}`)
-    
-    const now = new Date()
-    const exp = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-    
-    const payload: InspraTestCallPayload = {
-      agentId: campaign.agent.external_agent_id,
-      workspaceId: campaign.workspace_id,
-      batchRef: `test-${campaign.id}-${Date.now()}`,
-      cli: campaign.cli,
-      nbf: now.toISOString(),
-      exp: exp.toISOString(),
-      blockRules: convertBusinessHoursToBlockRules(campaign.business_hours_config),
-      phone: phoneNumber,
-      variables,
-    }
-    
-    const result = await queueTestCall(payload)
-    
-    if (result.success) {
-      return {
-        success: true,
-        provider: "inspra",
-      }
-    }
-    
-    // Inspra failed - try VAPI fallback
-    if (vapiConfig?.apiKey) {
-      console.log(`[CampaignProvider] Test call fallback to VAPI`)
-      const vapiResult = await executeVapiTestCall(campaign, phoneNumber, variables, vapiConfig)
-      
-      return {
-        ...vapiResult,
-        fallbackUsed: true,
-        primaryError: result.error || "Inspra test call failed",
-      }
-    }
-    
+  if (!vapiConfig?.apiKey) {
     return {
       success: false,
-      provider: "inspra",
-      error: result.error || "Inspra test call failed",
+      provider: "vapi",
+      error: "VAPI configuration is required for test calls",
+    }
+  }
+
+  if (!vapiConfig.phoneNumberId) {
+    return {
+      success: false,
+      provider: "vapi",
+      error: "VAPI phone number ID is required for outbound calls",
     }
   }
   
-  // VAPI only
-  if (vapiConfig?.apiKey) {
-    console.log(`[CampaignProvider] Test call via VAPI to: ${phoneNumber}`)
-    return executeVapiTestCall(campaign, phoneNumber, variables, vapiConfig)
-  }
+  console.log(`[CampaignProvider] Test call via VAPI to: ${phoneNumber}`)
   
-  return {
-    success: false,
-    provider: "inspra",
-    error: "No outbound calling provider configured",
-  }
-}
-
-/**
- * Execute test call via VAPI
- */
-async function executeVapiTestCall(
-  campaign: CampaignData,
-  phoneNumber: string,
-  variables: Record<string, string>,
-  vapiConfig: NonNullable<CampaignProviderConfig["vapi"]>
-): Promise<CampaignTestCallResult> {
   const { createOutboundCall } = await import("./vapi/calls")
   
   const result = await createOutboundCall({
@@ -481,8 +316,64 @@ async function executeVapiTestCall(
 export {
   isWithinBusinessHours,
   getNextBusinessHourWindow,
-  isInspraConfigured,
-  buildLoadJsonPayload,
-  convertBusinessHoursToBlockRules,
 }
 
+/**
+ * Convert business hours config to block rules format
+ * (Kept for backward compatibility, but no longer used with VAPI-only)
+ */
+export function convertBusinessHoursToBlockRules(config: BusinessHoursConfig | null | undefined): string[] {
+  if (!config || !config.enabled) {
+    return []
+  }
+
+  const DAY_MAP: Record<string, string> = {
+    monday: "Mon",
+    tuesday: "Tue",
+    wednesday: "Wed",
+    thursday: "Thu",
+    friday: "Fri",
+    saturday: "Sat",
+    sunday: "Sun",
+  }
+
+  const DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+  const blockRules: string[] = []
+
+  for (const day of DAY_ORDER) {
+    const slots = config.schedule[day as keyof typeof config.schedule] || []
+    const dayAbbrev = DAY_MAP[day]
+
+    if (slots.length === 0) {
+      blockRules.push(`${dayAbbrev}|0000-2359`)
+    } else {
+      const sortedSlots = [...slots].sort((a, b) => a.start.localeCompare(b.start))
+
+      const firstSlot = sortedSlots[0]
+      if (firstSlot && firstSlot.start !== "00:00") {
+        const startTime = firstSlot.start.replace(":", "")
+        blockRules.push(`${dayAbbrev}|0000-${startTime}`)
+      }
+
+      for (let i = 0; i < sortedSlots.length - 1; i++) {
+        const currentSlot = sortedSlots[i]
+        const nextSlot = sortedSlots[i + 1]
+        if (currentSlot && nextSlot) {
+          const currentEnd = currentSlot.end.replace(":", "")
+          const nextStart = nextSlot.start.replace(":", "")
+          if (currentEnd !== nextStart) {
+            blockRules.push(`${dayAbbrev}|${currentEnd}-${nextStart}`)
+          }
+        }
+      }
+
+      const lastSlot = sortedSlots[sortedSlots.length - 1]
+      if (lastSlot && lastSlot.end !== "24:00" && lastSlot.end !== "23:59") {
+        const endTime = lastSlot.end.replace(":", "")
+        blockRules.push(`${dayAbbrev}|${endTime}-2359`)
+      }
+    }
+  }
+
+  return blockRules
+}

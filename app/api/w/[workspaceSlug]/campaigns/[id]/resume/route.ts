@@ -6,7 +6,7 @@ import {
   startCampaignBatch,
   type CampaignProviderConfig,
 } from "@/lib/integrations/campaign-provider"
-import type { CampaignData, RecipientData } from "@/lib/integrations/inspra/client"
+import type { CampaignData, RecipientData } from "@/lib/integrations/campaign-provider"
 import type { BusinessHoursConfig } from "@/types/database.types"
 
 // ============================================================================

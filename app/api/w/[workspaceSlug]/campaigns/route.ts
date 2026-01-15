@@ -9,12 +9,7 @@ import {
   getValidationError,
 } from "@/lib/api/helpers"
 import { createCampaignSchema, createCampaignWizardSchema } from "@/types/database.types"
-import type { BusinessHoursConfig } from "@/types/database.types"
-import {
-  startCampaignBatch,
-  type CampaignProviderConfig,
-} from "@/lib/integrations/campaign-provider"
-import type { CampaignData, RecipientData } from "@/lib/integrations/inspra/client"
+import type { RecipientData } from "@/lib/integrations/campaign-provider"
 
 // ============================================================================
 // SUPABASE CLIENT
@@ -85,122 +80,6 @@ async function getCLIForAgent(
   }
 
   return null
-}
-
-// ============================================================================
-// HELPER: Get VAPI Config for Fallback
-// ============================================================================
-
-interface VapiIntegrationDetails {
-  apiKey: string
-  phoneNumberId: string | null
-  config: any
-}
-
-async function getVapiConfigForFallback(
-  agent: any,
-  workspaceId: string,
-  adminClient: ReturnType<typeof getSupabaseAdmin>
-): Promise<VapiIntegrationDetails | null> {
-  try {
-    const { data: workspace } = await adminClient
-      .from("workspaces")
-      .select("partner_id")
-      .eq("id", workspaceId)
-      .single()
-
-    if (!workspace?.partner_id) return null
-
-    const { data: assignment } = await adminClient
-      .from("workspace_integration_assignments")
-      .select(`
-        partner_integration:partner_integrations (
-          id,
-          api_keys,
-          config,
-          is_active
-        )
-      `)
-      .eq("workspace_id", workspaceId)
-      .eq("provider", "vapi")
-      .single()
-
-    if (assignment?.partner_integration) {
-      const partnerIntegration = assignment.partner_integration as any
-      if (partnerIntegration.is_active) {
-        const apiKeys = partnerIntegration.api_keys as any
-        const vapiConfig = partnerIntegration.config || {}
-        
-        if (apiKeys?.default_secret_key) {
-          let phoneNumberId: string | null = null
-          
-          if (vapiConfig.shared_outbound_phone_number_id) {
-            phoneNumberId = vapiConfig.shared_outbound_phone_number_id
-          } else if (agent.assigned_phone_number_id) {
-            const { data: phoneNumber } = await adminClient
-              .from("phone_numbers")
-              .select("external_id")
-              .eq("id", agent.assigned_phone_number_id)
-              .single()
-            
-            if (phoneNumber?.external_id) {
-              phoneNumberId = phoneNumber.external_id
-            }
-          }
-          
-          return {
-            apiKey: apiKeys.default_secret_key,
-            phoneNumberId,
-            config: vapiConfig,
-          }
-        }
-      }
-    }
-
-    // Try default integration
-    const { data: defaultIntegration } = await adminClient
-      .from("partner_integrations")
-      .select("id, api_keys, config, is_active")
-      .eq("partner_id", workspace.partner_id)
-      .eq("provider", "vapi")
-      .eq("is_default", true)
-      .eq("is_active", true)
-      .single()
-
-    if (defaultIntegration) {
-      const apiKeys = defaultIntegration.api_keys as any
-      const vapiConfig = defaultIntegration.config || {}
-      
-      if (apiKeys?.default_secret_key) {
-        let phoneNumberId: string | null = null
-        
-        if (vapiConfig.shared_outbound_phone_number_id) {
-          phoneNumberId = vapiConfig.shared_outbound_phone_number_id
-        } else if (agent.assigned_phone_number_id) {
-          const { data: phoneNumber } = await adminClient
-            .from("phone_numbers")
-            .select("external_id")
-            .eq("id", agent.assigned_phone_number_id)
-            .single()
-          
-          if (phoneNumber?.external_id) {
-            phoneNumberId = phoneNumber.external_id
-          }
-        }
-        
-        return {
-          apiKey: apiKeys.default_secret_key,
-          phoneNumberId,
-          config: vapiConfig,
-        }
-      }
-    }
-
-    return null
-  } catch (error) {
-    console.error("[CampaignsAPI] Error getting VAPI config:", error)
-    return null
-  }
 }
 
 // GET /api/w/[workspaceSlug]/campaigns - List campaigns
@@ -552,76 +431,15 @@ export async function POST(
     }
 
     // =========================================================================
-    // SEND TO PROVIDER on CREATE for ALL completed campaigns
-    // Uses unified provider with automatic VAPI fallback
-    // - Immediate/"ready" campaigns: NBF = 1 year future (waits for "Start Now")
-    // - Scheduled campaigns: NBF = scheduled_start_at (auto-starts)
+    // CAMPAIGN CREATED - CALLS WILL BE INITIATED WHEN USER CLICKS "START NOW"
     // =========================================================================
+    // Note: We no longer send calls to the provider on campaign creation.
+    // Calls are only initiated when user explicitly clicks "Start Now" via
+    // POST /campaigns/[id]/start endpoint.
+    // For scheduled campaigns, the cron job will trigger the start.
 
-    let providerResult: {
-      success: boolean
-      provider: "inspra" | "vapi"
-      error?: string
-      fallbackUsed?: boolean
-      primaryError?: string
-    } = { success: true, provider: "inspra" }
-    
-    const isCompletedCampaign = campaign.status === "scheduled" || campaign.status === "ready"
-
-    // Send to provider for all completed campaigns (both scheduled and ready/immediate)
-    if (insertedRecipients.length > 0 && isCompletedCampaign) {
-      const isReady = campaign.status === "ready"
-      console.log(`[CampaignsAPI] Sending ${isReady ? "READY (immediate)" : "SCHEDULED"} campaign to provider...`)
-
-      // Get VAPI config for fallback
-      const vapiDetails = await getVapiConfigForFallback(agent, ctx.workspace.id, ctx.adminClient)
-      const vapiConfig: CampaignProviderConfig["vapi"] = vapiDetails?.apiKey && vapiDetails?.phoneNumberId
-        ? {
-            apiKey: vapiDetails.apiKey,
-            phoneNumberId: vapiDetails.phoneNumberId,
-          }
-        : undefined
-
-      console.log("[CampaignsAPI] VAPI fallback available:", !!vapiConfig)
-
-      // Build campaign data for provider
-      const campaignDataForProvider: CampaignData = {
-        id: campaign.id,
-        workspace_id: ctx.workspace.id,
-        agent: {
-          external_agent_id: agent.external_agent_id,
-          external_phone_number: agent.external_phone_number,
-          assigned_phone_number_id: agent.assigned_phone_number_id,
-        },
-        cli,
-        schedule_type: campaign.schedule_type,
-        scheduled_start_at: campaign.scheduled_start_at,
-        scheduled_expires_at: campaign.scheduled_expires_at,
-        business_hours_config: campaign.business_hours_config as BusinessHoursConfig | null,
-        timezone: campaign.timezone,
-      }
-
-      // Send via unified provider (Inspra first, VAPI fallback)
-      // Note: For "ready" campaigns, startNow: false means NBF = 1 year future
-      // For "scheduled" campaigns, startNow: false means NBF = scheduled_start_at
-      providerResult = await startCampaignBatch(
-        campaignDataForProvider,
-        insertedRecipients,
-        vapiConfig,
-        { startNow: false }
-      )
-
-      if (providerResult.success) {
-        console.log(`[CampaignsAPI] Successfully sent ${isReady ? "ready" : "scheduled"} campaign to ${providerResult.provider}`)
-        if (providerResult.fallbackUsed) {
-          console.log("[CampaignsAPI] Fallback was used. Primary error:", providerResult.primaryError)
-        }
-      } else {
-        console.error("[CampaignsAPI] Failed to send to provider:", providerResult.error)
-        // Don't fail the campaign creation - just log the error
-        // The campaign is still created locally, can retry later
-      }
-    }
+    console.log(`[CampaignsAPI] Campaign created: ${campaign.id} with status: ${campaign.status}`)
+    console.log(`[CampaignsAPI] Recipients: ${insertedCount} imported (${duplicatesCount} duplicates)`)
 
     // Re-fetch campaign with updated counts
     const { data: updatedCampaign } = await ctx.adminClient
@@ -642,14 +460,6 @@ export async function POST(
           imported: insertedCount,
           duplicates: duplicatesCount,
           total: recipients.length,
-        },
-        _provider: {
-          sent: providerResult.success,
-          provider: providerResult.provider,
-          error: providerResult.error,
-          fallbackUsed: providerResult.fallbackUsed,
-          primaryError: providerResult.primaryError,
-          batchRef: `campaign-${campaign.id}`,
         },
       },
       201

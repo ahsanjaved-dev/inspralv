@@ -23,6 +23,7 @@ interface CampaignsResponse {
   page: number
   pageSize: number
   totalPages: number
+  workspaceId?: string // Added for realtime subscriptions
 }
 
 interface CampaignResponse {
@@ -52,14 +53,24 @@ interface UseCampaignsOptions {
   status?: CampaignStatus | "all"
   page?: number
   pageSize?: number
+  /** Enable auto-polling when there are active campaigns (default: false) */
+  enablePolling?: boolean
+  /** Polling interval in milliseconds (default: 5000ms) */
+  pollingInterval?: number
 }
 
 export function useCampaigns(options: UseCampaignsOptions = {}) {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
-  const { status = "all", page = 1, pageSize = 20 } = options
+  const { 
+    status = "all", 
+    page = 1, 
+    pageSize = 20,
+    enablePolling = false,
+    pollingInterval = 5000,
+  } = options
 
-  return useQuery<CampaignsResponse>({
+  const query = useQuery<CampaignsResponse>({
     queryKey: ["campaigns", workspaceSlug, { status, page, pageSize }],
     queryFn: async () => {
       const searchParams = new URLSearchParams({
@@ -86,7 +97,31 @@ export function useCampaigns(options: UseCampaignsOptions = {}) {
     staleTime: 0,
     // Don't keep old data in cache for long
     gcTime: 1000 * 60, // 1 minute
+    // Conditionally enable polling: only poll if enabled AND there are active campaigns
+    refetchInterval: (query) => {
+      if (!enablePolling) return false
+      const hasActiveCampaigns = query.state.data?.data?.some(
+        (c: CallCampaignWithAgent) => c.status === "active" || c.status === "scheduled"
+      ) ?? false
+      return hasActiveCampaigns ? pollingInterval : false
+    },
+    // Only poll when window is visible
+    refetchIntervalInBackground: false,
   })
+
+  // Check if there are any active campaigns
+  const hasActiveCampaigns = query.data?.data?.some(
+    c => c.status === "active" || c.status === "scheduled"
+  ) ?? false
+
+  // Get workspace ID from first campaign (all campaigns in response belong to same workspace)
+  const workspaceId = query.data?.data?.[0]?.workspace_id
+
+  return {
+    ...query,
+    hasActiveCampaigns,
+    workspaceId,
+  }
 }
 
 export function useCampaign(campaignId: string | null) {
