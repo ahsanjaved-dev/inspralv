@@ -54,8 +54,8 @@ export async function POST(
 
     const agent = campaign.agent as any
 
-    // Call Inspra API to terminate batch (only if agent is synced)
-    let inspraResult: { success: boolean; error?: string } = { success: true }
+    // Call provider API to terminate batch (only if agent is synced)
+    let providerResult: { success: boolean; error?: string; provider?: string } = { success: true }
 
     if (agent?.external_agent_id) {
       console.log("[CampaignTerminate] Terminating campaign:", id)

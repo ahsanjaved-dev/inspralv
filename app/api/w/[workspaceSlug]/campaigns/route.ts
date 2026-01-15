@@ -82,6 +82,60 @@ async function getCLIForAgent(
   return null
 }
 
+/**
+ * Calculate accurate campaign stats from actual recipient data
+ * Returns stats by campaign_id for batch processing
+ */
+async function calculateCampaignStatsForIds(
+  campaignIds: string[],
+  adminClient: ReturnType<typeof getSupabaseAdmin>
+): Promise<Map<string, { pending: number; completed: number; successful: number; failed: number; total: number }>> {
+  if (campaignIds.length === 0) {
+    return new Map()
+  }
+
+  // Get all recipients for these campaigns in one query
+  const { data: recipients, error } = await adminClient
+    .from("call_recipients")
+    .select("campaign_id, call_status, call_outcome")
+    .in("campaign_id", campaignIds)
+
+  if (error || !recipients) {
+    console.error("[CampaignsAPI] Error calculating batch stats:", error)
+    return new Map()
+  }
+
+  // Aggregate stats by campaign_id
+  const statsMap = new Map<string, { pending: number; completed: number; successful: number; failed: number; total: number }>()
+  
+  // Initialize all campaigns
+  for (const id of campaignIds) {
+    statsMap.set(id, { pending: 0, completed: 0, successful: 0, failed: 0, total: 0 })
+  }
+
+  // Count recipients
+  for (const r of recipients) {
+    const stats = statsMap.get(r.campaign_id)
+    if (!stats) continue
+
+    stats.total++
+
+    if (r.call_status === "pending" || r.call_status === "queued" || r.call_status === "calling") {
+      stats.pending++
+    } else if (r.call_status === "completed") {
+      stats.completed++
+      if (r.call_outcome === "answered") {
+        stats.successful++
+      }
+    } else if (r.call_status === "failed") {
+      stats.completed++ // Failed calls are "done" for progress
+      stats.failed++
+    }
+  }
+
+  return statsMap
+}
+
 // GET /api/w/[workspaceSlug]/campaigns - List campaigns
 export async function GET(
   request: NextRequest,
@@ -124,12 +178,36 @@ export async function GET(
       return serverError("Failed to fetch campaigns")
     }
 
+    // Calculate accurate stats from actual recipient data for each campaign
+    const campaigns = data || []
+    const campaignIds = campaigns.map((c: any) => c.id)
+    const statsMap = await calculateCampaignStatsForIds(campaignIds, ctx.adminClient)
+
+    // Override stored counter values with calculated values
+    const campaignsWithAccurateStats = campaigns.map((campaign: any) => {
+      const stats = statsMap.get(campaign.id)
+      if (stats) {
+        return {
+          ...campaign,
+          total_recipients: stats.total,
+          pending_calls: stats.pending,
+          completed_calls: stats.completed,
+          successful_calls: stats.successful,
+          failed_calls: stats.failed,
+        }
+      }
+      return campaign
+    })
+
+    // Always include workspaceId for realtime subscriptions
+    // This ensures realtime can connect even when there are no campaigns
     return NextResponse.json({
-      data: data || [],
+      data: campaignsWithAccurateStats,
       total: count || 0,
       page,
       pageSize,
       totalPages: Math.ceil((count || 0) / pageSize),
+      workspaceId: ctx.workspace.id,
     })
   } catch (error) {
     console.error("[CampaignsAPI] Exception:", error)

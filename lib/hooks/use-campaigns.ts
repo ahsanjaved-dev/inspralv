@@ -114,8 +114,8 @@ export function useCampaigns(options: UseCampaignsOptions = {}) {
     c => c.status === "active" || c.status === "scheduled"
   ) ?? false
 
-  // Get workspace ID from first campaign (all campaigns in response belong to same workspace)
-  const workspaceId = query.data?.data?.[0]?.workspace_id
+  // Get workspace ID from API response (always included, even with no campaigns)
+  const workspaceId = query.data?.workspaceId
 
   return {
     ...query,
@@ -581,6 +581,54 @@ export function useTestCall() {
         throw new Error(error.error || "Failed to queue test call")
       }
       return response.json()
+    },
+  })
+}
+
+// ============================================================================
+// CLEANUP HOOK
+// ============================================================================
+
+interface CleanupResponse {
+  success: boolean
+  message: string
+  staleRecipientsFound: number
+  staleRecipientsUpdated: number
+  campaignCompleted: boolean
+}
+
+/**
+ * Hook for cleaning up stale "calling" recipients in a campaign
+ * Marks recipients stuck in "calling" status for too long as "failed"
+ */
+export function useCleanupCampaign() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation<CleanupResponse, Error, string>({
+    mutationFn: async (campaignId) => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/cleanup`,
+        { method: "POST" }
+      )
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to cleanup stale calls")
+      }
+      return response.json()
+    },
+    onSuccess: (_, campaignId) => {
+      // Refetch campaign and recipients data
+      queryClient.invalidateQueries({
+        queryKey: ["campaign", workspaceSlug, campaignId],
+      })
+      queryClient.invalidateQueries({
+        queryKey: ["campaign-recipients", workspaceSlug, campaignId],
+      })
+      queryClient.invalidateQueries({
+        queryKey: ["campaigns", workspaceSlug],
+      })
     },
   })
 }

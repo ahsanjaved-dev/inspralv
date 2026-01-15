@@ -144,8 +144,8 @@ export function useRealtimeCampaignRecipients(params: UseRealtimeCampaignParams)
     new: Record<string, unknown>
     old: Record<string, unknown>
   }) => {
-    const newData = payload.new as CampaignRecipient
-    const oldData = payload.old as Partial<CampaignRecipient>
+    const newData = payload.new as unknown as CampaignRecipient
+    const oldData = payload.old as unknown as Partial<CampaignRecipient>
     const newStatus = newData.call_status as RecipientCallStatus
     const previousStatus = previousStatusesRef.current.get(newData.id) || (oldData.call_status as RecipientCallStatus | undefined) || null
 

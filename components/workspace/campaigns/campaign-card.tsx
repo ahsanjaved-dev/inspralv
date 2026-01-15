@@ -101,8 +101,11 @@ export function CampaignCard({
     router.push(`/w/${workspaceSlug}/campaigns/new?draft=${campaign.id}`)
   }
 
+  // Progress is based on all processed calls (completed + failed)
+  // completed_calls now includes both successful and failed calls from the API
+  const processedCalls = campaign.completed_calls || 0
   const progress = campaign.total_recipients > 0
-    ? Math.round((campaign.completed_calls / campaign.total_recipients) * 100)
+    ? Math.round((processedCalls / campaign.total_recipients) * 100)
     : 0
 
   const statusInfo = statusConfig[campaign.status]
@@ -185,7 +188,7 @@ export function CampaignCard({
             {campaign.total_recipients > 0 && (isActive || isPaused || campaign.status === "completed" || campaign.status === "cancelled") && (
               <div className="mt-3">
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                  <span>{campaign.completed_calls} / {campaign.total_recipients} completed</span>
+                  <span>{processedCalls} / {campaign.total_recipients} processed</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} className="h-2" />

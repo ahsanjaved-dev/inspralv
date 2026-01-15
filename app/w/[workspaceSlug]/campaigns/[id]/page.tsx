@@ -55,6 +55,7 @@ import {
   usePauseCampaign,
   useResumeCampaign,
   useStartCampaign,
+  useCleanupCampaign,
 } from "@/lib/hooks/use-campaigns"
 import {
   useRealtimeCampaignRecipients,
@@ -136,6 +137,7 @@ export default function CampaignDetailPage() {
   const pauseMutation = usePauseCampaign()
   const resumeMutation = useResumeCampaign()
   const startMutation = useStartCampaign()
+  const cleanupMutation = useCleanupCampaign()
 
   const campaign = campaignData?.data
   const recipients = recipientsData?.data || []
@@ -150,12 +152,12 @@ export default function CampaignDetailPage() {
   } = useRealtimeCampaignRecipients({
     campaignId,
     workspaceId: campaign?.workspace_id,
-    onCallComplete: useCallback((recipient) => {
+    onCallComplete: useCallback((recipient: { phone_number: string; call_outcome?: string | null }) => {
       toast.success(`Call completed: ${recipient.phone_number}`, {
         description: recipient.call_outcome === "answered" ? "Answered" : recipient.call_outcome || "Completed",
       })
     }, []),
-    onCallFailed: useCallback((recipient) => {
+    onCallFailed: useCallback((recipient: { phone_number: string; error_message?: string | null }) => {
       toast.error(`Call failed: ${recipient.phone_number}`, {
         description: recipient.error_message || "Call could not be completed",
       })
@@ -165,7 +167,7 @@ export default function CampaignDetailPage() {
   // Real-time campaign status updates
   const { status: realtimeCampaignStatus } = useRealtimeCampaignStatus({
     campaignId,
-    onStatusChange: useCallback((newStatus, oldStatus) => {
+    onStatusChange: useCallback((newStatus: string, oldStatus: string | null) => {
       if (newStatus === "completed") {
         toast.success("Campaign completed!", {
           description: "All calls have been processed.",
@@ -251,9 +253,12 @@ export default function CampaignDetailPage() {
     )
   }
 
+  // Progress is based on all processed calls (completed + failed)
+  // completed_calls now includes both successful and failed calls from the API
+  const processedCalls = campaign.completed_calls || 0
   const progress =
     campaign.total_recipients > 0
-      ? Math.round((campaign.completed_calls / campaign.total_recipients) * 100)
+      ? Math.round((processedCalls / campaign.total_recipients) * 100)
       : 0
 
   // Ready campaigns can be started with "Start Now"
@@ -368,9 +373,43 @@ export default function CampaignDetailPage() {
               refetchCampaign()
               refetchRecipients()
             }}
+            title="Refresh"
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
+          {/* Sync button for active campaigns - cleans up stale calls */}
+          {campaign.status === "active" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  const result = await cleanupMutation.mutateAsync(campaignId)
+                  if (result.staleRecipientsUpdated > 0) {
+                    toast.success(`Cleaned up ${result.staleRecipientsUpdated} stale call(s)`)
+                  } else {
+                    toast.info("No stale calls found")
+                  }
+                  if (result.campaignCompleted) {
+                    toast.success("Campaign completed!")
+                  }
+                  refetchCampaign()
+                  refetchRecipients()
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Failed to sync")
+                }
+              }}
+              disabled={cleanupMutation.isPending}
+              title="Sync stale calls - marks stuck calls as failed"
+            >
+              {cleanupMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-1" />
+              )}
+              Sync
+            </Button>
+          )}
           {/* Start Now button for ready campaigns */}
           {canStart && (
             <Button 
@@ -483,6 +522,7 @@ export default function CampaignDetailPage() {
               <p className="text-2xl font-bold">{progress}%</p>
               <p className="text-xs text-muted-foreground">Progress</p>
               <Progress value={progress} className="h-2 mt-2" />
+              <p className="text-xs text-muted-foreground mt-1">{processedCalls} / {campaign.total_recipients}</p>
             </div>
           </CardContent>
         </Card>
@@ -705,7 +745,6 @@ export default function CampaignDetailPage() {
                       <TableHead>Status</TableHead>
                       <TableHead>Outcome</TableHead>
                       <TableHead>Duration</TableHead>
-                      <TableHead>Attempts</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -727,7 +766,6 @@ export default function CampaignDetailPage() {
                           <CallOutcomeBadge outcome={recipient.call_outcome} />
                         </TableCell>
                         <TableCell>{formatDuration(recipient.call_duration_seconds)}</TableCell>
-                        <TableCell>{recipient.attempts}</TableCell>
                         <TableCell>
                           {isEditable && (
                             <DropdownMenu>

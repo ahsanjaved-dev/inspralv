@@ -285,7 +285,7 @@ export default function CampaignsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Completed Calls</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Processed Calls</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">

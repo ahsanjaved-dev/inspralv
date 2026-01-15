@@ -10,6 +10,58 @@ import {
 } from "@/lib/api/helpers"
 import { updateCampaignSchema } from "@/types/database.types"
 import { terminateCampaignBatch } from "@/lib/integrations/campaign-provider"
+import { cleanupStaleCalls } from "@/lib/campaigns/stale-call-cleanup"
+
+/**
+ * Calculate accurate campaign stats from actual recipient data
+ * This ensures stats are always correct regardless of webhook race conditions
+ */
+async function calculateCampaignStats(
+  campaignId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any
+) {
+  // Get counts by status and outcome from actual recipient data
+  const { data: recipients, error } = await adminClient
+    .from("call_recipients")
+    .select("call_status, call_outcome")
+    .eq("campaign_id", campaignId)
+
+  if (error || !recipients) {
+    console.error("[CampaignAPI] Error calculating stats:", error)
+    return null
+  }
+
+  const stats = {
+    total_recipients: recipients.length,
+    pending_calls: 0,
+    completed_calls: 0,
+    successful_calls: 0, // Only "answered" calls
+    failed_calls: 0,
+  }
+
+  for (const r of recipients as { call_status: string; call_outcome: string | null }[]) {
+    // Count by status
+    if (r.call_status === "pending" || r.call_status === "queued") {
+      stats.pending_calls++
+    } else if (r.call_status === "calling") {
+      // "calling" counts as in-progress, not pending or completed
+      // but for progress calculation, we don't count it as complete
+      stats.pending_calls++ // Still pending from user's perspective
+    } else if (r.call_status === "completed") {
+      stats.completed_calls++
+      // Only count as successful if outcome is "answered"
+      if (r.call_outcome === "answered") {
+        stats.successful_calls++
+      }
+    } else if (r.call_status === "failed") {
+      stats.completed_calls++ // Failed calls are "done" for progress
+      stats.failed_calls++
+    }
+  }
+
+  return stats
+}
 
 // GET /api/w/[workspaceSlug]/campaigns/[id] - Get campaign details
 export async function GET(
@@ -36,6 +88,32 @@ export async function GET(
 
     if (error || !campaign) {
       return notFound("Campaign")
+    }
+
+    // Auto-cleanup stale calls for active campaigns (non-blocking)
+    // This runs in the background and doesn't delay the response
+    if (campaign.status === "active") {
+      cleanupStaleCalls(id).then(result => {
+        if (result.staleRecipientsUpdated > 0) {
+          console.log(`[CampaignAPI] Auto-cleanup: ${result.staleRecipientsUpdated} stale calls cleaned up for campaign ${id}`)
+        }
+        if (result.campaignCompleted) {
+          console.log(`[CampaignAPI] Auto-cleanup: Campaign ${id} marked as completed`)
+        }
+      }).catch(err => {
+        console.error(`[CampaignAPI] Auto-cleanup error for campaign ${id}:`, err)
+      })
+    }
+
+    // Calculate accurate stats from actual recipient data
+    // This overrides potentially incorrect counter fields
+    const calculatedStats = await calculateCampaignStats(id, ctx.adminClient)
+    if (calculatedStats) {
+      campaign.total_recipients = calculatedStats.total_recipients
+      campaign.pending_calls = calculatedStats.pending_calls
+      campaign.completed_calls = calculatedStats.completed_calls
+      campaign.successful_calls = calculatedStats.successful_calls
+      campaign.failed_calls = calculatedStats.failed_calls
     }
 
     return apiResponse(campaign)

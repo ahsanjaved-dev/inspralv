@@ -539,7 +539,7 @@ export function PartnerRequestForm({
               ) : (
                 <RadioGroup
                   value={formData.selected_white_label_variant_id}
-                  onValueChange={(value) =>
+                  onValueChange={(value: string) =>
                     setFormData({ ...formData, selected_white_label_variant_id: value })
                   }
                   className="space-y-3"

@@ -38,12 +38,18 @@ export interface CampaignBatchResult {
   recipientCount?: number
   // VAPI-specific results
   vapiResults?: VapiBatchResult
+  // Fallback fields (for backward compatibility with multi-provider)
+  fallbackUsed?: boolean
+  primaryError?: string
 }
 
 export interface CampaignTestCallResult {
   success: boolean
   provider: CampaignProvider
   error?: string
+  // Fallback fields (for backward compatibility with multi-provider)
+  fallbackUsed?: boolean
+  primaryError?: string
 }
 
 // Re-export types from inspra client for backward compatibility
