@@ -148,11 +148,10 @@ export default function NewCampaignPage() {
     try {
       const result = await createMutation.mutateAsync(data)
       
-      // Show appropriate success message based on status and schedule type
-      const status = result.data?.status
+      // Show appropriate success message based on schedule type
       const scheduleType = result.data?.schedule_type
       
-      if (status === "scheduled") {
+      if (scheduleType === "scheduled") {
         toast.success("Campaign scheduled! It will start automatically at the scheduled time.")
       } else if (scheduleType === "immediate") {
         toast.success("Campaign ready! Click 'Start Campaign' to begin calling.")

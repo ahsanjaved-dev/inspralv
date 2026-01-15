@@ -11,6 +11,20 @@ interface PartnerRequestFilters {
   pageSize?: number
 }
 
+// Extended type for partner request with resolved variant details
+export interface AssignedVariantDetails {
+  id: string
+  name: string
+  slug: string
+  monthlyPriceCents: number
+  maxWorkspaces: number
+  description: string | null
+}
+
+export interface PartnerRequestWithVariant extends PartnerRequest {
+  assignedVariant: AssignedVariantDetails | null
+}
+
 export interface EditPartnerRequestData {
   company_name?: string
   contact_name?: string
@@ -55,7 +69,7 @@ export function usePartnerRequests(filters: PartnerRequestFilters = {}) {
 }
 
 export function usePartnerRequest(id: string) {
-  return useQuery<PartnerRequest>({
+  return useQuery<PartnerRequestWithVariant>({
     queryKey: ["super-admin-partner-request", id],
     queryFn: async () => {
       const res = await fetch(`/api/super-admin/partner-requests/${id}`)
@@ -74,11 +88,11 @@ export function useApprovePartnerRequest() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (requestId: string) => {
+    mutationFn: async ({ requestId, variantId }: { requestId: string; variantId: string }) => {
       const res = await fetch(`/api/super-admin/partner-requests/${requestId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "approve" }),
+        body: JSON.stringify({ action: "approve", variant_id: variantId }),
       })
       if (!res.ok) {
         const error = await res.json()

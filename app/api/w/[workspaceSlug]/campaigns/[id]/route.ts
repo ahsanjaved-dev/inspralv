@@ -157,7 +157,7 @@ export async function DELETE(
     const agent = existing.agent as any
 
     // If campaign is active or paused, terminate it with Inspra first
-    let inspraResult = { success: true, error: undefined as string | undefined }
+    let inspraResult: { success: boolean; error?: string } = { success: true }
     const needsTermination = existing.status === "active" || existing.status === "paused"
     
     if (needsTermination && agent?.external_agent_id) {

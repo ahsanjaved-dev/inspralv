@@ -7,6 +7,7 @@ import { PartnerRequestApprovedEmail } from "./templates/partner-request-approve
 import { PartnerRequestRejectedEmail } from "./templates/partner-request-rejected"
 import { PaymentFailedEmail } from "./templates/payment-failed"
 import { LowBalanceAlertEmail } from "./templates/low-balance-alert"
+import { AgencyCheckoutLinkEmail } from "./templates/agency-checkout-link"
 
 const resend = env.resendApiKey ? new Resend(env.resendApiKey) : null
 
@@ -271,6 +272,37 @@ export async function sendLowBalanceAlertEmail(
       currentBalance: alertData.current_balance,
       threshold: alertData.threshold,
       topupUrl: alertData.topup_url,
+    }),
+  })
+}
+
+// NEW: Agency checkout link email (sent after super admin approves request)
+export async function sendAgencyCheckoutEmail(
+  email: string,
+  data: {
+    company_name: string
+    contact_name: string
+    plan_name: string
+    plan_price: string // e.g., "$299/month"
+    max_workspaces: string // e.g., "30" or "Unlimited"
+    checkout_url: string
+    expires_at: string // e.g., "January 21, 2026"
+  }
+) {
+  // Use test email in development, real email in production
+  const to = env.isDev ? TEST_EMAIL : email
+
+  return sendEmail({
+    to,
+    subject: `Complete Your ${data.plan_name} Subscription - ${data.company_name}`,
+    react: AgencyCheckoutLinkEmail({
+      companyName: data.company_name,
+      contactName: data.contact_name,
+      planName: data.plan_name,
+      planPrice: data.plan_price,
+      maxWorkspaces: data.max_workspaces,
+      checkoutUrl: data.checkout_url,
+      expiresAt: data.expires_at,
     }),
   })
 }

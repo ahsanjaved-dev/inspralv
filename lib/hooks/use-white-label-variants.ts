@@ -19,6 +19,7 @@ export interface WhiteLabelVariantResponse {
   name: string
   description: string | null
   monthlyPriceCents: number
+  stripeProductId: string | null
   stripePriceId: string | null
   maxWorkspaces: number
   isActive: boolean
@@ -27,6 +28,7 @@ export interface WhiteLabelVariantResponse {
   updatedAt: string
   // Also support snake_case for backwards compatibility
   monthly_price_cents?: number
+  stripe_product_id?: string | null
   stripe_price_id?: string | null
   max_workspaces?: number
   is_active?: boolean
@@ -192,3 +194,38 @@ export function useDeleteWhiteLabelVariant() {
   })
 }
 
+/**
+ * Sync a variant to Stripe (creates Product/Price if missing)
+ * This is a convenience wrapper that calls PATCH with minimal data to trigger Stripe sync
+ */
+export function useSyncVariantToStripe() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, variant }: { id: string; variant: WhiteLabelVariantWithUsage }) => {
+      // Call PATCH with the same values - the API will detect missing Stripe IDs
+      // and create them when monthly_price_cents > 0
+      const response = await fetch(`/api/super-admin/white-label-variants/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: variant.name,
+          description: variant.description,
+          monthly_price_cents: variant.monthlyPriceCents,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to sync with Stripe")
+      }
+
+      const result = await response.json()
+      return result.data.variant as WhiteLabelVariantResponse
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: whiteLabelVariantKeys.all })
+      queryClient.invalidateQueries({ queryKey: whiteLabelVariantKeys.detail(variables.id) })
+    },
+  })
+}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -19,9 +19,9 @@ import {
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { useApprovePartnerRequest, useProvisionPartner } from "@/lib/hooks/use-partner-requests"
+import { useApprovePartnerRequest } from "@/lib/hooks/use-partner-requests"
 import { useWhiteLabelVariants } from "@/lib/hooks/use-white-label-variants"
-import { Loader2, CheckCircle2, Rocket, AlertCircle, Package, DollarSign } from "lucide-react"
+import { Loader2, CheckCircle2, Mail, Package, DollarSign, Send, Copy, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import type { PartnerRequest } from "@/types/database.types"
 
@@ -35,19 +35,35 @@ interface ApprovePartnerDialogProps {
   onSuccess?: () => void
 }
 
+interface ApprovalResult {
+  checkoutUrl: string
+  variant: {
+    id: string
+    name: string
+    monthlyPriceCents: number
+    maxWorkspaces: number
+  }
+}
+
 export function ApprovePartnerDialog({
   open,
   onOpenChange,
   request,
   onSuccess,
 }: ApprovePartnerDialogProps) {
-  const [step, setStep] = useState<"confirm" | "provisioning" | "success">("confirm")
+  const [step, setStep] = useState<"confirm" | "sending" | "success">("confirm")
   const [selectedVariantId, setSelectedVariantId] = useState<string>("")
-  const [provisionResult, setProvisionResult] = useState<any>(null)
+  const [approvalResult, setApprovalResult] = useState<ApprovalResult | null>(null)
 
   const approveRequest = useApprovePartnerRequest()
-  const provisionPartner = useProvisionPartner()
   const { data: variants, isLoading: variantsLoading } = useWhiteLabelVariants(false)
+
+  // Pre-select the variant if the request already has one assigned
+  useEffect(() => {
+    if (request.assigned_white_label_variant_id && !selectedVariantId) {
+      setSelectedVariantId(request.assigned_white_label_variant_id)
+    }
+  }, [request.assigned_white_label_variant_id, selectedVariantId])
 
   // Get the selected variant details for display
   const selectedVariant = variants?.find(v => v.id === selectedVariantId)
@@ -59,22 +75,28 @@ export function ApprovePartnerDialog({
     }
 
     try {
-      // Step 1: Approve the request
-      await approveRequest.mutateAsync(request.id)
-
-      // Step 2: Provision the partner with selected variant
-      setStep("provisioning")
-      const result = await provisionPartner.mutateAsync({
+      setStep("sending")
+      
+      // Approve the request - this now sends checkout email instead of provisioning
+      const result = await approveRequest.mutateAsync({
         requestId: request.id,
         variantId: selectedVariantId,
       })
 
-      setProvisionResult(result.data)
+      setApprovalResult(result.data as ApprovalResult)
       setStep("success")
-      toast.success("Partner provisioned successfully!")
-    } catch (error: any) {
-      toast.error(error.message || "Failed to provision partner")
+      toast.success("Checkout link sent to agency!")
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to approve request"
+      toast.error(errorMessage)
       setStep("confirm")
+    }
+  }
+
+  const handleCopyLink = () => {
+    if (approvalResult?.checkoutUrl) {
+      navigator.clipboard.writeText(approvalResult.checkoutUrl)
+      toast.success("Checkout link copied to clipboard")
     }
   }
 
@@ -86,10 +108,15 @@ export function ApprovePartnerDialog({
     // Reset state after dialog closes
     setTimeout(() => {
       setStep("confirm")
-      setSelectedVariantId("")
-      setProvisionResult(null)
+      setSelectedVariantId(request.assigned_white_label_variant_id || "")
+      setApprovalResult(null)
     }, 200)
   }
+
+  // Check if request already has a requested variant
+  const requestedVariant = request.assigned_white_label_variant_id 
+    ? variants?.find(v => v.id === request.assigned_white_label_variant_id)
+    : null
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -102,7 +129,7 @@ export function ApprovePartnerDialog({
                 Approve Partner Request
               </DialogTitle>
               <DialogDescription>
-                Select a plan tier and provision this partner.
+                Select a plan and send checkout link to the agency.
               </DialogDescription>
             </DialogHeader>
 
@@ -120,10 +147,20 @@ export function ApprovePartnerDialog({
                   </code>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Owner Email</span>
+                  <span className="text-sm text-muted-foreground">Contact Email</span>
                   <span className="text-sm">{request.contact_email}</span>
                 </div>
               </div>
+
+              {/* Show agency's requested plan if any */}
+              {requestedVariant && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Agency requested:</strong> {requestedVariant.name} - $
+                    {((requestedVariant.monthlyPriceCents ?? 0) / 100).toFixed(0)}/mo
+                  </p>
+                </div>
+              )}
 
               {/* Variant selection - REQUIRED */}
               <div className="space-y-2">
@@ -155,7 +192,7 @@ export function ApprovePartnerDialog({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  This determines the partner's pricing and workspace limits.
+                  You can override the agency's requested plan if needed.
                 </p>
               </div>
 
@@ -189,16 +226,15 @@ export function ApprovePartnerDialog({
               )}
 
               {/* What happens next */}
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                <p className="text-sm text-blue-900 dark:text-blue-100">
-                  <strong>What happens next:</strong>
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+                <p className="text-sm text-green-900 dark:text-green-100">
+                  <strong>What happens when you approve:</strong>
                 </p>
-                <ul className="text-sm text-blue-800 dark:text-blue-200 mt-2 space-y-1 list-disc list-inside">
-                  <li>Partner account created with selected plan tier</li>
-                  <li>Owner user account provisioned</li>
-                  <li>Platform subdomain activated</li>
-                  <li>Welcome email with credentials sent</li>
-                  <li>Partner must complete checkout to activate subscription</li>
+                <ul className="text-sm text-green-800 dark:text-green-200 mt-2 space-y-1 list-disc list-inside">
+                  <li>Agency receives email with Stripe checkout link</li>
+                  <li>Link expires in 7 days</li>
+                  <li>After payment, their account is automatically provisioned</li>
+                  <li>They receive login credentials via email</li>
                 </ul>
               </div>
             </div>
@@ -219,8 +255,8 @@ export function ApprovePartnerDialog({
                   </>
                 ) : (
                   <>
-                    <Rocket className="mr-2 h-4 w-4" />
-                    Approve & Provision
+                    <Send className="mr-2 h-4 w-4" />
+                    Approve & Send Checkout
                   </>
                 )}
               </Button>
@@ -228,80 +264,91 @@ export function ApprovePartnerDialog({
           </>
         )}
 
-        {step === "provisioning" && (
+        {step === "sending" && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                Provisioning Partner
+                Sending Checkout Link
               </DialogTitle>
               <DialogDescription>
-                Please wait while we set up the partner account...
+                Please wait while we send the checkout link...
               </DialogDescription>
             </DialogHeader>
 
             <div className="py-8 flex flex-col items-center gap-4">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <Mail className="h-8 w-8 text-primary animate-pulse" />
               </div>
               <p className="text-sm text-muted-foreground text-center">
-                Creating partner account, domain, and owner user...
+                Sending checkout link to {request.contact_email}...
               </p>
             </div>
           </>
         )}
 
-        {step === "success" && provisionResult && (
+        {step === "success" && approvalResult && (
           <>
             <DialogHeader className="flex-shrink-0">
               <DialogTitle className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-green-500" />
-                Partner Provisioned Successfully!
+                Checkout Link Sent!
               </DialogTitle>
               <DialogDescription>
-                The partner has been set up and credentials have been sent.
+                The agency has been notified and can now complete payment.
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-2">
               <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-sm text-green-800 dark:text-green-200">Partner</span>
+                  <span className="text-sm text-green-800 dark:text-green-200">Company</span>
                   <span className="text-sm font-medium text-green-900 dark:text-green-100">
-                    {provisionResult.partner?.name}
+                    {request.company_name}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-green-800 dark:text-green-200">Plan Tier</span>
+                  <span className="text-sm text-green-800 dark:text-green-200">Plan</span>
                   <span className="text-sm font-medium text-green-900 dark:text-green-100">
-                    {provisionResult.variant?.name}
+                    {approvalResult.variant.name} - ${(approvalResult.variant.monthlyPriceCents / 100).toFixed(0)}/mo
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-green-800 dark:text-green-200">Login URL</span>
-                  <code className="text-sm bg-green-100 dark:bg-green-800 px-2 py-0.5 rounded">
-                    {provisionResult.login_url}
-                  </code>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-green-800 dark:text-green-200">Owner Email</span>
+                  <span className="text-sm text-green-800 dark:text-green-200">Email Sent To</span>
                   <span className="text-sm text-green-900 dark:text-green-100">
-                    {provisionResult.owner?.email}
+                    {request.contact_email}
                   </span>
                 </div>
               </div>
 
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5" />
-                  <div className="text-sm text-yellow-800 dark:text-yellow-200">
-                    <p className="font-medium">Next steps for the partner:</p>
-                    <ul className="mt-1 space-y-1 list-disc list-inside">
-                      <li>Temporary password sent to owner's email</li>
-                      <li>Partner must complete Stripe checkout to activate subscription</li>
-                    </ul>
-                  </div>
+              {/* Checkout link for manual sharing */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Checkout Link (for manual sharing)</Label>
+                <div className="flex gap-2">
+                  <code className="flex-1 text-xs bg-muted p-2 rounded overflow-x-auto">
+                    {approvalResult.checkoutUrl}
+                  </code>
+                  <Button variant="outline" size="sm" onClick={handleCopyLink}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(approvalResult.checkoutUrl, "_blank")}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Link expires in 7 days. You can resend by rejecting and re-approving.
+                </p>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Next:</strong> Once the agency completes payment, their account will be
+                  automatically provisioned and they'll receive login credentials.
+                </p>
               </div>
             </div>
 

@@ -2,7 +2,9 @@ import { NextRequest } from "next/server"
 import { getSuperAdminContext } from "@/lib/api/super-admin-auth"
 import { apiResponse, apiError, unauthorized, serverError } from "@/lib/api/helpers"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { sendPartnerRejectionEmail } from "@/lib/email/send"
+import { sendPartnerRejectionEmail, sendAgencyCheckoutEmail } from "@/lib/email/send"
+import { createCheckoutToken, getTokenExpiry } from "@/lib/checkout-token"
+import { env } from "@/lib/env"
 import { z } from "zod"
 
 interface RouteContext {
@@ -52,7 +54,31 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       return apiError("Partner request not found", 404)
     }
 
-    return apiResponse(partnerRequest)
+    // If a variant is assigned, fetch its details
+    let assignedVariant = null
+    if (partnerRequest.assigned_white_label_variant_id) {
+      const { data: variant } = await adminClient
+        .from("white_label_variants")
+        .select("id, name, slug, monthly_price_cents, max_workspaces, description")
+        .eq("id", partnerRequest.assigned_white_label_variant_id)
+        .single()
+      
+      if (variant) {
+        assignedVariant = {
+          id: variant.id,
+          name: variant.name,
+          slug: variant.slug,
+          monthlyPriceCents: variant.monthly_price_cents,
+          maxWorkspaces: variant.max_workspaces,
+          description: variant.description,
+        }
+      }
+    }
+
+    return apiResponse({
+      ...partnerRequest,
+      assignedVariant,
+    })
   } catch (error) {
     console.error("GET /api/super-admin/partner-requests/[id] error:", error)
     return serverError()
@@ -130,13 +156,52 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       }
 
       if (action === "approve") {
-        // Update status to provisioning
+        // Get variant ID from body or use the one already assigned
+        const variantId = body.variant_id || partnerRequest.assigned_white_label_variant_id
+        
+        if (!variantId) {
+          return apiError("A plan variant must be selected before approval", 400)
+        }
+
+        // Fetch the variant details
+        const { data: variant, error: variantError } = await adminClient
+          .from("white_label_variants")
+          .select("id, name, monthly_price_cents, max_workspaces, stripe_price_id")
+          .eq("id", variantId)
+          .single()
+
+        if (variantError || !variant) {
+          return apiError("Selected plan variant not found", 400)
+        }
+
+        if (!variant.stripe_price_id && variant.monthly_price_cents > 0) {
+          return apiError("Selected plan does not have Stripe pricing configured", 400)
+        }
+
+        // Generate checkout token (expires in 7 days)
+        const checkoutToken = createCheckoutToken(id, 7)
+        const tokenExpiry = getTokenExpiry(checkoutToken)
+        const expiresAtFormatted = tokenExpiry 
+          ? tokenExpiry.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+          : "7 days from now"
+
+        // Build checkout URL
+        const checkoutUrl = `${env.appUrl}/agency-checkout?token=${encodeURIComponent(checkoutToken)}`
+
+        // Update request status to approved and store checkout metadata
         const { error: updateError } = await adminClient
           .from("partner_requests")
           .update({
-            status: "provisioning",
+            status: "approved",
+            assigned_white_label_variant_id: variantId,
             reviewed_at: new Date().toISOString(),
             reviewed_by: context.superAdmin.id,
+            metadata: {
+              ...(partnerRequest.metadata || {}),
+              checkout_token: checkoutToken,
+              checkout_token_expires_at: tokenExpiry?.toISOString(),
+              checkout_sent_at: new Date().toISOString(),
+            },
           })
           .eq("id", id)
 
@@ -145,10 +210,40 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
           return serverError()
         }
 
+        // Send checkout email to the agency
+        try {
+          const planPrice = variant.monthly_price_cents === 0 
+            ? "Free" 
+            : `$${(variant.monthly_price_cents / 100).toFixed(0)}/month`
+          const maxWorkspaces = variant.max_workspaces === -1 
+            ? "Unlimited" 
+            : String(variant.max_workspaces)
+
+          await sendAgencyCheckoutEmail(partnerRequest.contact_email, {
+            company_name: partnerRequest.company_name,
+            contact_name: partnerRequest.contact_name,
+            plan_name: variant.name,
+            plan_price: planPrice,
+            max_workspaces: maxWorkspaces,
+            checkout_url: checkoutUrl,
+            expires_at: expiresAtFormatted,
+          })
+        } catch (emailError) {
+          console.error("Failed to send checkout email:", emailError)
+          // Don't fail the request - admin can resend
+        }
+
         return apiResponse({
           success: true,
-          message: "Partner request approved. Ready for provisioning.",
+          message: "Partner request approved. Checkout link sent to agency.",
           requestId: id,
+          checkoutUrl,
+          variant: {
+            id: variant.id,
+            name: variant.name,
+            monthlyPriceCents: variant.monthly_price_cents,
+            maxWorkspaces: variant.max_workspaces,
+          },
         })
       }
 

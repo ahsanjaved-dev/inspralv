@@ -460,6 +460,10 @@ async function updateCampaignRecipientStatus(
     }
 
     const recipientData = recipient[0]
+    if (!recipientData) {
+      // Should never happen after length check, but TypeScript needs this
+      return
+    }
     console.log(`[VAPI Webhook] Updating campaign recipient ${recipientData.id} with outcome: ${callOutcome}`)
 
     // Update recipient status

@@ -1,7 +1,7 @@
 /**
  * Super Admin White-Label Variant Detail API
  * GET    - Get variant details
- * PATCH  - Update variant
+ * PATCH  - Update variant (handles Stripe Product/Price updates)
  * DELETE - Delete variant (soft delete or hard delete if no partners)
  */
 
@@ -10,6 +10,7 @@ import { getSuperAdminContext } from "@/lib/api/super-admin-auth"
 import { apiResponse, apiError, unauthorized, notFound, serverError } from "@/lib/api/helpers"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { updateWhiteLabelVariantSchema } from "@/types/database.types"
+import { getStripe } from "@/lib/stripe"
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
         name: variant.name,
         description: variant.description,
         monthlyPriceCents: variant.monthly_price_cents,
+        stripeProductId: variant.stripe_product_id,
         stripePriceId: variant.stripe_price_id,
         maxWorkspaces: variant.max_workspaces,
         isActive: variant.is_active,
@@ -76,6 +78,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
 /**
  * PATCH - Update variant
+ * Handles Stripe Product/Price updates when price or name changes
  */
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   try {
@@ -93,10 +96,10 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const data = validation.data
     const adminClient = createAdminClient()
 
-    // Check variant exists
+    // Check variant exists and get current data
     const { data: existing, error: fetchError } = await adminClient
       .from("white_label_variants")
-      .select("id, slug")
+      .select("*")
       .eq("id", id)
       .single()
 
@@ -118,16 +121,129 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       }
     }
 
+    // Handle Stripe updates
+    const stripe = getStripe()
+    let newStripeProductId = existing.stripe_product_id
+    let newStripePriceId = existing.stripe_price_id
+    
+    const newPrice = data.monthly_price_cents ?? existing.monthly_price_cents
+    const newName = data.name ?? existing.name
+    const newDescription = data.description ?? existing.description
+    const newSlug = data.slug ?? existing.slug
+
+    // Check if price changed
+    const priceChanged = data.monthly_price_cents !== undefined && 
+                         data.monthly_price_cents !== existing.monthly_price_cents
+
+    // Check if we need to create/update Stripe resources
+    if (newPrice > 0) {
+      // Case 1: Had no Stripe product, now needs one (price changed from 0 to > 0)
+      if (!existing.stripe_product_id) {
+        try {
+          // Create new product
+          const product = await stripe.products.create({
+            name: newName,
+            description: newDescription || `${newName} - White-Label Partner Plan`,
+            metadata: {
+              type: "white_label_variant",
+              variant_slug: newSlug,
+              max_workspaces: String(data.max_workspaces ?? existing.max_workspaces),
+            },
+          })
+
+          // Create new price
+          const price = await stripe.prices.create({
+            product: product.id,
+            unit_amount: newPrice,
+            currency: "usd",
+            recurring: { interval: "month" },
+            metadata: {
+              type: "white_label_variant",
+              variant_slug: newSlug,
+            },
+          })
+
+          newStripeProductId = product.id
+          newStripePriceId = price.id
+
+          console.log(`[White-Label Variants] Created Stripe Product ${product.id} and Price ${price.id} for variant ${newSlug}`)
+        } catch (stripeError) {
+          console.error("[White-Label Variants] Failed to create Stripe product/price:", stripeError)
+          return apiError("Failed to create Stripe product/price", 500)
+        }
+      }
+      // Case 2: Has existing Stripe product
+      else {
+        try {
+          // Update product name/description if changed
+          const nameChanged = data.name !== undefined && data.name !== existing.name
+          const descChanged = data.description !== undefined && data.description !== existing.description
+
+          if (nameChanged || descChanged) {
+            await stripe.products.update(existing.stripe_product_id, {
+              name: newName,
+              description: newDescription || `${newName} - White-Label Partner Plan`,
+              metadata: {
+                variant_slug: newSlug,
+                max_workspaces: String(data.max_workspaces ?? existing.max_workspaces),
+              },
+            })
+            console.log(`[White-Label Variants] Updated Stripe Product ${existing.stripe_product_id}`)
+          }
+
+          // If price changed, archive old price and create new one
+          if (priceChanged && existing.stripe_price_id) {
+            // Archive the old price
+            await stripe.prices.update(existing.stripe_price_id, { active: false })
+            console.log(`[White-Label Variants] Archived old Stripe Price ${existing.stripe_price_id}`)
+
+            // Create new price
+            const price = await stripe.prices.create({
+              product: existing.stripe_product_id,
+              unit_amount: newPrice,
+              currency: "usd",
+              recurring: { interval: "month" },
+              metadata: {
+                type: "white_label_variant",
+                variant_slug: newSlug,
+              },
+            })
+
+            newStripePriceId = price.id
+            console.log(`[White-Label Variants] Created new Stripe Price ${price.id}`)
+          }
+        } catch (stripeError) {
+          console.error("[White-Label Variants] Failed to update Stripe:", stripeError)
+          return apiError("Failed to update Stripe product/price", 500)
+        }
+      }
+    }
+    // Case 3: Price changed to 0 - deactivate Stripe resources
+    else if (priceChanged && newPrice === 0 && existing.stripe_price_id) {
+      try {
+        await stripe.prices.update(existing.stripe_price_id, { active: false })
+        console.log(`[White-Label Variants] Deactivated Stripe Price ${existing.stripe_price_id} (variant now free)`)
+        // Keep product ID for reference but clear price ID
+        newStripePriceId = null
+      } catch (stripeError) {
+        console.error("[White-Label Variants] Failed to deactivate Stripe price:", stripeError)
+        // Non-fatal - continue with update
+      }
+    }
+
     // Build update object
     const updateData: Record<string, unknown> = {}
     if (data.slug !== undefined) updateData.slug = data.slug
     if (data.name !== undefined) updateData.name = data.name
     if (data.description !== undefined) updateData.description = data.description
     if (data.monthly_price_cents !== undefined) updateData.monthly_price_cents = data.monthly_price_cents
-    if (data.stripe_price_id !== undefined) updateData.stripe_price_id = data.stripe_price_id
     if (data.max_workspaces !== undefined) updateData.max_workspaces = data.max_workspaces
     if (data.is_active !== undefined) updateData.is_active = data.is_active
     if (data.sort_order !== undefined) updateData.sort_order = data.sort_order
+
+    // Always update Stripe IDs based on our calculations
+    updateData.stripe_product_id = newStripeProductId
+    updateData.stripe_price_id = newStripePriceId
 
     const { data: variant, error } = await adminClient
       .from("white_label_variants")
@@ -148,6 +264,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         name: variant.name,
         description: variant.description,
         monthlyPriceCents: variant.monthly_price_cents,
+        stripeProductId: variant.stripe_product_id,
         stripePriceId: variant.stripe_price_id,
         maxWorkspaces: variant.max_workspaces,
         isActive: variant.is_active,
@@ -177,7 +294,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     // Check variant exists
     const { data: existing, error: fetchError } = await adminClient
       .from("white_label_variants")
-      .select("id")
+      .select("id, stripe_product_id, stripe_price_id")
       .eq("id", id)
       .single()
 
@@ -213,6 +330,23 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       )
     }
 
+    // Archive Stripe resources if they exist
+    if (existing.stripe_price_id) {
+      try {
+        const stripe = getStripe()
+        await stripe.prices.update(existing.stripe_price_id, { active: false })
+        console.log(`[White-Label Variants] Archived Stripe Price ${existing.stripe_price_id}`)
+        
+        if (existing.stripe_product_id) {
+          await stripe.products.update(existing.stripe_product_id, { active: false })
+          console.log(`[White-Label Variants] Archived Stripe Product ${existing.stripe_product_id}`)
+        }
+      } catch (stripeError) {
+        console.error("[White-Label Variants] Failed to archive Stripe resources:", stripeError)
+        // Non-fatal - continue with delete
+      }
+    }
+
     // Safe to delete
     const { error } = await adminClient
       .from("white_label_variants")
@@ -230,4 +364,3 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     return serverError()
   }
 }
-
