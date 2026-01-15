@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { useImportRecipients } from "@/lib/hooks/use-campaigns"
+import { useImportRecipients, useImportRecipientsOptimized } from "@/lib/hooks/use-campaigns"
 import {
   Upload,
   FileSpreadsheet,
@@ -67,6 +67,10 @@ export function ImportRecipientsDialog({
   )
 
   const importMutation = useImportRecipients()
+  const importOptimizedMutation = useImportRecipientsOptimized()
+
+  // Use optimized import for large datasets (>500 recipients)
+  const LARGE_IMPORT_THRESHOLD = 500
 
   const resetState = () => {
     setFile(null)
@@ -253,17 +257,40 @@ export function ImportRecipientsDialog({
     try {
       const recipients = parsedData.map(({ _row, _error, ...rest }) => rest)
 
-      const result = await importMutation.mutateAsync({
-        campaignId,
-        recipients,
-      })
+      // Use optimized import for large datasets
+      const isLargeImport = recipients.length > LARGE_IMPORT_THRESHOLD
+      
+      if (isLargeImport) {
+        console.log(`[ImportDialog] Using optimized import for ${recipients.length} recipients`)
+        const result = await importOptimizedMutation.mutateAsync({
+          campaignId,
+          recipients,
+        })
 
-      setImportResult({
-        imported: result.imported,
-        duplicates: result.duplicates,
-      })
+        setImportResult({
+          imported: result.imported,
+          duplicates: result.duplicates,
+        })
+        
+        if (result.errors && result.errors.length > 0) {
+          toast.warning(`Imported ${result.imported} recipients with ${result.errors.length} warnings`)
+        } else {
+          toast.success(`Imported ${result.imported} recipients (${result.processingTimeMs}ms)`)
+        }
+      } else {
+        const result = await importMutation.mutateAsync({
+          campaignId,
+          recipients,
+        })
+
+        setImportResult({
+          imported: result.imported,
+          duplicates: result.duplicates,
+        })
+        toast.success(`Imported ${result.imported} recipients`)
+      }
+      
       setStep("complete")
-      toast.success(`Imported ${result.imported} recipients`)
     } catch (error) {
       setStep("preview")
       toast.error(error instanceof Error ? error.message : "Failed to import recipients")

@@ -1,274 +1,374 @@
 /**
- * Campaign Progress Tracking Hook
+ * Campaign Progress Hook
  * 
- * Provides real-time progress tracking for active campaigns with:
- * - Progress percentage
- * - Estimated time remaining (ETA)
- * - Call rate metrics
- * - Status breakdown
+ * Provides real-time progress tracking for large campaign processing.
+ * Uses polling to fetch progress from the queue API endpoint.
+ * 
+ * Features:
+ * - Automatic polling while campaign is processing
+ * - Manual trigger for processing chunks
+ * - Progress estimation
+ * - Auto-stop when complete/cancelled/paused
  */
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { useParams } from "next/navigation"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-export interface CampaignProgress {
-  /** Total recipients */
-  total: number
-  /** Completed calls (success + failed) */
-  completed: number
-  /** Successful/answered calls */
-  successful: number
-  /** Failed calls */
-  failed: number
-  /** Pending calls */
-  pending: number
-  /** Currently calling */
-  calling: number
-  /** Progress percentage (0-100) */
-  progressPercent: number
-  /** Estimated seconds remaining (null if unknown) */
-  estimatedSecondsRemaining: number | null
-  /** Human readable ETA string */
-  etaDisplay: string
-  /** Calls per minute rate */
-  callsPerMinute: number
-  /** Success rate percentage */
-  successRate: number
-  /** Campaign status */
-  status: "draft" | "ready" | "scheduled" | "active" | "paused" | "completed" | "cancelled"
-}
-
-export interface UseCampaignProgressConfig {
-  /** Campaign ID to track */
+export interface CampaignQueueProgress {
   campaignId: string
-  /** Workspace ID */
-  workspaceId?: string
-  /** Polling interval in ms (default: 3000) */
-  pollingInterval?: number
-  /** Only poll when campaign is active (default: true) */
-  onlyWhenActive?: boolean
+  campaignName: string
+  campaignStatus: string
+  queueInitialized: boolean
+  queue?: {
+    id: string
+    status: "pending" | "processing" | "paused" | "completed" | "failed" | "cancelled"
+    totalRecipients: number
+    processedCount: number
+    successfulCount: number
+    failedCount: number
+    chunksProcessed: number
+    totalChunks: number
+    percentComplete: number
+    lastChunkAt: string | null
+    startedAt: string
+    completedAt: string | null
+    errorMessage: string | null
+  }
+  hasMore: boolean
+  shouldContinue: boolean
+}
+
+export interface ChunkProcessResult {
+  success: boolean
+  campaignId: string
+  hasMore: boolean
+  shouldContinue: boolean
+  pendingCount: number
+  outsideBusinessHours?: boolean
+  message?: string
+  chunk?: {
+    index: number
+    processed: number
+    successful: number
+    failed: number
+    processingTimeMs: number
+  }
+  progress?: {
+    totalRecipients: number
+    processedCount: number
+    successfulCount: number
+    failedCount: number
+    chunksProcessed: number
+    totalChunks: number
+    percentComplete: number
+    status: string
+  }
+  nextProcessAt?: string
+  continueProcessing?: {
+    endpoint: string
+    method: string
+    suggestedDelay: number
+  }
+}
+
+interface UseCampaignProgressOptions {
+  enabled?: boolean
+  pollingInterval?: number // ms, default 3000
+  autoProcess?: boolean // Auto-trigger chunk processing
 }
 
 // ============================================================================
-// HELPERS
+// API FUNCTIONS
 // ============================================================================
 
-function formatETA(seconds: number | null): string {
-  if (seconds === null || seconds < 0) {
-    return "Calculating..."
+async function fetchCampaignProgress(
+  workspaceSlug: string,
+  campaignId: string
+): Promise<CampaignQueueProgress> {
+  const response = await fetch(
+    `/api/w/${workspaceSlug}/campaigns/${campaignId}/process-chunk`,
+    { method: "GET" }
+  )
+  
+  if (!response.ok) {
+    throw new Error("Failed to fetch campaign progress")
   }
   
-  if (seconds < 60) {
-    return `${seconds}s remaining`
+  return response.json()
+}
+
+async function processChunk(
+  workspaceSlug: string,
+  campaignId: string
+): Promise<ChunkProcessResult> {
+  const response = await fetch(
+    `/api/w/${workspaceSlug}/campaigns/${campaignId}/process-chunk`,
+    { method: "POST" }
+  )
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: "Unknown error" }))
+    throw new Error(error.error || "Failed to process chunk")
   }
   
-  if (seconds < 3600) {
-    const minutes = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${minutes}m ${secs}s remaining`
-  }
-  
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  return `${hours}h ${minutes}m remaining`
+  return response.json()
 }
 
 // ============================================================================
 // HOOK
 // ============================================================================
 
-export function useCampaignProgress(config: UseCampaignProgressConfig): {
-  progress: CampaignProgress | null
-  isLoading: boolean
-  error: Error | null
-  refetch: () => Promise<void>
-} {
-  const { campaignId, workspaceId, pollingInterval = 3000, onlyWhenActive = true } = config
-  
-  const params = useParams()
-  const workspaceSlug = params?.workspaceSlug as string
-  
-  const [progress, setProgress] = useState<CampaignProgress | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
-  
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
-  const startTimeRef = useRef<number | null>(null)
-  const completedHistoryRef = useRef<Array<{ time: number; completed: number }>>([])
+export function useCampaignProgress(
+  workspaceSlug: string,
+  campaignId: string,
+  options: UseCampaignProgressOptions = {}
+) {
+  const {
+    enabled = true,
+    pollingInterval = 3000,
+    autoProcess = false,
+  } = options
 
-  const fetchProgress = useCallback(async () => {
-    if (!workspaceSlug || !campaignId) return
+  const queryClient = useQueryClient()
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [lastChunkResult, setLastChunkResult] = useState<ChunkProcessResult | null>(null)
+  const autoProcessIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Query for fetching progress
+  const progressQuery = useQuery({
+    queryKey: ["campaign-progress", workspaceSlug, campaignId],
+    queryFn: () => fetchCampaignProgress(workspaceSlug, campaignId),
+    enabled: enabled && !!campaignId,
+    refetchInterval: (query) => {
+      // Only poll if campaign is actively processing
+      const data = query.state.data
+      if (!data) return pollingInterval
+      if (data.queue?.status === "processing" || data.queue?.status === "pending") {
+        return pollingInterval
+      }
+      return false // Stop polling when complete/paused/failed
+    },
+    staleTime: 1000,
+  })
+
+  // Mutation for processing chunks
+  const processChunkMutation = useMutation({
+    mutationFn: () => processChunk(workspaceSlug, campaignId),
+    onMutate: () => {
+      setIsProcessing(true)
+    },
+    onSuccess: (data) => {
+      setLastChunkResult(data)
+      // Invalidate progress query to get updated stats
+      queryClient.invalidateQueries({
+        queryKey: ["campaign-progress", workspaceSlug, campaignId],
+      })
+    },
+    onSettled: () => {
+      setIsProcessing(false)
+    },
+  })
+
+  // Auto-process effect
+  useEffect(() => {
+    if (!autoProcess || !enabled || !campaignId) return
     
-    try {
-      const response = await fetch(`/api/w/${workspaceSlug}/campaigns/${campaignId}`)
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch campaign: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      const campaign = data.data || data
-      
-      if (!campaign) {
-        throw new Error("Campaign not found")
-      }
-      
-      // Calculate metrics
-      const total = campaign.total_recipients || 0
-      const completed = campaign.completed_calls || 0
-      const successful = campaign.successful_calls || 0
-      const failed = campaign.failed_calls || 0
-      const pending = campaign.pending_calls || 0
-      const calling = Math.max(0, total - completed - pending)
-      
-      const progressPercent = total > 0 ? Math.round((completed / total) * 100) : 0
-      const successRate = completed > 0 ? Math.round((successful / completed) * 100) : 0
-      
-      // Calculate ETA based on recent progress
-      let estimatedSecondsRemaining: number | null = null
-      let callsPerMinute = 0
-      
-      if (startTimeRef.current === null && campaign.status === "active") {
-        startTimeRef.current = Date.now()
-      }
-      
-      // Track completed count history for rate calculation
-      const now = Date.now()
-      completedHistoryRef.current.push({ time: now, completed })
-      
-      // Keep only last 60 seconds of history
-      completedHistoryRef.current = completedHistoryRef.current.filter(
-        entry => now - entry.time < 60000
-      )
-      
-      // Calculate calls per minute from history
-      if (completedHistoryRef.current.length >= 2) {
-        const oldest = completedHistoryRef.current[0]!
-        const newest = completedHistoryRef.current[completedHistoryRef.current.length - 1]!
-        const elapsedMs = newest.time - oldest.time
-        const completedInPeriod = newest.completed - oldest.completed
-        
-        if (elapsedMs > 0 && completedInPeriod > 0) {
-          callsPerMinute = Math.round((completedInPeriod / elapsedMs) * 60000 * 10) / 10
-          
-          // Calculate ETA
-          const remaining = pending + calling
-          if (remaining > 0 && callsPerMinute > 0) {
-            estimatedSecondsRemaining = Math.round((remaining / callsPerMinute) * 60)
+    const progress = progressQuery.data
+    if (!progress?.queue) return
+    
+    const { status } = progress.queue
+    const shouldAutoProcess = 
+      (status === "processing" || status === "pending") &&
+      progress.hasMore &&
+      progress.shouldContinue &&
+      !isProcessing
+
+    if (shouldAutoProcess) {
+      // Set up interval for auto-processing
+      if (!autoProcessIntervalRef.current) {
+        autoProcessIntervalRef.current = setInterval(() => {
+          if (!isProcessing) {
+            processChunkMutation.mutate()
           }
-        }
+        }, 2000) // Process every 2 seconds
       }
-      
-      const progressData: CampaignProgress = {
-        total,
-        completed,
-        successful,
-        failed,
-        pending,
-        calling,
-        progressPercent,
-        estimatedSecondsRemaining,
-        etaDisplay: formatETA(estimatedSecondsRemaining),
-        callsPerMinute,
-        successRate,
-        status: campaign.status,
+    } else {
+      // Clear interval when not needed
+      if (autoProcessIntervalRef.current) {
+        clearInterval(autoProcessIntervalRef.current)
+        autoProcessIntervalRef.current = null
       }
-      
-      setProgress(progressData)
-      setError(null)
-      
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)))
-    } finally {
-      setIsLoading(false)
     }
-  }, [workspaceSlug, campaignId])
 
-  // Initial fetch
-  useEffect(() => {
-    fetchProgress()
-  }, [fetchProgress])
-
-  // Polling
-  useEffect(() => {
-    // Clear existing interval
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-    
-    // Only poll if campaign is active (or onlyWhenActive is false)
-    const shouldPoll = !onlyWhenActive || progress?.status === "active"
-    
-    if (shouldPoll && workspaceSlug && campaignId) {
-      intervalRef.current = setInterval(fetchProgress, pollingInterval)
-    }
-    
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
+      if (autoProcessIntervalRef.current) {
+        clearInterval(autoProcessIntervalRef.current)
+        autoProcessIntervalRef.current = null
       }
     }
-  }, [workspaceSlug, campaignId, pollingInterval, onlyWhenActive, progress?.status, fetchProgress])
+  }, [autoProcess, enabled, campaignId, progressQuery.data, isProcessing, processChunkMutation])
 
-  // Reset history when campaign changes
-  useEffect(() => {
-    startTimeRef.current = null
-    completedHistoryRef.current = []
-  }, [campaignId])
+  // Manual process trigger
+  const triggerProcessChunk = useCallback(() => {
+    if (!isProcessing) {
+      processChunkMutation.mutate()
+    }
+  }, [isProcessing, processChunkMutation])
+
+  // Computed values
+  const progress = progressQuery.data?.queue
+  const isActive = progress?.status === "processing" || progress?.status === "pending"
+  const isComplete = progress?.status === "completed"
+  const isPaused = progress?.status === "paused" || progressQuery.data?.campaignStatus === "paused"
+  const isFailed = progress?.status === "failed"
+  const isCancelled = progress?.status === "cancelled" || progressQuery.data?.campaignStatus === "cancelled"
+
+  // Estimate time remaining
+  const estimatedTimeRemaining = useCallback(() => {
+    if (!progress || !progress.lastChunkAt || progress.percentComplete >= 100) {
+      return null
+    }
+
+    const chunksRemaining = progress.totalChunks - progress.chunksProcessed
+    if (chunksRemaining <= 0) return null
+
+    // Estimate ~5 seconds per chunk (adjust based on actual performance)
+    const secondsPerChunk = 5
+    const secondsRemaining = chunksRemaining * secondsPerChunk
+
+    if (secondsRemaining < 60) {
+      return `~${Math.round(secondsRemaining)} seconds`
+    } else if (secondsRemaining < 3600) {
+      return `~${Math.round(secondsRemaining / 60)} minutes`
+    } else {
+      return `~${Math.round(secondsRemaining / 3600)} hours`
+    }
+  }, [progress])
 
   return {
-    progress,
-    isLoading,
-    error,
-    refetch: fetchProgress,
+    // Progress data
+    progress: progressQuery.data,
+    queue: progress,
+    
+    // Status flags
+    isLoading: progressQuery.isLoading,
+    isProcessing,
+    isActive,
+    isComplete,
+    isPaused,
+    isFailed,
+    isCancelled,
+    
+    // Progress metrics
+    percentComplete: progress?.percentComplete ?? 0,
+    processedCount: progress?.processedCount ?? 0,
+    totalRecipients: progress?.totalRecipients ?? 0,
+    successfulCount: progress?.successfulCount ?? 0,
+    failedCount: progress?.failedCount ?? 0,
+    chunksProcessed: progress?.chunksProcessed ?? 0,
+    totalChunks: progress?.totalChunks ?? 0,
+    
+    // Estimates
+    estimatedTimeRemaining: estimatedTimeRemaining(),
+    
+    // Last chunk result
+    lastChunkResult,
+    
+    // Actions
+    triggerProcessChunk,
+    refetch: progressQuery.refetch,
+    
+    // Errors
+    error: progressQuery.error || processChunkMutation.error,
+    processError: processChunkMutation.error,
+    
+    // Mutation state
+    processMutation: processChunkMutation,
   }
 }
 
 // ============================================================================
-// SIMPLE PROGRESS BAR COMPONENT
+// HOOK FOR STARTING OPTIMIZED CAMPAIGN
 // ============================================================================
 
-export interface ProgressDisplayProps {
-  progress: CampaignProgress
-  showEta?: boolean
-  showRate?: boolean
-  compact?: boolean
-}
-
-/**
- * Helper function to get progress display data
- */
-export function getProgressDisplayData(progress: CampaignProgress): {
-  percentage: number
-  label: string
-  sublabel: string
-  variant: "default" | "success" | "warning" | "destructive"
-} {
-  const { progressPercent, completed, total, etaDisplay, status, successRate } = progress
-  
-  let variant: "default" | "success" | "warning" | "destructive" = "default"
-  let label = `${progressPercent}%`
-  let sublabel = `${completed}/${total} calls`
-  
-  if (status === "completed") {
-    variant = successRate >= 70 ? "success" : successRate >= 40 ? "warning" : "destructive"
-    label = "Complete"
-    sublabel = `${successRate}% success rate`
-  } else if (status === "active") {
-    sublabel = etaDisplay
-  } else if (status === "paused") {
-    variant = "warning"
-    label = "Paused"
-  } else if (status === "cancelled") {
-    variant = "destructive"
-    label = "Cancelled"
+interface StartOptimizedResult {
+  success: boolean
+  campaignId: string
+  message: string
+  queue?: {
+    id: string
+    status: string
+    totalRecipients: number
+    processedCount: number
+    chunksProcessed: number
+    totalChunks: number
   }
-  
-  return { percentage: progressPercent, label, sublabel, variant }
+  optimization?: {
+    chunkSize: number
+    concurrency: number
+    estimatedChunks: number
+    largeCampaign: boolean
+  }
+  firstChunk?: {
+    processed: number
+    successful: number
+    failed: number
+    hasMore: boolean
+    pendingCount: number
+  }
+  continueProcessing?: {
+    endpoint: string
+    method: string
+    note: string
+  }
 }
 
+export function useStartCampaignOptimized(workspaceSlug: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      campaignId,
+      options,
+    }: {
+      campaignId: string
+      options?: {
+        chunkSize?: number
+        concurrency?: number
+        processFirstChunk?: boolean
+      }
+    }): Promise<StartOptimizedResult> => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/start-optimized`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(options || {}),
+        }
+      )
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: "Unknown error" }))
+        throw new Error(error.error || "Failed to start campaign")
+      }
+      
+      return response.json()
+    },
+    onSuccess: (data) => {
+      // Invalidate campaigns list
+      queryClient.invalidateQueries({
+        queryKey: ["campaigns", workspaceSlug],
+      })
+      // Invalidate specific campaign
+      queryClient.invalidateQueries({
+        queryKey: ["campaign", workspaceSlug, data.campaignId],
+      })
+    },
+  })
+}
+
+// Types are already exported via interface declarations above

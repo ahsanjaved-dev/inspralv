@@ -370,55 +370,97 @@ export async function POST(
     }
 
     // =========================================================================
-    // UPDATE RECIPIENT STATUS (VAPI)
+    // UPDATE RECIPIENT STATUS (VAPI) - OPTIMIZED WITH BULK UPDATES
     // When using VAPI, we have immediate call results to update
     // =========================================================================
     
     if (providerResult.provider === "vapi" && providerResult.vapiResults?.results) {
-      console.log("[CampaignStart] Updating recipient status from VAPI results...")
+      console.log("[CampaignStart] Updating recipient status from VAPI results (bulk)...")
       
       const callResults = providerResult.vapiResults.results
       const successfulCalls = callResults.filter(r => r.success && r.callId)
       const failedCalls = callResults.filter(r => !r.success)
+      const now = new Date().toISOString()
       
-      // Update successful calls - set status to "calling" and store external call ID
-      for (const result of successfulCalls) {
+      // OPTIMIZED: Use bulk update for successful calls
+      if (successfulCalls.length > 0) {
         try {
-          await ctx.adminClient
-            .from("call_recipients")
-            .update({
-              call_status: "calling",
-              external_call_id: result.callId,
-              call_started_at: new Date().toISOString(),
-            })
-            .eq("id", result.recipientId)
-            .eq("campaign_id", id)
-            
-          console.log(`[CampaignStart] Updated recipient ${result.recipientId}: calling, callId=${result.callId}`)
+          // Use RPC for bulk update
+          const recipientIds = successfulCalls.map(r => r.recipientId)
+          const callIds = successfulCalls.map(r => r.callId || '')
+          
+          const { error: bulkError } = await ctx.adminClient.rpc("bulk_update_recipients_calling", {
+            recipient_ids: recipientIds,
+            call_ids: callIds,
+            started_at: now,
+          })
+
+          if (bulkError) {
+            console.warn("[CampaignStart] Bulk update RPC failed, using individual updates:", bulkError)
+            // Fallback to individual updates (in batches)
+            const batchSize = 50
+            for (let i = 0; i < successfulCalls.length; i += batchSize) {
+              const batch = successfulCalls.slice(i, i + batchSize)
+              await Promise.all(batch.map(result =>
+                ctx.adminClient
+                  .from("call_recipients")
+                  .update({
+                    call_status: "calling",
+                    external_call_id: result.callId,
+                    call_started_at: now,
+                    attempts: 1,
+                    last_attempt_at: now,
+                    updated_at: now,
+                  })
+                  .eq("id", result.recipientId)
+              ))
+            }
+          } else {
+            console.log(`[CampaignStart] Bulk updated ${successfulCalls.length} recipients to "calling" status`)
+          }
         } catch (err) {
-          console.error(`[CampaignStart] Failed to update recipient ${result.recipientId}:`, err)
+          console.error("[CampaignStart] Error in bulk update for successful calls:", err)
         }
       }
       
-      // Update failed calls - set status to "failed" with error
-      for (const result of failedCalls) {
+      // OPTIMIZED: Use bulk update for failed calls
+      if (failedCalls.length > 0) {
         try {
-          await ctx.adminClient
-            .from("call_recipients")
-            .update({
-              call_status: "failed",
-              last_error: result.error || "Call creation failed",
-            })
-            .eq("id", result.recipientId)
-            .eq("campaign_id", id)
-            
-          console.log(`[CampaignStart] Updated recipient ${result.recipientId}: failed, error=${result.error}`)
+          const failedUpdates = failedCalls.map(result => ({
+            id: result.recipientId,
+            call_status: "failed",
+            last_error: result.error || "Call creation failed",
+            attempts: 1,
+          }))
+
+          const { error: bulkFailedError } = await ctx.adminClient.rpc("bulk_update_recipient_status", {
+            updates: failedUpdates,
+          })
+
+          if (bulkFailedError) {
+            console.warn("[CampaignStart] Bulk failed update RPC failed, using individual updates:", bulkFailedError)
+            // Fallback to individual updates
+            await Promise.all(failedCalls.map(result =>
+              ctx.adminClient
+                .from("call_recipients")
+                .update({
+                  call_status: "failed",
+                  last_error: result.error || "Call creation failed",
+                  attempts: 1,
+                  last_attempt_at: now,
+                  updated_at: now,
+                })
+                .eq("id", result.recipientId)
+            ))
+          } else {
+            console.log(`[CampaignStart] Bulk updated ${failedCalls.length} recipients to "failed" status`)
+          }
         } catch (err) {
-          console.error(`[CampaignStart] Failed to update recipient ${result.recipientId}:`, err)
+          console.error("[CampaignStart] Error in bulk update for failed calls:", err)
         }
       }
       
-      console.log(`[CampaignStart] Recipient updates complete: ${successfulCalls.length} in_progress, ${failedCalls.length} failed`)
+      console.log(`[CampaignStart] Recipient updates complete: ${successfulCalls.length} calling, ${failedCalls.length} failed`)
     }
 
     // =========================================================================

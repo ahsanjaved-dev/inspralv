@@ -83,8 +83,10 @@ async function getCLIForAgent(
 }
 
 /**
- * Calculate accurate campaign stats from actual recipient data
+ * Calculate accurate campaign stats from actual recipient data using optimized SQL function
  * Returns stats by campaign_id for batch processing
+ * 
+ * OPTIMIZED: Uses SQL aggregation function instead of fetching all recipients
  */
 async function calculateCampaignStatsForIds(
   campaignIds: string[],
@@ -94,42 +96,84 @@ async function calculateCampaignStatsForIds(
     return new Map()
   }
 
-  // Get all recipients for these campaigns in one query
-  const { data: recipients, error } = await adminClient
-    .from("call_recipients")
-    .select("campaign_id, call_status, call_outcome")
-    .in("campaign_id", campaignIds)
-
-  if (error || !recipients) {
-    console.error("[CampaignsAPI] Error calculating batch stats:", error)
-    return new Map()
-  }
-
-  // Aggregate stats by campaign_id
   const statsMap = new Map<string, { pending: number; completed: number; successful: number; failed: number; total: number }>()
   
-  // Initialize all campaigns
+  // Initialize all campaigns with empty stats
   for (const id of campaignIds) {
     statsMap.set(id, { pending: 0, completed: 0, successful: 0, failed: 0, total: 0 })
   }
 
-  // Count recipients
-  for (const r of recipients) {
-    const stats = statsMap.get(r.campaign_id)
-    if (!stats) continue
+  try {
+    // Use optimized SQL function for batch stats calculation
+    const { data: batchStats, error } = await adminClient
+      .rpc("get_campaign_stats_batch", { campaign_ids: campaignIds })
 
-    stats.total++
+    if (error) {
+      console.error("[CampaignsAPI] Error calling get_campaign_stats_batch:", error)
+      // Fallback to legacy approach if RPC fails
+      return await calculateCampaignStatsLegacy(campaignIds, adminClient)
+    }
 
+    // Map RPC results to our stats format
+    if (batchStats && Array.isArray(batchStats)) {
+      for (const stat of batchStats) {
+        statsMap.set(stat.campaign_id, {
+          total: Number(stat.total_recipients) || 0,
+          pending: Number(stat.pending_calls) || 0,
+          completed: Number(stat.completed_calls) || 0,
+          successful: Number(stat.successful_calls) || 0,
+          failed: Number(stat.failed_calls) || 0,
+        })
+      }
+    }
+
+    return statsMap
+  } catch (err) {
+    console.error("[CampaignsAPI] Exception in calculateCampaignStatsForIds:", err)
+    return await calculateCampaignStatsLegacy(campaignIds, adminClient)
+  }
+}
+
+/**
+ * Legacy stats calculation (fallback if RPC is not available)
+ * Fetches all recipients and aggregates in JS - less efficient for large datasets
+ */
+async function calculateCampaignStatsLegacy(
+  campaignIds: string[],
+  adminClient: ReturnType<typeof getSupabaseAdmin>
+): Promise<Map<string, { pending: number; completed: number; successful: number; failed: number; total: number }>> {
+  const statsMap = new Map<string, { pending: number; completed: number; successful: number; failed: number; total: number }>()
+  
+  for (const id of campaignIds) {
+    statsMap.set(id, { pending: 0, completed: 0, successful: 0, failed: 0, total: 0 })
+  }
+
+  // Fetch stats using a grouped query (more efficient than fetching all rows)
+  const { data: stats, error } = await adminClient
+    .from("call_recipients")
+    .select("campaign_id, call_status, call_outcome")
+    .in("campaign_id", campaignIds)
+
+  if (error || !stats) {
+    console.error("[CampaignsAPI] Error in legacy stats calculation:", error)
+    return statsMap
+  }
+
+  for (const r of stats) {
+    const stat = statsMap.get(r.campaign_id)
+    if (!stat) continue
+
+    stat.total++
     if (r.call_status === "pending" || r.call_status === "queued" || r.call_status === "calling") {
-      stats.pending++
+      stat.pending++
     } else if (r.call_status === "completed") {
-      stats.completed++
+      stat.completed++
       if (r.call_outcome === "answered") {
-        stats.successful++
+        stat.successful++
       }
     } else if (r.call_status === "failed") {
-      stats.completed++ // Failed calls are "done" for progress
-      stats.failed++
+      stat.completed++
+      stat.failed++
     }
   }
 

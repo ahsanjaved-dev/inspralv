@@ -363,6 +363,60 @@ export function useImportRecipients() {
   })
 }
 
+/**
+ * OPTIMIZED: Hook for importing large recipient lists
+ * Uses the optimized import endpoint with better batching and progress tracking
+ */
+interface OptimizedImportResult {
+  success: boolean
+  imported: number
+  duplicates: number
+  total: number
+  processingTimeMs: number
+  errors?: string[]
+}
+
+export function useImportRecipientsOptimized() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ 
+      campaignId, 
+      recipients 
+    }: { 
+      campaignId: string
+      recipients: CreateRecipientInput[] 
+    }) => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/recipients/import-optimized`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipients }),
+        }
+      )
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to import recipients")
+      }
+      return response.json() as Promise<OptimizedImportResult>
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ 
+        queryKey: ["campaign-recipients", workspaceSlug, variables.campaignId] 
+      })
+      queryClient.invalidateQueries({ 
+        queryKey: ["campaign", workspaceSlug, variables.campaignId] 
+      })
+      queryClient.invalidateQueries({ 
+        queryKey: ["campaigns", workspaceSlug] 
+      })
+    },
+  })
+}
+
 export function useDeleteRecipient() {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string

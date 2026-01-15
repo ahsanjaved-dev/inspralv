@@ -23,9 +23,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { CampaignCard } from "@/components/workspace/campaigns/campaign-card"
+import { CampaignCardEnhanced } from "@/components/workspace/campaigns/campaign-card-enhanced"
 import { WizardDraftCard } from "@/components/workspace/campaigns/wizard-draft-card"
 import { CampaignActionOverlay } from "@/components/workspace/campaigns/campaign-action-overlay"
+import { CampaignHeroStats } from "@/components/workspace/campaigns/campaign-hero-stats"
+import { CampaignEmptyState } from "@/components/workspace/campaigns/campaign-empty-state"
 import { 
   useCampaigns, 
   useDeleteCampaign,
@@ -34,6 +36,7 @@ import {
   useResumeCampaign,
 } from "@/lib/hooks/use-campaigns"
 import { useRealtimeCampaignList } from "@/lib/hooks/use-realtime-campaign"
+import { AnimatePresence, motion } from "framer-motion"
 import {
   Phone,
   Plus,
@@ -43,8 +46,11 @@ import {
   CheckCircle2,
   PhoneCall,
   Radio,
+  Filter,
+  Search,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import type { CallCampaignWithAgent, CampaignStatus } from "@/types/database.types"
 
@@ -120,6 +126,17 @@ export default function CampaignsPage() {
   const draftCampaigns = campaigns.filter(c => c.status === "draft").length
   const totalRecipients = campaigns.reduce((sum, c) => sum + c.total_recipients, 0)
   const completedCalls = campaigns.reduce((sum, c) => sum + c.completed_calls, 0)
+  const successfulCalls = campaigns.reduce((sum, c) => sum + (c.successful_calls || 0), 0)
+  const successRate = completedCalls > 0 ? Math.round((successfulCalls / completedCalls) * 100) : 0
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("")
+  
+  // Filter campaigns by search
+  const filteredCampaigns = campaigns.filter(c => 
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.agent?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   const handleStart = async (campaign: CallCampaignWithAgent) => {
     if (campaign.total_recipients === 0) {
@@ -217,7 +234,11 @@ export default function CampaignsPage() {
           <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
-          <Button onClick={handleNewCampaign} disabled={isCreatingCampaign || isLoading}>
+          <Button 
+            onClick={handleNewCampaign} 
+            disabled={isCreatingCampaign || isLoading}
+            className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 shadow-lg shadow-primary/20"
+          >
             {isCreatingCampaign ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -236,92 +257,65 @@ export default function CampaignsPage() {
       {/* Draft Recovery Card - shows if user has unsaved wizard progress */}
       <WizardDraftCard />
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Campaigns</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <Phone className="h-5 w-5 text-primary" />
-              {isLoading ? (
-                <Skeleton className="h-8 w-12" />
-              ) : (
-                <span className="text-2xl font-bold">{totalCampaigns}</span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active Campaigns</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <PhoneCall className="h-5 w-5 text-green-600" />
-              {isLoading ? (
-                <Skeleton className="h-8 w-12" />
-              ) : (
-                <span className="text-2xl font-bold text-green-600">{activeCampaigns}</span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Recipients</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-blue-600" />
-              {isLoading ? (
-                <Skeleton className="h-8 w-12" />
-              ) : (
-                <span className="text-2xl font-bold">{totalRecipients}</span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Processed Calls</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-purple-600" />
-              {isLoading ? (
-                <Skeleton className="h-8 w-12" />
-              ) : (
-                <span className="text-2xl font-bold">{completedCalls}</span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Hero Stats Cards */}
+      <CampaignHeroStats
+        totalCampaigns={totalCampaigns}
+        activeCampaigns={activeCampaigns}
+        totalRecipients={totalRecipients}
+        processedCalls={completedCalls}
+        successRate={successRate}
+        isLoading={isLoading}
+      />
 
       {/* Filters */}
-      <Card>
+      <Card className="border-border/50">
         <CardContent className="pt-6">
-          <div className="flex items-center gap-4">
-            <Select 
-              value={statusFilter} 
-              onValueChange={(v) => { 
-                setStatusFilter(v as CampaignStatus | "all")
-                setPage(1)
-              }}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                {statusOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            {/* Search */}
+            <div className="relative flex-1 w-full sm:max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search campaigns..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            
+            {/* Status filter */}
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select 
+                value={statusFilter} 
+                onValueChange={(v) => { 
+                  setStatusFilter(v as CampaignStatus | "all")
+                  setPage(1)
+                }}
+              >
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Quick stats badge */}
+            {!isLoading && campaigns.length > 0 && (
+              <div className="hidden sm:flex items-center gap-3 text-sm text-muted-foreground ml-auto">
+                <span>{filteredCampaigns.length} campaign{filteredCampaigns.length !== 1 ? 's' : ''}</span>
+                {searchQuery && (
+                  <Button variant="ghost" size="sm" onClick={() => setSearchQuery("")}>
+                    Clear search
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -335,7 +329,7 @@ export default function CampaignsPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2">
-                      <Skeleton className="h-10 w-10 rounded-lg" />
+                      <Skeleton className="h-12 w-12 rounded-xl" />
                       <div className="space-y-2">
                         <Skeleton className="h-5 w-40" />
                         <Skeleton className="h-4 w-28" />
@@ -347,9 +341,9 @@ export default function CampaignsPage() {
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    <Skeleton className="h-6 w-16 rounded-full" />
-                    <Skeleton className="h-9 w-24" />
-                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-7 w-20 rounded-full" />
+                    <Skeleton className="h-9 w-28" />
+                    <Skeleton className="h-4 w-24" />
                   </div>
                 </div>
               </CardContent>
@@ -357,50 +351,46 @@ export default function CampaignsPage() {
           ))}
         </div>
       ) : campaigns.length === 0 ? (
+        <CampaignEmptyState 
+          onCreateCampaign={handleNewCampaign} 
+          isCreating={isCreatingCampaign}
+          title={statusFilter !== "all" ? "No campaigns match your filter" : undefined}
+          description={statusFilter !== "all" ? "Try adjusting your filter selection to see more campaigns." : undefined}
+        />
+      ) : filteredCampaigns.length === 0 ? (
         <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <div className="p-4 bg-primary/10 rounded-full mb-4">
-              <Phone className="h-8 w-8 text-primary" />
-            </div>
-            <h3 className="text-lg font-semibold">No campaigns yet</h3>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Search className="h-8 w-8 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold">No results found</h3>
             <p className="text-muted-foreground text-center max-w-sm mt-2">
-              {statusFilter !== "all"
-                ? "No campaigns match your filter. Try adjusting your selection."
-                : "Create your first calling campaign to start reaching your leads with AI-powered outbound calls."}
+              No campaigns match "{searchQuery}". Try a different search term.
             </p>
-            {statusFilter === "all" && (
-              <Button className="mt-6" onClick={handleNewCampaign} disabled={isCreatingCampaign}>
-                {isCreatingCampaign ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Your First Campaign
-                  </>
-                )}
-              </Button>
-            )}
+            <Button variant="outline" className="mt-4" onClick={() => setSearchQuery("")}>
+              Clear search
+            </Button>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {campaigns.map((campaign) => (
-            <CampaignCard
-              key={campaign.id}
-              campaign={campaign}
-              onStart={handleStart}
-              onPause={handlePause}
-              onResume={handleResume}
-              onDelete={setDeleteTarget}
-              isStarting={startingCampaignId === campaign.id}
-              isPausing={pausingCampaignId === campaign.id}
-              isResuming={resumingCampaignId === campaign.id}
-            />
-          ))}
-        </div>
+        <motion.div 
+          className="space-y-4"
+          initial={false}
+        >
+          <AnimatePresence mode="popLayout">
+            {filteredCampaigns.map((campaign) => (
+              <CampaignCardEnhanced
+                key={campaign.id}
+                campaign={campaign}
+                onStart={handleStart}
+                onPause={handlePause}
+                onResume={handleResume}
+                onDelete={setDeleteTarget}
+                isStarting={startingCampaignId === campaign.id}
+                isPausing={pausingCampaignId === campaign.id}
+                isResuming={resumingCampaignId === campaign.id}
+              />
+            ))}
+          </AnimatePresence>
+        </motion.div>
       )}
 
       {/* Delete Confirmation */}

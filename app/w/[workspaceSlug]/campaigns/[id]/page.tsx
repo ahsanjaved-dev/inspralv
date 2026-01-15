@@ -54,6 +54,9 @@ import {
   recipientStatusToActivityEvent,
 } from "@/components/workspace/campaigns/campaign-activity-feed"
 import { WebhookStatusAlert } from "@/components/workspace/campaigns/webhook-status-alert"
+import { CampaignLiveDashboard } from "@/components/workspace/campaigns/campaign-live-dashboard"
+import { CampaignProgressRing } from "@/components/workspace/campaigns/campaign-progress-ring"
+import { CampaignStatsGrid } from "@/components/workspace/campaigns/campaign-stats-card"
 import {
   useCampaign,
   useCampaignRecipients,
@@ -155,11 +158,20 @@ export default function CampaignDetailPage() {
   const totalPages = recipientsData?.totalPages || 1
 
   // Progress tracking with ETA
-  const { progress: campaignProgress } = useCampaignProgress({
-    campaignId,
-    pollingInterval: campaign?.status === "active" ? 3000 : 10000,
-    onlyWhenActive: false,
-  })
+  const { 
+    progress: campaignProgress,
+    estimatedTimeRemaining,
+    percentComplete,
+    processedCount: progressProcessedCount,
+    totalRecipients: progressTotalRecipients,
+  } = useCampaignProgress(
+    workspaceSlug,
+    campaignId || "",
+    {
+      enabled: !!campaignId && !!campaign,
+      pollingInterval: campaign?.status === "active" ? 3000 : 10000,
+    }
+  )
 
   // Real-time updates for campaign recipients
   const {
@@ -541,80 +553,86 @@ export default function CampaignDetailPage() {
         <WebhookStatusAlert showOnlyOnIssues={true} />
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="text-2xl font-bold">{campaign.total_recipients}</p>
-                <p className="text-xs text-muted-foreground">Total</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-yellow-600" />
-              <div>
-                <p className="text-2xl font-bold">{campaign.pending_calls}</p>
-                <p className="text-xs text-muted-foreground">Pending</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
-              <div>
-                <p className="text-2xl font-bold">{campaign.successful_calls}</p>
-                <p className="text-xs text-muted-foreground">Answered</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-red-500" />
-              <div>
-                <p className="text-2xl font-bold">{campaign.failed_calls}</p>
-                <p className="text-xs text-muted-foreground">Failed</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div>
-              <p className="text-2xl font-bold">{progress}%</p>
-              <p className="text-xs text-muted-foreground">Progress</p>
-              <Progress value={progress} className="h-2 mt-2" />
-              <p className="text-xs text-muted-foreground mt-1">{processedCalls} / {campaign.total_recipients}</p>
-              {campaign.status === "active" && campaignProgress && (
-                <div className="mt-2 pt-2 border-t space-y-1">
-                  {campaignProgress.etaDisplay && (
-                    <p className="text-xs text-blue-600 font-medium">
-                      {campaignProgress.etaDisplay}
-                    </p>
-                  )}
-                  {campaignProgress.callsPerMinute > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      {campaignProgress.callsPerMinute} calls/min
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Live Dashboard for Active Campaigns */}
+      {campaign.status === "active" && (
+        <CampaignLiveDashboard
+          campaignId={campaign.id}
+          campaignName={campaign.name}
+          status="active"
+          totalRecipients={campaign.total_recipients}
+          pendingCalls={campaign.pending_calls}
+          completedCalls={processedCalls}
+          successfulCalls={campaign.successful_calls || 0}
+          failedCalls={campaign.failed_calls || 0}
+          estimatedCompletion={estimatedTimeRemaining || undefined}
+          recentEvents={activityEvents.slice(-20).map(e => ({
+            id: e.id,
+            type: e.type === "call_started" ? "started" 
+              : e.type === "call_answered" ? "answered"
+              : e.type === "call_ended" ? "completed"
+              : e.type === "call_failed" ? "failed"
+              : e.type === "call_no_answer" ? "no_answer"
+              : "completed",
+            recipientPhone: e.recipientPhone || "",
+            recipientName: e.recipientName,
+            timestamp: e.timestamp,
+            duration: e.duration,
+          }))}
+          onPause={handlePause}
+          onRefresh={() => { refetchCampaign(); refetchRecipients(); }}
+          isPausing={pauseMutation.isPending}
+        />
+      )}
 
-      {/* Analytics & Activity Row - Only show for active/completed campaigns */}
-      {(campaign.status === "active" || campaign.status === "completed" || campaign.status === "paused") && (
+      {/* Stats Grid - Enhanced version */}
+      <CampaignStatsGrid
+        totalRecipients={campaign.total_recipients}
+        pendingCalls={campaign.pending_calls}
+        completedCalls={processedCalls}
+        successfulCalls={campaign.successful_calls || 0}
+        failedCalls={campaign.failed_calls || 0}
+      />
+
+      {/* Progress Card with Ring */}
+      {campaign.total_recipients > 0 && (
+        <Card className="bg-gradient-to-br from-primary/5 to-purple-500/5 border-border/50">
+          <CardContent className="pt-6">
+            <div className="flex flex-col md:flex-row items-center gap-6">
+              <CampaignProgressRing
+                value={progress}
+                size={160}
+                strokeWidth={14}
+                isActive={campaign.status === "active"}
+                showPercentage={true}
+                showCount={true}
+                total={campaign.total_recipients}
+                processed={processedCalls}
+                variant={campaign.status === "active" ? "success" : campaign.status === "paused" ? "warning" : "default"}
+              />
+              <div className="flex-1 space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold">Campaign Progress</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {processedCalls.toLocaleString()} of {campaign.total_recipients.toLocaleString()} recipients processed
+                  </p>
+                </div>
+                {campaign.status === "active" && estimatedTimeRemaining && (
+                  <div className="flex flex-wrap gap-4">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Clock className="h-4 w-4 text-blue-500" />
+                      <span className="font-medium text-blue-600">{estimatedTimeRemaining}</span>
+                    </div>
+                  </div>
+                )}
+                <Progress value={progress} className="h-3" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Analytics & Activity Row - Only show for paused/completed campaigns (active uses live dashboard) */}
+      {(campaign.status === "completed" || campaign.status === "paused") && (
         <div className="grid md:grid-cols-2 gap-4">
           {/* Campaign Analytics */}
           <CampaignAnalytics
@@ -627,15 +645,15 @@ export default function CampaignDetailPage() {
               successRate: processedCalls > 0 
                 ? Math.round(((campaign.successful_calls || 0) / processedCalls) * 100) 
                 : 0,
-              avgDurationSeconds: undefined, // TODO: Add avgCallDurationMs to CampaignProgress if needed
+              avgDurationSeconds: undefined,
             }}
           />
 
-          {/* Live Activity Feed */}
+          {/* Activity Feed - Not active since we're in completed/paused block */}
           <CampaignActivityFeed
             events={activityEvents}
-            autoScroll={campaign.status === "active"}
-            compact={campaign.status !== "active"}
+            autoScroll={false}
+            compact={true}
           />
         </div>
       )}
