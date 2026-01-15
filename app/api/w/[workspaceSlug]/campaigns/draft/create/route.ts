@@ -1,21 +1,16 @@
 import { NextRequest } from "next/server"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
-import {
-  apiResponse,
-  apiError,
-  unauthorized,
-  serverError,
-} from "@/lib/api/helpers"
+import { apiResponse, apiError, unauthorized, serverError } from "@/lib/api/helpers"
 
 /**
  * POST /api/w/[workspaceSlug]/campaigns/draft/create
- * 
+ *
  * Creates a new empty draft campaign. This is called when user navigates to
  * /campaigns/new without an existing draft ID.
- * 
+ *
  * The draft is created with placeholder values that get updated as the user
  * fills in the wizard.
- * 
+ *
  * IMPORTANT: This endpoint includes duplicate prevention - if the user already
  * has an "Untitled Campaign" draft created in the last 30 seconds, we return
  * that instead of creating a new one. This prevents race conditions from
@@ -33,7 +28,7 @@ export async function POST(
     // Check for recent draft to prevent duplicates
     // If user has an "Untitled Campaign" draft created in the last 30 seconds, return that
     const thirtySecondsAgo = new Date(Date.now() - 30000).toISOString()
-    
+
     const { data: recentDraft } = await ctx.adminClient
       .from("call_campaigns")
       .select("id, name, created_at")
@@ -69,10 +64,11 @@ export async function POST(
       return apiError("No active agents found. Please create an agent first.", 400)
     }
 
-    const placeholderAgentId = agents[0]?.id
-    if (!placeholderAgentId) {
+    const firstAgent = agents[0]
+    if (!firstAgent) {
       return apiError("No active agents found. Please create an agent first.", 400)
     }
+    const placeholderAgentId = firstAgent.id
 
     // Create new draft with placeholder values
     const { data: draft, error: createError } = await ctx.adminClient
@@ -125,10 +121,8 @@ export async function POST(
       draft_id: draft.id,
       reused: false,
     })
-
   } catch (error) {
     console.error("[CampaignDraft/Create] Exception:", error)
     return serverError("Internal server error")
   }
 }
-

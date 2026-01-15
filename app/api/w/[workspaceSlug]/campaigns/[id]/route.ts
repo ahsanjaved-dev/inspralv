@@ -1,6 +1,13 @@
 import { NextRequest } from "next/server"
 import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
-import { apiResponse, apiError, unauthorized, serverError, notFound, getValidationError } from "@/lib/api/helpers"
+import {
+  apiResponse,
+  apiError,
+  unauthorized,
+  serverError,
+  notFound,
+  getValidationError,
+} from "@/lib/api/helpers"
 import { updateCampaignSchema } from "@/types/database.types"
 import { terminateCampaignBatch } from "@/lib/integrations/campaign-provider"
 
@@ -16,10 +23,12 @@ export async function GET(
 
     const { data: campaign, error } = await ctx.adminClient
       .from("call_campaigns")
-      .select(`
+      .select(
+        `
         *,
         agent:ai_agents!agent_id(id, name, provider, is_active)
-      `)
+      `
+      )
       .eq("id", id)
       .eq("workspace_id", ctx.workspace.id)
       .is("deleted_at", null)
@@ -87,11 +96,11 @@ export async function PATCH(
 
     // Handle status transitions
     const updateData: Record<string, unknown> = { ...parsed.data }
-    
+
     if (parsed.data.status === "active" && existing.status === "draft") {
       updateData.started_at = new Date().toISOString()
     }
-    
+
     if (parsed.data.status === "completed" || parsed.data.status === "cancelled") {
       updateData.completed_at = new Date().toISOString()
     }
@@ -101,10 +110,12 @@ export async function PATCH(
       .from("call_campaigns")
       .update(updateData)
       .eq("id", id)
-      .select(`
+      .select(
+        `
         *,
         agent:ai_agents!agent_id(id, name, provider, is_active)
-      `)
+      `
+      )
       .single()
 
     if (error) {
@@ -142,10 +153,12 @@ export async function DELETE(
     // Verify campaign exists and get full details including agent
     const { data: existing, error: existingError } = await ctx.adminClient
       .from("call_campaigns")
-      .select(`
+      .select(
+        `
         id, status,
         agent:ai_agents!agent_id(id, external_agent_id)
-      `)
+      `
+      )
       .eq("id", id)
       .eq("workspace_id", ctx.workspace.id)
       .single()
@@ -156,18 +169,14 @@ export async function DELETE(
 
     const agent = existing.agent as any
 
-    // If campaign is active or paused, terminate it with provider first
-    let providerResult: { success: boolean; provider: "inspra" | "vapi"; error?: string } = { success: true, provider: "inspra" as const, error: undefined }
+    // If campaign is active or paused, terminate it with Inspra first
+    let inspraResult: { success: boolean; error?: string } = { success: true }
     const needsTermination = existing.status === "active" || existing.status === "paused"
-    
+
     if (needsTermination && agent?.external_agent_id) {
       console.log("[CampaignAPI] Terminating batch before delete:", id)
 
-      providerResult = await terminateCampaignBatch(
-        ctx.workspace.id,
-        agent.external_agent_id,
-        id
-      )
+      providerResult = await terminateCampaignBatch(ctx.workspace.id, agent.external_agent_id, id)
 
       if (!providerResult.success) {
         console.error("[CampaignAPI] Provider terminate error:", providerResult.error)
@@ -187,17 +196,21 @@ export async function DELETE(
       return serverError("Failed to delete campaign")
     }
 
-    console.log(`[CampaignAPI] Campaign deleted: ${id}${needsTermination ? " (batch terminated)" : ""}`)
+    console.log(
+      `[CampaignAPI] Campaign deleted: ${id}${needsTermination ? " (batch terminated)" : ""}`
+    )
 
-    return apiResponse({ 
+    return apiResponse({
       success: true,
       terminated: needsTermination,
-      provider: needsTermination ? {
-        called: !!agent?.external_agent_id,
-        used: providerResult.provider,
-        success: providerResult.success,
-        error: providerResult.error,
-      } : undefined,
+      provider: needsTermination
+        ? {
+            called: !!agent?.external_agent_id,
+            used: providerResult.provider,
+            success: providerResult.success,
+            error: providerResult.error,
+          }
+        : undefined,
     })
   } catch (error) {
     console.error("[CampaignAPI] Exception:", error)

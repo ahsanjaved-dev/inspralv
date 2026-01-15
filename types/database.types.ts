@@ -2357,6 +2357,8 @@ export const createPartnerRequestSchema = z.object({
   // Partner tier selection - all white-label partners default to "partner" tier
   // Legacy values (starter, professional, enterprise) are mapped to "partner" tier
   selected_plan: z.string().default("partner"),
+  // Selected white-label variant ID (agency's desired plan)
+  selected_white_label_variant_id: z.string().uuid().optional(),
   expected_users: z.number().optional(),
   branding_data: z
     .object({
@@ -2422,6 +2424,7 @@ export interface WhiteLabelVariant {
   name: string
   description: string | null
   monthly_price_cents: number
+  stripe_product_id: string | null
   stripe_price_id: string | null
   max_workspaces: number // -1 = unlimited
   is_active: boolean
@@ -2439,7 +2442,7 @@ export const createWhiteLabelVariantSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   description: z.string().max(500).optional(),
   monthly_price_cents: z.number().int().min(0, "Price must be non-negative").default(0),
-  stripe_price_id: z.string().max(100).optional().nullable(),
+  // stripe_product_id and stripe_price_id are auto-created when monthlyPriceCents > 0
   max_workspaces: z.number().int().default(10), // -1 = unlimited
   is_active: z.boolean().default(true),
   sort_order: z.number().int().default(0),
@@ -2457,7 +2460,7 @@ export const updateWhiteLabelVariantSchema = z.object({
   name: z.string().min(1, "Name is required").max(100).optional(),
   description: z.string().max(500).optional().nullable(),
   monthly_price_cents: z.number().int().min(0, "Price must be non-negative").optional(),
-  stripe_price_id: z.string().max(100).optional().nullable(),
+  // stripe_product_id and stripe_price_id are auto-managed based on price changes
   max_workspaces: z.number().int().optional(), // -1 = unlimited
   is_active: z.boolean().optional(),
   sort_order: z.number().int().optional(),

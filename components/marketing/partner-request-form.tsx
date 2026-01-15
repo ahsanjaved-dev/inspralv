@@ -8,11 +8,23 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, CheckCircle2, ArrowRight, ArrowLeft, AlertCircle, Upload, X, Globe } from "lucide-react"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Loader2, CheckCircle2, ArrowRight, ArrowLeft, AlertCircle, Upload, X, Globe, Package, Building2 } from "lucide-react"
 import { HexColorPicker } from "react-colorful"
 import { toast } from "sonner"
 import { createPartnerRequestSchema } from "@/types/database.types"
 import { z } from "zod"
+
+// Plan type from public API
+interface PublicPlan {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  monthlyPriceCents: number
+  monthlyPrice: number
+  maxWorkspaces: number
+}
 
 interface PartnerRequestFormProps {
   primaryColor?: string
@@ -33,6 +45,10 @@ export function PartnerRequestForm({
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
 
+  // Plans state
+  const [plans, setPlans] = useState<PublicPlan[]>([])
+  const [loadingPlans, setLoadingPlans] = useState(true)
+
   // Form data
   const [formData, setFormData] = useState({
     // Step 1: Company & Contact
@@ -41,10 +57,11 @@ export function PartnerRequestForm({
     contact_email: "",
     phone: "",
 
-    // Step 2: Business Details
+    // Step 2: Business Details & Plan Selection
     business_description: "",
     expected_users: "",
     use_case: "",
+    selected_white_label_variant_id: "", // New: selected plan ID
 
     // Step 3: Branding (simplified - no custom domain)
     desired_subdomain: "", // Auto-generated from company name
@@ -54,6 +71,32 @@ export function PartnerRequestForm({
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Fetch available plans on mount
+  useEffect(() => {
+    async function fetchPlans() {
+      try {
+        const res = await fetch("/api/public/white-label-plans")
+        if (res.ok) {
+          const data = await res.json()
+          const fetchedPlans = data.data?.plans || []
+          setPlans(fetchedPlans)
+          // Auto-select first plan if available
+          if (fetchedPlans.length > 0 && !formData.selected_white_label_variant_id) {
+            setFormData((prev) => ({
+              ...prev,
+              selected_white_label_variant_id: fetchedPlans[0].id,
+            }))
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch plans:", error)
+      } finally {
+        setLoadingPlans(false)
+      }
+    }
+    fetchPlans()
+  }, [])
 
   // Auto-generate slug from company name
   const generateSlug = (companyName: string) => {
@@ -219,6 +262,9 @@ export function PartnerRequestForm({
       if (!formData.use_case || formData.use_case.length < 10) {
         newErrors.use_case = "Please describe your use case (min 10 characters)"
       }
+      if (plans.length > 0 && !formData.selected_white_label_variant_id) {
+        newErrors.selected_white_label_variant_id = "Please select a plan"
+      }
     }
 
     if (stepNumber === 3) {
@@ -249,7 +295,7 @@ export function PartnerRequestForm({
 
     setLoading(true)
     try {
-      // Prepare submission data (no custom_domain - will be set during onboarding)
+      // Prepare submission data
       const submissionData = {
         company_name: formData.company_name,
         contact_name: formData.contact_name,
@@ -259,15 +305,15 @@ export function PartnerRequestForm({
         expected_users: formData.expected_users ? parseInt(formData.expected_users) : undefined,
         use_case: formData.use_case,
         desired_subdomain: formData.desired_subdomain || generateSlug(formData.company_name),
-        // custom_domain is now optional - not included in initial request
         branding_data: {
           logo_url: formData.logo_url || undefined,
           primary_color: formData.primary_color,
           secondary_color: formData.secondary_color,
           company_name: formData.company_name,
         },
-        // All white-label partners get "partner" tier
         selected_plan: "partner",
+        // Include selected plan variant ID
+        selected_white_label_variant_id: formData.selected_white_label_variant_id || undefined,
       }
 
       // Validate with Zod
@@ -306,6 +352,9 @@ export function PartnerRequestForm({
     }
   }
 
+  // Get selected plan details for display
+  const selectedPlan = plans.find((p) => p.id === formData.selected_white_label_variant_id)
+
   if (success) {
     const fullUrl = `${formData.desired_subdomain}.${platformDomain}`
     return (
@@ -323,6 +372,15 @@ export function PartnerRequestForm({
             <p className="text-sm text-muted-foreground">
               We've sent a confirmation email to <strong>{formData.contact_email}</strong>
             </p>
+            {selectedPlan && (
+              <div className="bg-primary/5 rounded-lg p-4 inline-block">
+                <p className="text-sm text-muted-foreground mb-1">Selected Plan:</p>
+                <Badge variant="outline" className="font-medium text-base px-3 py-1">
+                  <Package className="h-4 w-4 mr-2" />
+                  {selectedPlan.name} - ${selectedPlan.monthlyPrice}/mo
+                </Badge>
+              </div>
+            )}
             <div className="bg-muted rounded-lg p-4 inline-block">
               <p className="text-sm text-muted-foreground mb-1">After approval, your platform will be at:</p>
               <Badge variant="outline" className="font-mono text-base px-3 py-1">
@@ -331,8 +389,7 @@ export function PartnerRequestForm({
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              You'll be able to add a custom domain (like app.yourcompany.com) from your dashboard
-              after approval.
+              Once approved, you'll receive a link to complete payment and activate your account.
             </p>
             <Button onClick={() => router.push("/")} style={{ backgroundColor: primaryColor }}>
               Back to Home
@@ -349,7 +406,7 @@ export function PartnerRequestForm({
         <CardTitle>Request White-Label Partnership</CardTitle>
         <CardDescription>
           Step {step} of 3 -{" "}
-          {step === 1 ? "Company & Contact" : step === 2 ? "Business Details" : "Domain & Branding"}
+          {step === 1 ? "Company & Contact" : step === 2 ? "Business Details & Plan" : "Domain & Branding"}
         </CardDescription>
 
         {/* Progress Bar */}
@@ -419,9 +476,9 @@ export function PartnerRequestForm({
           </div>
         )}
 
-        {/* Step 2: Business Details */}
+        {/* Step 2: Business Details & Plan Selection */}
         {step === 2 && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="business_description">Business Description *</Label>
               <Textarea
@@ -457,6 +514,78 @@ export function PartnerRequestForm({
                 rows={4}
               />
               {errors.use_case && <p className="text-sm text-red-600">{errors.use_case}</p>}
+            </div>
+
+            {/* Plan Selection */}
+            <div className="space-y-3">
+              <Label className="text-base font-semibold flex items-center gap-2">
+                <Package className="h-5 w-5 text-primary" />
+                Select Your Plan *
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Choose the plan that best fits your needs. You can upgrade later.
+              </p>
+
+              {loadingPlans ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : plans.length === 0 ? (
+                <div className="bg-muted rounded-lg p-4 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Plans are being configured. Contact us for pricing details.
+                  </p>
+                </div>
+              ) : (
+                <RadioGroup
+                  value={formData.selected_white_label_variant_id}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, selected_white_label_variant_id: value })
+                  }
+                  className="space-y-3"
+                >
+                  {plans.map((plan) => (
+                    <label
+                      key={plan.id}
+                      className={`flex items-start gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                        formData.selected_white_label_variant_id === plan.id
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <RadioGroupItem value={plan.id} id={plan.id} className="mt-1" />
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold">{plan.name}</span>
+                          <span className="text-lg font-bold">
+                            {plan.monthlyPrice === 0 ? (
+                              "Free"
+                            ) : (
+                              <>
+                                ${plan.monthlyPrice}
+                                <span className="text-sm font-normal text-muted-foreground">/mo</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+                        {plan.description && (
+                          <p className="text-sm text-muted-foreground">{plan.description}</p>
+                        )}
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground pt-1">
+                          <span className="flex items-center gap-1">
+                            <Building2 className="h-4 w-4" />
+                            {plan.maxWorkspaces === -1 ? "Unlimited" : plan.maxWorkspaces} workspaces
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </RadioGroup>
+              )}
+
+              {errors.selected_white_label_variant_id && (
+                <p className="text-sm text-red-600">{errors.selected_white_label_variant_id}</p>
+              )}
             </div>
           </div>
         )}

@@ -1,7 +1,7 @@
 /**
  * Super Admin White-Label Variants API
  * GET  - List all variants
- * POST - Create a new variant
+ * POST - Create a new variant (auto-creates Stripe Product + Price)
  */
 
 import { NextRequest } from "next/server"
@@ -9,6 +9,7 @@ import { getSuperAdminContext } from "@/lib/api/super-admin-auth"
 import { apiResponse, apiError, unauthorized, serverError } from "@/lib/api/helpers"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createWhiteLabelVariantSchema } from "@/types/database.types"
+import { getStripe } from "@/lib/stripe"
 
 /**
  * GET - List all white-label variants
@@ -61,6 +62,7 @@ export async function GET(request: NextRequest) {
         name: v.name,
         description: v.description,
         monthlyPriceCents: v.monthly_price_cents,
+        stripeProductId: v.stripe_product_id,
         stripePriceId: v.stripe_price_id,
         maxWorkspaces: v.max_workspaces,
         isActive: v.is_active,
@@ -78,6 +80,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST - Create a new white-label variant
+ * Auto-creates Stripe Product + Price if monthlyPriceCents > 0
  */
 export async function POST(request: NextRequest) {
   try {
@@ -105,7 +108,53 @@ export async function POST(request: NextRequest) {
       return apiError("A variant with this slug already exists", 409)
     }
 
-    // Create the variant
+    // Auto-create Stripe Product + Price if this is a paid variant
+    let stripeProductId: string | null = null
+    let stripePriceId: string | null = null
+
+    if (data.monthly_price_cents > 0) {
+      try {
+        const stripe = getStripe()
+
+        // Create Stripe Product
+        const product = await stripe.products.create({
+          name: data.name,
+          description: data.description || `${data.name} - White-Label Partner Plan`,
+          metadata: {
+            type: "white_label_variant",
+            variant_slug: data.slug,
+            max_workspaces: String(data.max_workspaces),
+          },
+        })
+
+        // Create Stripe Price (recurring monthly)
+        const price = await stripe.prices.create({
+          product: product.id,
+          unit_amount: data.monthly_price_cents,
+          currency: "usd",
+          recurring: {
+            interval: "month",
+          },
+          metadata: {
+            type: "white_label_variant",
+            variant_slug: data.slug,
+          },
+        })
+
+        stripeProductId = product.id
+        stripePriceId = price.id
+
+        console.log(`[White-Label Variants] Created Stripe Product ${product.id} and Price ${price.id} for variant ${data.slug}`)
+      } catch (stripeError) {
+        console.error("[White-Label Variants] Failed to create Stripe product/price:", stripeError)
+        return apiError(
+          "Failed to create Stripe product/price. Please check your Stripe configuration.",
+          500
+        )
+      }
+    }
+
+    // Create the variant in database
     const { data: variant, error } = await adminClient
       .from("white_label_variants")
       .insert({
@@ -113,7 +162,8 @@ export async function POST(request: NextRequest) {
         name: data.name,
         description: data.description || null,
         monthly_price_cents: data.monthly_price_cents,
-        stripe_price_id: data.stripe_price_id || null,
+        stripe_product_id: stripeProductId,
+        stripe_price_id: stripePriceId,
         max_workspaces: data.max_workspaces,
         is_active: data.is_active,
         sort_order: data.sort_order,
@@ -123,6 +173,11 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("Create variant error:", error)
+      // If we created Stripe resources but DB insert failed, we have orphaned Stripe resources
+      // In production, you might want to clean these up, but for now we'll log it
+      if (stripeProductId) {
+        console.error(`[White-Label Variants] DB insert failed but Stripe Product ${stripeProductId} was created - may need cleanup`)
+      }
       return serverError("Failed to create variant")
     }
 
@@ -134,6 +189,7 @@ export async function POST(request: NextRequest) {
           name: variant.name,
           description: variant.description,
           monthlyPriceCents: variant.monthly_price_cents,
+          stripeProductId: variant.stripe_product_id,
           stripePriceId: variant.stripe_price_id,
           maxWorkspaces: variant.max_workspaces,
           isActive: variant.is_active,
@@ -149,4 +205,3 @@ export async function POST(request: NextRequest) {
     return serverError()
   }
 }
-

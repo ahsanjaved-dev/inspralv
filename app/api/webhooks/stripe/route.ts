@@ -13,6 +13,7 @@ import { applyTopup } from "@/lib/stripe/credits"
 import { prisma } from "@/lib/prisma"
 import { sendPaymentFailedEmail } from "@/lib/email/send"
 import { env } from "@/lib/env"
+import { provisionPartner } from "@/lib/partner/provision"
 
 // Disable body parsing - we need the raw body for signature verification
 export const dynamic = "force-dynamic"
@@ -92,6 +93,36 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   const planTier = session.metadata?.plan_tier
   const type = session.metadata?.type
   const workspaceId = session.metadata?.workspace_id
+  const partnerRequestId = session.metadata?.partner_request_id
+
+  // Handle agency subscription checkout (new checkout-first flow)
+  if (type === "agency_subscription" && partnerRequestId) {
+    console.log(`[Stripe Webhook] Agency subscription checkout completed: ${session.id} for request ${partnerRequestId}`)
+    
+    try {
+      // Get customer and subscription IDs from the session
+      const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id
+      const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id
+
+      // Provision the partner
+      const result = await provisionPartner({
+        requestId: partnerRequestId,
+        stripeCustomerId: customerId || undefined,
+        stripeSubscriptionId: subscriptionId || undefined,
+      })
+
+      console.log(`[Stripe Webhook] Partner provisioned successfully:`, {
+        partnerId: result.partner.id,
+        partnerName: result.partner.name,
+        ownerEmail: result.owner.email,
+      })
+    } catch (error) {
+      console.error(`[Stripe Webhook] Failed to provision partner from checkout:`, error)
+      // Don't throw - we've already charged them, so we need to handle this manually
+      // TODO: Send alert to super admin about failed provisioning
+    }
+    return
+  }
 
   // Handle workspace subscription checkout (from public signups)
   if (type === "workspace_subscription" && workspaceId) {
@@ -100,24 +131,24 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     return
   }
 
-  // Handle partner subscription checkout
-  if (!partnerId) {
-    console.error("[Stripe Webhook] No partner_id in checkout session metadata")
+  // Handle existing partner subscription checkout (legacy flow)
+  if (partnerId) {
+    // The subscription will be created separately and handled by customer.subscription.created
+    // But we can update the customer ID here if needed
+    if (session.customer && typeof session.customer === "string") {
+      await prisma.partner.update({
+        where: { id: partnerId },
+        data: {
+          stripeCustomerId: session.customer,
+        },
+      })
+    }
+
+    console.log(`[Stripe Webhook] Partner ${partnerId} completed checkout for ${planTier} plan`)
     return
   }
 
-  // The subscription will be created separately and handled by customer.subscription.created
-  // But we can update the customer ID here if needed
-  if (session.customer && typeof session.customer === "string") {
-    await prisma.partner.update({
-      where: { id: partnerId },
-      data: {
-        stripeCustomerId: session.customer,
-      },
-    })
-  }
-
-  console.log(`[Stripe Webhook] Partner ${partnerId} completed checkout for ${planTier} plan`)
+  console.log(`[Stripe Webhook] Checkout session ${session.id} has no recognized type in metadata`)
 }
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {

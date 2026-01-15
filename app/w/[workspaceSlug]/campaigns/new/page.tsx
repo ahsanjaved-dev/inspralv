@@ -2,7 +2,7 @@
 
 /**
  * New Campaign Page - Optimized Version
- * 
+ *
  * Key optimizations:
  * 1. NO upfront draft creation - page loads instantly
  * 2. All state managed locally via Zustand store
@@ -38,7 +38,7 @@ function NewCampaignPageContent() {
   const params = useParams()
   const searchParams = useSearchParams()
   const workspaceSlug = params.workspaceSlug as string
-  
+
   // Optional draft ID from URL (for resuming existing drafts)
   const draftIdParam = searchParams.get("draft")
 
@@ -55,7 +55,7 @@ function NewCampaignPageContent() {
   // =========================================================================
   // OPTIONAL: Load existing draft if resuming
   // =========================================================================
-  
+
   useEffect(() => {
     // Only load draft if we have a draft ID in URL
     if (!draftIdParam) {
@@ -66,9 +66,7 @@ function NewCampaignPageContent() {
     const loadDraft = async () => {
       try {
         console.log(`[NewCampaignPage] Loading draft: ${draftIdParam}`)
-        const response = await fetch(
-          `/api/w/${workspaceSlug}/campaigns/draft?id=${draftIdParam}`
-        )
+        const response = await fetch(`/api/w/${workspaceSlug}/campaigns/draft?id=${draftIdParam}`)
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
@@ -112,19 +110,18 @@ function NewCampaignPageContent() {
   const handleSubmit = async (data: CreateCampaignWizardInput) => {
     try {
       const result = await createMutation.mutateAsync(data)
-      
-      // Show appropriate success message based on status and schedule type
-      const status = result.data?.status
-      const recipientCount = result.data?.total_recipients || 0
-      
-      if (status === "scheduled") {
-        toast.success(`Campaign scheduled with ${recipientCount} recipients! It will start automatically at the scheduled time.`)
-      } else if (status === "active") {
-        toast.success(`Campaign started with ${recipientCount} recipients! Calls are now being processed.`)
+
+      // Show appropriate success message based on schedule type
+      const scheduleType = result.data?.schedule_type
+
+      if (scheduleType === "scheduled") {
+        toast.success("Campaign scheduled! It will start automatically at the scheduled time.")
+      } else if (scheduleType === "immediate") {
+        toast.success("Campaign ready! Click 'Start Campaign' to begin calling.")
       } else {
         toast.success("Campaign created successfully!")
       }
-      
+
       // Redirect to campaigns list
       router.push(`/w/${workspaceSlug}/campaigns`)
     } catch (error) {
@@ -141,7 +138,9 @@ function NewCampaignPageContent() {
     setLoadError(null)
     setIsLoadingDraft(true)
     // Trigger reload by navigating to same page
-    router.replace(`/w/${workspaceSlug}/campaigns/new${draftIdParam ? `?draft=${draftIdParam}` : ""}`)
+    router.replace(
+      `/w/${workspaceSlug}/campaigns/new${draftIdParam ? `?draft=${draftIdParam}` : ""}`
+    )
   }
 
   // =========================================================================
@@ -150,7 +149,7 @@ function NewCampaignPageContent() {
 
   if (isLoadingDraft) {
     return (
-      <CampaignLoading 
+      <CampaignLoading
         message="Loading your draft..."
         submessage="Retrieving your saved progress"
       />
@@ -207,10 +206,9 @@ function NewCampaignPageContent() {
             {draftData ? "Continue Campaign" : "Create Campaign"}
           </h1>
           <p className="text-muted-foreground">
-            {draftData 
+            {draftData
               ? "Continue setting up your outbound calling campaign"
-              : "Set up a new outbound calling campaign step by step"
-            }
+              : "Set up a new outbound calling campaign step by step"}
           </p>
         </div>
       </div>

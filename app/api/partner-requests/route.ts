@@ -40,6 +40,24 @@ export async function POST(request: NextRequest) {
       return apiError(subdomainCheck.reason || "This subdomain is not available", 409)
     }
 
+    // Validate selected variant if provided
+    let variantId: string | null = null
+    if (data.selected_white_label_variant_id) {
+      const { data: variant, error: variantError } = await adminClient
+        .from("white_label_variants")
+        .select("id, is_active")
+        .eq("id", data.selected_white_label_variant_id)
+        .single()
+
+      if (variantError || !variant) {
+        return apiError("Selected plan not found", 400)
+      }
+      if (!variant.is_active) {
+        return apiError("Selected plan is no longer available", 400)
+      }
+      variantId = variant.id
+    }
+
     // Insert partner request (custom_domain is now optional)
     const { data: partnerRequest, error: insertError } = await adminClient
       .from("partner_requests")
@@ -56,6 +74,8 @@ export async function POST(request: NextRequest) {
         use_case: data.use_case,
         branding_data: data.branding_data || {},
         selected_plan: data.selected_plan || "enterprise",
+        // Store the agency's desired plan variant
+        assigned_white_label_variant_id: variantId,
         status: "pending",
         metadata: data.metadata || {},
       })

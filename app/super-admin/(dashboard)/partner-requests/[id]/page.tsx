@@ -28,6 +28,8 @@ import {
   ExternalLink,
   Pencil,
   Trash2,
+  Package,
+  DollarSign,
 } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 
@@ -234,9 +236,28 @@ export default function PartnerRequestDetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Selected Plan</p>
-                  <Badge variant="outline" className="capitalize">
-                    {request.selected_plan}
-                  </Badge>
+                  {request.assignedVariant ? (
+                    <div className="space-y-1">
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+                        <Package className="h-3 w-3 mr-1" />
+                        {request.assignedVariant.name}
+                      </Badge>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        {request.assignedVariant.monthlyPriceCents === 0
+                          ? "Free"
+                          : `$${(request.assignedVariant.monthlyPriceCents / 100).toFixed(0)}/mo`}
+                        {" • "}
+                        {request.assignedVariant.maxWorkspaces === -1
+                          ? "Unlimited workspaces"
+                          : `${request.assignedVariant.maxWorkspaces} workspaces`}
+                      </p>
+                    </div>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      No plan selected
+                    </Badge>
+                  )}
                 </div>
               </div>
             </CardContent>

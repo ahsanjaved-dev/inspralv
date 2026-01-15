@@ -1032,7 +1032,133 @@ async function handleEndOfCallReport(payload: VapiWebhookPayload) {
 }
 
 /**
- * Handle function-calls event within message payload
+ * Map VAPI ended reason to call outcome
+ */
+function mapEndedReasonToOutcome(endedReason?: string): string {
+  if (!endedReason) return "completed"
+
+  const reason = endedReason.toLowerCase()
+
+  if (reason.includes("customer-ended") || reason.includes("assistant-ended")) {
+    return "completed"
+  }
+  if (reason.includes("no-answer") || reason.includes("no_answer")) {
+    return "no_answer"
+  }
+  if (reason.includes("busy")) {
+    return "busy"
+  }
+  if (reason.includes("voicemail")) {
+    return "voicemail"
+  }
+  if (reason.includes("failed") || reason.includes("error")) {
+    return "failed"
+  }
+  if (reason.includes("cancelled") || reason.includes("canceled")) {
+    return "cancelled"
+  }
+
+  return "completed"
+}
+
+/**
+ * Update campaign recipient status when a call completes
+ */
+async function updateCampaignRecipientStatus(
+  externalCallId: string,
+  callOutcome: string,
+  durationSeconds: number,
+  cost?: number
+): Promise<void> {
+  if (!prisma) return
+
+  try {
+    // Find recipient by external_call_id
+    const recipient = await prisma.$queryRaw<Array<{ id: string; campaign_id: string }>>`
+      SELECT id, campaign_id FROM call_recipients 
+      WHERE external_call_id = ${externalCallId}
+      LIMIT 1
+    `
+
+    if (!recipient || recipient.length === 0) {
+      // Not a campaign call, skip
+      return
+    }
+
+    const recipientData = recipient[0]
+    if (!recipientData) {
+      // Should never happen after length check, but TypeScript needs this
+      return
+    }
+    console.log(
+      `[VAPI Webhook] Updating campaign recipient ${recipientData.id} with outcome: ${callOutcome}`
+    )
+
+    // Update recipient status
+    await prisma.$executeRaw`
+      UPDATE call_recipients 
+      SET 
+        call_status = ${callOutcome === "completed" ? "completed" : "failed"},
+        call_outcome = ${callOutcome},
+        call_ended_at = NOW(),
+        call_duration_seconds = ${durationSeconds},
+        call_cost = ${cost || 0},
+        updated_at = NOW()
+      WHERE id = ${recipientData.id}
+    `
+
+    // Update campaign statistics
+    if (callOutcome === "completed") {
+      await prisma.$executeRaw`
+        UPDATE call_campaigns 
+        SET 
+          completed_calls = completed_calls + 1,
+          successful_calls = successful_calls + 1,
+          updated_at = NOW()
+        WHERE id = ${recipientData.campaign_id}
+      `
+    } else {
+      await prisma.$executeRaw`
+        UPDATE call_campaigns 
+        SET 
+          completed_calls = completed_calls + 1,
+          failed_calls = failed_calls + 1,
+          updated_at = NOW()
+        WHERE id = ${recipientData.campaign_id}
+      `
+    }
+
+    // Check if campaign is complete (no more pending or in_progress recipients)
+    const pendingCount = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) as count FROM call_recipients 
+      WHERE campaign_id = ${recipientData.campaign_id}
+      AND call_status IN ('pending', 'in_progress')
+    `
+
+    if (pendingCount && pendingCount[0] && pendingCount[0].count === BigInt(0)) {
+      console.log(
+        `[VAPI Webhook] Campaign ${recipientData.campaign_id} completed - all recipients processed`
+      )
+      await prisma.$executeRaw`
+        UPDATE call_campaigns 
+        SET 
+          status = 'completed',
+          completed_at = NOW(),
+          updated_at = NOW()
+        WHERE id = ${recipientData.campaign_id}
+        AND status = 'active'
+      `
+    }
+
+    console.log(`[VAPI Webhook] Campaign recipient ${recipientData.id} updated successfully`)
+  } catch (error) {
+    console.error("[VAPI Webhook] Error updating campaign recipient:", error)
+    // Don't throw - this is a secondary operation
+  }
+}
+
+/**
+ * Handle function-calls event that comes via message payload
  */
 async function handleFunctionCallInMessage(payload: VapiWebhookPayload) {
   const { call } = payload.message

@@ -5,7 +5,7 @@ import { terminateCampaignBatch } from "@/lib/integrations/campaign-provider"
 
 /**
  * POST /api/w/[workspaceSlug]/campaigns/[id]/terminate
- * 
+ *
  * Terminate/cancel a campaign.
  * Uses unified provider with automatic fallback handling.
  * For Inspra: calls /terminate-batch
@@ -27,10 +27,12 @@ export async function POST(
     // Get campaign with agent
     const { data: campaign, error: campaignError } = await ctx.adminClient
       .from("call_campaigns")
-      .select(`
+      .select(
+        `
         *,
         agent:ai_agents!agent_id(id, external_agent_id)
-      `)
+      `
+      )
       .eq("id", id)
       .eq("workspace_id", ctx.workspace.id)
       .is("deleted_at", null)
@@ -41,23 +43,24 @@ export async function POST(
     }
 
     // Validate campaign can be terminated
-    if (campaign.status !== "active" && campaign.status !== "paused" && campaign.status !== "draft" && campaign.status !== "ready") {
+    if (
+      campaign.status !== "active" &&
+      campaign.status !== "paused" &&
+      campaign.status !== "draft" &&
+      campaign.status !== "ready"
+    ) {
       return apiError("Only active, paused, draft, or ready campaigns can be terminated")
     }
 
     const agent = campaign.agent as any
 
-    // Call unified provider to terminate batch (only if agent is synced)
-    let providerResult: { success: boolean; provider: "inspra" | "vapi"; error?: string } = { success: true, provider: "inspra" as const, error: undefined }
-    
+    // Call Inspra API to terminate batch (only if agent is synced)
+    let inspraResult: { success: boolean; error?: string } = { success: true }
+
     if (agent?.external_agent_id) {
       console.log("[CampaignTerminate] Terminating campaign:", id)
 
-      providerResult = await terminateCampaignBatch(
-        ctx.workspace.id,
-        agent.external_agent_id,
-        id
-      )
+      providerResult = await terminateCampaignBatch(ctx.workspace.id, agent.external_agent_id, id)
 
       if (!providerResult.success) {
         console.error("[CampaignTerminate] Provider error:", providerResult.error)

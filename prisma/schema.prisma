@@ -189,6 +189,7 @@ model WhiteLabelVariant {
   name              String    @db.VarChar(100)
   description       String?
   monthlyPriceCents Int       @default(0) @map("monthly_price_cents")
+  stripeProductId   String?   @map("stripe_product_id") @db.VarChar(100)
   stripePriceId     String?   @map("stripe_price_id") @db.VarChar(100)
   maxWorkspaces     Int       @default(10) @map("max_workspaces") // -1 = unlimited
   isActive          Boolean   @default(true) @map("is_active")
