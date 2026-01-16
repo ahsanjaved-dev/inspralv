@@ -506,9 +506,10 @@ async function handleEndOfCallReport(
   console.log("[VAPI Webhook] MESSAGE KEYS:", Object.keys(payload.message || {}))
 
   // Extract from message - note: cost/costBreakdown are at MESSAGE level, not inside call!
-  const { call, artifact, analysis } = payload.message
-  const messageCost = (payload.message as any).cost as number | undefined
-  const messageCostBreakdown = (payload.message as any).costBreakdown as object | undefined
+  const message = payload.message
+  const { call, artifact, analysis } = message
+  const messageCost = (message as any).cost as number | undefined
+  const messageCostBreakdown = (message as any).costBreakdown as object | undefined
 
   if (!call?.id || !prisma) {
     console.error("[VAPI Webhook] No call ID or Prisma not configured")
@@ -518,9 +519,14 @@ async function handleEndOfCallReport(
   // Get assistantId from either direct field or nested assistant object
   const assistantId = call.assistantId || call.assistant?.id
 
+  // endedReason can be at message level or call level - check both
+  const endedReason = call.endedReason || (message as any).endedReason
+
   console.log(`[VAPI Webhook] End of call report: ${call.id}`, {
     type: call.type,
     assistantId: assistantId,
+    endedReason: endedReason || "NOT PROVIDED",
+    cost: messageCost,
   })
 
   // Log message.artifact data (CORRECT location per VAPI docs!)
@@ -893,6 +899,15 @@ async function handleEndOfCallReport(
       `[VAPI Webhook] Skipping Algolia index - no agent or conversation not found: ${conversation.id}`
     )
   }
+
+  // =========================================================================
+  // UPDATE CAMPAIGN RECIPIENT STATUS (for real-time UI updates)
+  // This updates call_recipients table which triggers Supabase Realtime events
+  // =========================================================================
+  // Determine if there was a transcript (indicates actual conversation happened)
+  const hasTranscript = !!(transcript && transcript.length > 0)
+  const callOutcome = mapEndedReasonToOutcome(endedReason, durationSeconds, hasTranscript)
+  await updateCampaignRecipientStatus(call.id, callOutcome, durationSeconds, messageCost)
 }
 
 async function handleFunctionCall(payload: VapiWebhookPayload, workspaceId: string) {
