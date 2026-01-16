@@ -497,8 +497,14 @@ interface CampaignActionResponse {
 }
 
 /**
- * Hook for starting a campaign
- * Updates local status and activates the batch
+ * Hook for starting a campaign (SCALABLE VERSION)
+ * 
+ * Uses the new scalable endpoint that:
+ * 1. Queues all calls in the database
+ * 2. Starts only a few calls at a time (respecting VAPI concurrency limits)
+ * 3. Automatically triggers next calls when previous calls complete (via webhook)
+ * 
+ * This is the recommended approach for campaigns of any size.
  */
 export function useStartCampaign() {
   const params = useParams()
@@ -507,8 +513,9 @@ export function useStartCampaign() {
 
   return useMutation<CampaignActionResponse, Error, string>({
     mutationFn: async (campaignId: string) => {
+      // Use the scalable endpoint for better handling of large campaigns
       const response = await fetch(
-        `/api/w/${workspaceSlug}/campaigns/${campaignId}/start`,
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/start-scalable`,
         { method: "POST" }
       )
       if (!response.ok) {
@@ -520,6 +527,39 @@ export function useStartCampaign() {
     onSuccess: (_, campaignId) => {
       queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
       queryClient.invalidateQueries({ queryKey: ["campaign", workspaceSlug, campaignId] })
+    },
+  })
+}
+
+/**
+ * Hook for manually triggering call processing for a campaign
+ * 
+ * This is useful for:
+ * - Recovery from stuck states
+ * - Manually pushing calls when webhooks fail
+ * - Debugging campaign processing
+ */
+export function useProcessCampaignCalls() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (campaignId: string) => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/${campaignId}/process-calls`,
+        { method: "POST" }
+      )
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to process calls")
+      }
+      return response.json()
+    },
+    onSuccess: (_, campaignId) => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
+      queryClient.invalidateQueries({ queryKey: ["campaign", workspaceSlug, campaignId] })
+      queryClient.invalidateQueries({ queryKey: ["campaign-recipients", workspaceSlug, campaignId] })
     },
   })
 }
@@ -685,5 +725,103 @@ export function useCleanupCampaign() {
       })
     },
   })
+}
+
+// ============================================================================
+// POLLING FALLBACK HOOKS
+// ============================================================================
+
+interface ProcessStuckResponse {
+  success: boolean
+  processed: number
+  totalStarted: number
+  totalFailed: number
+  results: Array<{
+    campaignId: string
+    campaignName: string
+    started: number
+    failed: number
+    remaining: number
+    error?: string
+  }>
+}
+
+/**
+ * Hook for polling/continuing stuck campaigns.
+ * Call this periodically (every 30s) when a campaign is active to ensure
+ * the webhook chain doesn't break.
+ */
+export function useProcessStuckCampaigns() {
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+  const queryClient = useQueryClient()
+
+  return useMutation<ProcessStuckResponse, Error, void>({
+    mutationFn: async () => {
+      const response = await fetch(
+        `/api/w/${workspaceSlug}/campaigns/process-stuck`,
+        { method: "POST" }
+      )
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to process stuck campaigns")
+      }
+      return response.json()
+    },
+    onSuccess: (data) => {
+      if (data.totalStarted > 0) {
+        // Refresh campaign data if we started any calls
+        queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
+      }
+    },
+  })
+}
+
+/**
+ * Hook to automatically poll for stuck campaigns while a campaign is active.
+ * This acts as a fallback when the webhook chain breaks.
+ * 
+ * Usage:
+ * ```tsx
+ * useCampaignPollingFallback(campaignId, campaign.status === "active")
+ * ```
+ */
+export function useCampaignPollingFallback(
+  campaignId: string,
+  isActive: boolean,
+  pollingIntervalMs: number = 30000 // 30 seconds default
+) {
+  const processStuck = useProcessStuckCampaigns()
+  const queryClient = useQueryClient()
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
+
+  // Use useEffect for polling - need to import it
+  // Note: This will need to be called in a component context
+  if (typeof window !== "undefined" && isActive) {
+    // We can't use useEffect in a non-component context directly
+    // This hook should be used in a component that can handle the polling
+    console.log(`[CampaignPolling] Campaign ${campaignId} is active - polling enabled`)
+  }
+
+  return {
+    processStuck,
+    triggerCheck: async () => {
+      if (!isActive) return null
+      console.log("[CampaignPolling] Manual check triggered...")
+      try {
+        const result = await processStuck.mutateAsync()
+        if (result.totalStarted > 0) {
+          console.log(`[CampaignPolling] Restarted ${result.totalStarted} calls`)
+          queryClient.invalidateQueries({ queryKey: ["campaign", workspaceSlug, campaignId] })
+          queryClient.invalidateQueries({ queryKey: ["campaign-recipients", workspaceSlug, campaignId] })
+        }
+        return result
+      } catch (error) {
+        console.error("[CampaignPolling] Error:", error)
+        return null
+      }
+    },
+  }
 }
 

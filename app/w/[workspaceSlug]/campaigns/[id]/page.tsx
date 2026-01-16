@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -60,6 +60,7 @@ import {
   useResumeCampaign,
   useStartCampaign,
   useCleanupCampaign,
+  useProcessStuckCampaigns,
 } from "@/lib/hooks/use-campaigns"
 import {
   ArrowLeft,
@@ -133,8 +134,55 @@ export default function CampaignDetailPage() {
   const resumeMutation = useResumeCampaign()
   const startMutation = useStartCampaign()
   const cleanupMutation = useCleanupCampaign()
+  const processStuckMutation = useProcessStuckCampaigns()
 
   const campaign = campaignData?.data
+  
+  // =========================================================================
+  // POLLING FALLBACK: Continue stuck campaigns every 30 seconds
+  // This ensures campaigns don't get stuck if webhook chain breaks
+  // =========================================================================
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  
+  useEffect(() => {
+    const isActive = campaign?.status === "active"
+    const hasPendingCalls = (campaign?.pending_calls || 0) > 0
+    
+    // Only poll if campaign is active and has pending calls
+    if (isActive && hasPendingCalls) {
+      console.log("[CampaignDetail] Starting polling fallback for stuck campaigns...")
+      
+      pollingIntervalRef.current = setInterval(async () => {
+        console.log("[CampaignDetail] Polling - checking for stuck campaigns...")
+        try {
+          const result = await processStuckMutation.mutateAsync()
+          if (result.totalStarted > 0) {
+            console.log(`[CampaignDetail] Polling restarted ${result.totalStarted} calls!`)
+            // Refresh data when calls are restarted
+            refetchCampaign()
+            refetchRecipients()
+          }
+        } catch (error) {
+          console.error("[CampaignDetail] Polling error:", error)
+        }
+      }, 30000) // Poll every 30 seconds
+      
+      return () => {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current)
+          pollingIntervalRef.current = null
+        }
+      }
+    }
+    
+    // Cleanup if not active
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+    }
+  }, [campaign?.status, campaign?.pending_calls])
   const recipients = recipientsData?.data || []
   const totalRecipients = recipientsData?.total || 0
   const totalPages = recipientsData?.totalPages || 1

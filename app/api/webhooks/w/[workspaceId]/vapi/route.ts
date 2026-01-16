@@ -1250,6 +1250,50 @@ async function updateCampaignRecipientStatus(
       } else {
         console.log(`[VAPI Webhook] Campaign ${recipient.campaign_id} marked as completed`)
       }
+    } else if (campaign.status === "active") {
+      // =========================================================================
+      // SCALABLE CAMPAIGN PROCESSING: Trigger next batch of calls
+      // =========================================================================
+      // When a call ends, we have a free slot - start the next queued call
+      // This creates a self-regulating flow that respects VAPI concurrency limits
+      
+      try {
+        const { startNextCalls, getVapiConfigForCampaign } = await import("@/lib/campaigns/call-queue-manager")
+        
+        // Get workspace ID from campaign
+        const { data: campaignData } = await supabase
+          .from("call_campaigns")
+          .select("workspace_id")
+          .eq("id", recipient.campaign_id)
+          .single()
+        
+        if (campaignData?.workspace_id) {
+          const vapiConfig = await getVapiConfigForCampaign(recipient.campaign_id)
+          
+          if (vapiConfig) {
+            // Start next calls (fire-and-forget, don't await)
+            console.log(`[VAPI Webhook] Triggering next batch for campaign ${recipient.campaign_id}...`)
+            startNextCalls(recipient.campaign_id, campaignData.workspace_id, vapiConfig)
+              .then(result => {
+                if (result.concurrencyHit) {
+                  console.log(`[VAPI Webhook] Next batch: CONCURRENCY LIMIT - in cooldown, ${result.remaining} pending`)
+                } else {
+                  console.log(`[VAPI Webhook] Next batch result: started=${result.started}, failed=${result.failed}, remaining=${result.remaining}`)
+                }
+                if (result.errors.length > 0 && !result.concurrencyHit) {
+                  console.error(`[VAPI Webhook] Next batch errors:`, result.errors)
+                }
+              })
+              .catch(err => {
+                console.error("[VAPI Webhook] Error starting next calls:", err)
+              })
+          } else {
+            console.error(`[VAPI Webhook] Could not get VAPI config for campaign ${recipient.campaign_id}`)
+          }
+        }
+      } catch (err) {
+        console.error("[VAPI Webhook] Error importing call-queue-manager:", err)
+      }
     }
   } catch (error) {
     console.error("[VAPI Webhook] Error updating campaign recipient:", error)

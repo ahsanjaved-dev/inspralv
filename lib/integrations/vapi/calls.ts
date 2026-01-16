@@ -201,6 +201,9 @@ export async function createOutboundCall(params: {
         errorMessage = errorData.message || `VAPI API error: ${response.status} ${response.statusText}`
       }
       
+      console.error(`[VapiCalls] createOutboundCall FAILED: ${response.status} - ${errorMessage}`)
+      console.error(`[VapiCalls] Error details:`, JSON.stringify(errorData))
+      
       return {
         success: false,
         error: errorMessage,
