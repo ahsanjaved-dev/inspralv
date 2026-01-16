@@ -3,7 +3,6 @@ import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, unauthorized, serverError } from "@/lib/api/helpers"
 import {
   calculateSentimentDistribution,
-  calculateAverageSentimentScore,
   categorizeSentiment,
 } from "@/lib/integrations/sentiment"
 
@@ -18,6 +17,17 @@ export async function GET(
 
     const { adminClient, workspace } = context
 
+    // Parse date range filter from query params
+    const { searchParams } = new URL(request.url)
+    const days = parseInt(searchParams.get("days") || "7", 10)
+    const agentFilter = searchParams.get("agent") || "all"
+    
+    // Calculate the date range
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - days)
+    const startDateISO = startDate.toISOString()
+
     // Get agent performance stats with sentiment
     const { data: agents } = await adminClient
       .from("ai_agents")
@@ -25,7 +35,7 @@ export async function GET(
       .eq("workspace_id", workspace.id)
       .is("deleted_at", null)
 
-    // Get conversation stats per agent
+    // Get conversation stats per agent (filtered by date range)
     const agentStats = await Promise.all(
       (agents || []).map(async (agent) => {
         const { data: convs } = await adminClient
@@ -33,6 +43,7 @@ export async function GET(
           .select("status, duration_seconds, total_cost, sentiment")
           .eq("agent_id", agent.id)
           .is("deleted_at", null)
+          .gte("started_at", startDateISO)
 
         const totalCalls = convs?.length || 0
         const completedCalls = convs?.filter((c) => c.status === "completed").length || 0
@@ -78,12 +89,19 @@ export async function GET(
       })
     )
 
-    // Get overall workspace stats with sentiment
-    const { data: allConversations } = await adminClient
+    // Get overall workspace stats with sentiment (filtered by date range and optionally agent)
+    let workspaceQuery = adminClient
       .from("conversations")
       .select("status, duration_seconds, total_cost, sentiment, started_at")
       .eq("workspace_id", workspace.id)
       .is("deleted_at", null)
+      .gte("started_at", startDateISO)
+    
+    if (agentFilter !== "all") {
+      workspaceQuery = workspaceQuery.eq("agent_id", agentFilter)
+    }
+    
+    const { data: allConversations } = await workspaceQuery
 
     const allTotalCalls = allConversations?.length || 0
     const allCompletedCalls =
@@ -99,7 +117,6 @@ export async function GET(
       negative: 0,
       neutral: 0,
     }
-    const allSentimentScores: number[] = []
 
     allConversations?.forEach((conv) => {
       const sentiment = conv.sentiment as "positive" | "negative" | "neutral" | null
@@ -110,21 +127,58 @@ export async function GET(
         overallSentimentCounts.neutral += counts.neutral
       }
     })
+    
+    // Calculate average sentiment score (positive=100, neutral=50, negative=0)
+    const sentimentTotal = overallSentimentCounts.positive + overallSentimentCounts.negative + overallSentimentCounts.neutral
+    const avgSentimentScore = sentimentTotal > 0 
+      ? Math.round(
+          ((overallSentimentCounts.positive * 100 + overallSentimentCounts.neutral * 50 + overallSentimentCounts.negative * 0) / sentimentTotal)
+        )
+      : 0
 
-    // Calculate calls by date for trend data
+    // Calculate calls by date for trend data (using actual dates)
     const callsByDate: Record<string, { count: number; cost: number; duration: number }> = {}
+    
+    // Initialize all dates in the range with zero values
+    for (let i = 0; i < days; i++) {
+      const date = new Date()
+      date.setDate(date.getDate() - (days - 1 - i))
+      const dateKey = date.toISOString().split("T")[0] as string // YYYY-MM-DD format
+      callsByDate[dateKey] = { count: 0, cost: 0, duration: 0 }
+    }
+
+    // Calculate duration distribution buckets
+    const durationBuckets = {
+      "0-1 min": 0,
+      "1-2 min": 0,
+      "2-5 min": 0,
+      "5-10 min": 0,
+      "10+ min": 0,
+    }
 
     allConversations?.forEach((conv) => {
+      // Aggregate by actual date
       if (conv.started_at) {
-        const date = new Date(conv.started_at).toLocaleDateString("en-US", {
-          weekday: "short",
-        })
-        if (!callsByDate[date]) {
-          callsByDate[date] = { count: 0, cost: 0, duration: 0 }
+        const dateKey = new Date(conv.started_at).toISOString().split("T")[0] as string
+        if (dateKey && callsByDate[dateKey]) {
+          callsByDate[dateKey].count += 1
+          callsByDate[dateKey].cost += conv.total_cost || 0
+          callsByDate[dateKey].duration += conv.duration_seconds || 0
         }
-        callsByDate[date].count += 1
-        callsByDate[date].cost += conv.total_cost || 0
-        callsByDate[date].duration += conv.duration_seconds || 0
+      }
+      
+      // Calculate duration distribution
+      const durationMinutes = (conv.duration_seconds || 0) / 60
+      if (durationMinutes < 1) {
+        durationBuckets["0-1 min"] += 1
+      } else if (durationMinutes < 2) {
+        durationBuckets["1-2 min"] += 1
+      } else if (durationMinutes < 5) {
+        durationBuckets["2-5 min"] += 1
+      } else if (durationMinutes < 10) {
+        durationBuckets["5-10 min"] += 1
+      } else {
+        durationBuckets["10+ min"] += 1
       }
     })
 
@@ -144,13 +198,11 @@ export async function GET(
           overallSentimentCounts.negative,
           overallSentimentCounts.neutral
         ),
-        avg_sentiment_score:
-          allSentimentScores.length > 0
-            ? Math.round(calculateAverageSentimentScore(allSentimentScores) * 100)
-            : 0,
+        avg_sentiment_score: avgSentimentScore,
       },
       trends: {
         calls_by_date: callsByDate,
+        duration_distribution: durationBuckets,
       },
     })
   } catch (error) {

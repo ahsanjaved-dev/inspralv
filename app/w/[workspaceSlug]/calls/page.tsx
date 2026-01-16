@@ -47,7 +47,6 @@ import {
   FileJson,
   ExternalLink,
   Radio,
-  RotateCcw,
 } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 import type { ConversationWithAgent, Conversation } from "@/types/database.types"
@@ -79,7 +78,6 @@ export default function CallsPage() {
   // Algolia state
   const [algoliaResults, setAlgoliaResults] = useState<AlgoliaCallHit[]>([])
   const [algoliaTotal, setAlgoliaTotal] = useState(0)
-  const [algoliaSearching, setAlgoliaSearching] = useState(false)
   const [algoliaHasSearched, setAlgoliaHasSearched] = useState(false) // Track if initial search completed
   const [algoliaSearchFailed, setAlgoliaSearchFailed] = useState(false) // Track if search failed
   
@@ -96,7 +94,6 @@ export default function CallsPage() {
   // Shared state
   const [isExporting, setIsExporting] = useState(false)
   const [exportFormat, setExportFormat] = useState<"pdf" | "csv">("pdf")
-  const [isResyncing, setIsResyncing] = useState(false)
   
   // Real-time call status updates
   const [realtimeCallStatuses, setRealtimeCallStatuses] = useState<Map<string, string>>(new Map())
@@ -245,7 +242,6 @@ export default function CallsPage() {
   const handleAlgoliaResults = useCallback((results: AlgoliaCallHit[], totalHits: number, isSearching: boolean, searchFailed?: boolean) => {
     setAlgoliaResults(results)
     setAlgoliaTotal(totalHits)
-    setAlgoliaSearching(isSearching)
     
     // Track search completion and failure status
     if (!isSearching) {
@@ -270,67 +266,6 @@ export default function CallsPage() {
   const handleConfigureAlgolia = useCallback(() => {
     router.push("/org/integrations")
   }, [router])
-
-  // Resync Algolia data
-  const handleResyncAlgolia = useCallback(async () => {
-    if (!algoliaConfigured || !workspaceSlug) return
-    
-    setIsResyncing(true)
-    try {
-      const response = await fetch(`/api/w/${workspaceSlug}/calls/resync-algolia`, {
-        method: "POST",
-      })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Resync failed")
-      }
-      
-      const result = await response.json()
-      toast.success(result.data?.message || `Re-synced ${result.data?.recordsIndexed || 0} records`)
-      
-      // Refresh the page to load new data
-      window.location.reload()
-    } catch (error) {
-      console.error("Resync error:", error)
-      toast.error(error instanceof Error ? error.message : "Failed to resync Algolia data")
-    } finally {
-      setIsResyncing(false)
-    }
-  }, [algoliaConfigured, workspaceSlug])
-
-  // Clear all Algolia data (no resync)
-  const [isClearing, setIsClearing] = useState(false)
-  const handleClearAlgolia = useCallback(async () => {
-    if (!algoliaConfigured || !workspaceSlug) return
-    
-    if (!confirm("Are you sure you want to clear all search data? New calls will be indexed automatically.")) {
-      return
-    }
-    
-    setIsClearing(true)
-    try {
-      const response = await fetch(`/api/w/${workspaceSlug}/calls/clear-algolia`, {
-        method: "POST",
-      })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Clear failed")
-      }
-      
-      const result = await response.json()
-      toast.success(result.data?.message || "Search data cleared successfully")
-      
-      // Refresh the page
-      window.location.reload()
-    } catch (error) {
-      console.error("Clear error:", error)
-      toast.error(error instanceof Error ? error.message : "Failed to clear Algolia data")
-    } finally {
-      setIsClearing(false)
-    }
-  }, [algoliaConfigured, workspaceSlug])
 
   // Handle view call detail - navigate to detail page
   const handleViewCallDetail = useCallback((conversationId: string) => {
@@ -547,59 +482,6 @@ export default function CallsPage() {
               </>
             )}
           </Button>
-          {algoliaConfigured && (
-            <>
-              <Button 
-                variant="outline" 
-                onClick={handleClearAlgolia} 
-                disabled={isClearing}
-                title="Clear all search data - new calls will be indexed automatically"
-              >
-                {isClearing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Clearing...
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="mr-2 h-4 w-4" />
-                    Clear Search Data
-                  </>
-                )}
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  console.log("[Calls] Manual refresh triggered")
-                  setAlgoliaRefreshTrigger((prev) => prev + 1)
-                  toast.info("Refreshing call list...")
-                }}
-                disabled={algoliaSearching}
-                title="Refresh search results"
-              >
-                <RotateCcw className={cn("mr-2 h-4 w-4", algoliaSearching && "animate-spin")} />
-                Refresh
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={handleResyncAlgolia} 
-                disabled={isResyncing}
-                title="Re-index all call data to Algolia (slower)"
-              >
-                {isResyncing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <Activity className="mr-2 h-4 w-4" />
-                    Resync All
-                  </>
-                )}
-              </Button>
-            </>
-          )}
         </div>
       </div>
 
@@ -703,15 +585,6 @@ export default function CallsPage() {
                   ? "Search service unavailable. Showing results from database."
                   : "No indexed results found. Showing recent calls from database. New calls will be indexed automatically."}
               </span>
-              <Button
-                variant="link"
-                size="sm"
-                className="text-yellow-700 dark:text-yellow-300 p-0 h-auto"
-                onClick={handleResyncAlgolia}
-                disabled={isResyncing}
-              >
-                {isResyncing ? "Syncing..." : "Sync now"}
-              </Button>
             </div>
           )}
         </>

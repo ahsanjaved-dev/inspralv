@@ -34,7 +34,6 @@ import {
   TrendingUp,
   TrendingDown,
   Download,
-  RefreshCw,
   Calendar,
   Smile,
   Meh,
@@ -58,49 +57,15 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
   const [selectedAgent, setSelectedAgent] = useState("all")
   const [chartType, setChartType] = useState<"calls" | "duration" | "cost">("calls")
 
-  // Fetch real analytics data
-  const { data: analyticsData, isLoading, error, refetch } = useWorkspaceAnalytics()
+  // Fetch real analytics data with filters
+  const { data: analyticsData, isLoading, error } = useWorkspaceAnalytics({
+    days: parseInt(dateRange, 10),
+    agent: selectedAgent,
+  })
 
-  // Get filtered data based on selected agent
-  const getFilteredData = () => {
-    if (!analyticsData) return null
-    
-    if (selectedAgent === "all") {
-      return analyticsData
-    }
-
-    const selectedAgentData = analyticsData.agents.find((a) => a.id === selectedAgent)
-    if (!selectedAgentData) return null
-
-    // Calculate filtered summary based on selected agent
-    const agentCallsByDate: Record<string, { count: number; cost: number; duration: number }> = {}
-    Object.entries(analyticsData.trends.calls_by_date || {}).forEach(([date, data]) => {
-      agentCallsByDate[date] = data
-    })
-
-    const filteredSummary = {
-      total_calls: selectedAgentData.total_calls,
-      completed_calls: selectedAgentData.completed_calls,
-      success_rate: selectedAgentData.success_rate,
-      total_minutes: selectedAgentData.total_minutes,
-      total_cost: selectedAgentData.total_cost,
-      avg_cost_per_call: selectedAgentData.total_calls > 0 ? selectedAgentData.total_cost / selectedAgentData.total_calls : 0,
-      sentiment: selectedAgentData.sentiment,
-      sentiment_distribution: selectedAgentData.sentiment_distribution,
-      avg_sentiment_score: Math.round(
-        ((selectedAgentData.sentiment.positive * 1 + selectedAgentData.sentiment.neutral * 0.5 + selectedAgentData.sentiment.negative * 0) / 
-        (selectedAgentData.sentiment.positive + selectedAgentData.sentiment.negative + selectedAgentData.sentiment.neutral || 1)) * 100
-      ),
-    }
-
-    return {
-      agents: analyticsData.agents,
-      summary: filteredSummary,
-      trends: { calls_by_date: agentCallsByDate },
-    }
-  }
-
-  const filteredData = getFilteredData()
+  // The API now handles filtering by agent and date range
+  // We just use the data directly from the API response
+  const filteredData = analyticsData
 
   if (isLoading) {
     return (
@@ -131,12 +96,25 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
   }
 
   const { summary, agents, trends } = filteredData
-  const callsByDate = Object.entries(trends.calls_by_date || {}).map(([label, data]) => ({
-    label,
-    count: data.count,
-    duration: data.duration,
-    cost: data.cost,
-  }))
+  const callsByDate = Object.entries(trends.calls_by_date || {})
+    .sort(([a], [b]) => a.localeCompare(b)) // Sort by date ascending
+    .map(([label, data]) => ({
+      label,
+      // Format date label as MM/DD for display
+      displayLabel: new Date(label + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      count: data.count,
+      duration: data.duration,
+      cost: data.cost,
+    }))
+  
+  // Duration distribution data
+  const durationDistribution = trends.duration_distribution || {
+    "0-1 min": 0,
+    "1-2 min": 0,
+    "2-5 min": 0,
+    "5-10 min": 0,
+    "10+ min": 0,
+  }
 
   // Calculate sentiment percentages
   const sentimentTotal =
@@ -649,16 +627,6 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
               </SelectContent>
             </Select>
 
-            {/* Refresh Button */}
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="ml-auto"
-              onClick={() => refetch()}
-            >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -763,36 +731,42 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
             </CardHeader>
             <CardContent>
               {/* Simple CSS-based chart visualization */}
-              <div className="h-72 flex items-end justify-between gap-2 pt-8 pb-4">
+              <div className="pt-8 pb-2 overflow-x-auto overflow-y-visible">
                 {callsByDate.length > 0 ? (
-                  callsByDate.map((day, idx) => {
-                    const value = chartType === "calls" ? day.count : chartType === "duration" ? day.duration / 60 : day.cost
-                    const maxVal = chartType === "calls" ? maxCount : chartType === "duration" ? maxDuration : maxCost
-                    const height = maxVal > 0 ? (value / maxVal) * 100 : 0
-                    return (
-                      <div key={`${day.label}-${idx}`} className="flex-1 flex flex-col items-center gap-2">
-                        <div className="relative w-full flex-1 flex items-end justify-center">
-                          <div
-                            className="w-full max-w-8 bg-primary/20 rounded-t-md relative group cursor-pointer"
-                            style={{ height: `${Math.max(height, 5)}%` }}
-                          >
-                            <div
-                              className="absolute bottom-0 left-0 right-0 bg-primary rounded-t-md transition-all"
-                              style={{ height: `${Math.max(height, 5)}%` }}
+                  <div className="flex items-end gap-1 relative" style={{ height: "200px" }}>
+                    {callsByDate.map((day, idx) => {
+                      const value = chartType === "calls" ? day.count : chartType === "duration" ? day.duration / 60 : day.cost
+                      const maxVal = chartType === "calls" ? maxCount : chartType === "duration" ? maxDuration : maxCost
+                      const heightPercent = maxVal > 0 ? (value / maxVal) * 100 : 0
+                      const barHeight = Math.max(heightPercent, value > 0 ? 5 : 0)
+                      
+                      return (
+                        <div 
+                          key={`${day.label}-${idx}`} 
+                          className="flex-1 min-w-[28px] flex flex-col items-center justify-end h-full"
+                        >
+                          {/* Bar container */}
+                          <div className="relative w-full flex justify-center group" style={{ height: `${barHeight}%` }}>
+                            {/* The actual bar */}
+                            <div 
+                              className="w-6 bg-primary rounded-t-sm cursor-pointer hover:bg-primary/80 transition-colors"
+                              style={{ height: "100%" }}
                             />
-                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-foreground text-background text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                            {/* Tooltip on hover - positioned above bar */}
+                            <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-foreground text-background text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">
                               {chartType === "calls" && day.count}
                               {chartType === "duration" && `${Math.round(day.duration / 60)}m`}
                               {chartType === "cost" && `$${day.cost.toFixed(2)}`}
                             </div>
                           </div>
+                          {/* Date label */}
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap mt-2">{day.displayLabel}</span>
                         </div>
-                        <span className="text-xs text-muted-foreground">{day.label}</span>
-                      </div>
-                    )
-                  })
+                      )
+                    })}
+                  </div>
                 ) : (
-                  <div className="w-full flex items-center justify-center text-muted-foreground">
+                  <div className="h-[200px] flex items-center justify-center text-muted-foreground">
                     No data available
                   </div>
                 )}
@@ -874,8 +848,40 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
               <CardTitle className="text-base">Call Duration Distribution</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-72 flex items-center justify-center text-muted-foreground">
-                <p>Distribution data will be calculated from actual call logs</p>
+              <div className="h-72 flex flex-col justify-center gap-4 px-4">
+                {Object.entries(durationDistribution).map(([bucket, count]) => {
+                  const total = Object.values(durationDistribution).reduce((sum, c) => sum + c, 0)
+                  const percentage = total > 0 ? (count / total) * 100 : 0
+                  const colors: Record<string, string> = {
+                    "0-1 min": "bg-blue-500",
+                    "1-2 min": "bg-cyan-500",
+                    "2-5 min": "bg-green-500",
+                    "5-10 min": "bg-amber-500",
+                    "10+ min": "bg-purple-500",
+                  }
+                  return (
+                    <div key={bucket} className="flex items-center gap-3">
+                      <span className="text-sm text-muted-foreground w-20 shrink-0">{bucket}</span>
+                      <div className="flex-1 h-6 bg-muted rounded-md overflow-hidden relative group">
+                        <div
+                          className={cn("h-full rounded-md transition-all", colors[bucket] || "bg-primary")}
+                          style={{ width: `${Math.max(percentage, percentage > 0 ? 2 : 0)}%` }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-end pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-xs font-medium bg-background/80 px-1 rounded">
+                            {count} ({percentage.toFixed(1)}%)
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-sm font-medium w-12 text-right">{count}</span>
+                    </div>
+                  )
+                })}
+                {Object.values(durationDistribution).reduce((sum, c) => sum + c, 0) === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+                    No call data available
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -994,13 +1000,7 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
       {/* Agent Performance Table */}
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Agent Performance Summary</CardTitle>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
-          </div>
+          <CardTitle className="text-base">Agent Performance Summary</CardTitle>
         </CardHeader>
         <CardContent>
           {agents.length === 0 ? (

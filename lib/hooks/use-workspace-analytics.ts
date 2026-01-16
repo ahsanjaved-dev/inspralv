@@ -47,6 +47,14 @@ export interface AnalyticsSummary {
   avg_sentiment_score: number
 }
 
+export interface DurationDistribution {
+  "0-1 min": number
+  "1-2 min": number
+  "2-5 min": number
+  "5-10 min": number
+  "10+ min": number
+}
+
 export interface AnalyticsData {
   agents: AgentAnalytics[]
   summary: AnalyticsSummary
@@ -59,20 +67,32 @@ export interface AnalyticsData {
         duration: number
       }
     >
+    duration_distribution: DurationDistribution
   }
+}
+
+export interface UseWorkspaceAnalyticsOptions {
+  days?: number
+  agent?: string
 }
 
 /**
  * Fetch analytics data for workspace
  */
-export function useWorkspaceAnalytics() {
+export function useWorkspaceAnalytics(options: UseWorkspaceAnalyticsOptions = {}) {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
+  const { days = 7, agent = "all" } = options
 
   return useQuery({
-    queryKey: ["workspace-analytics", workspaceSlug],
+    queryKey: ["workspace-analytics", workspaceSlug, days, agent],
     queryFn: async () => {
-      const response = await fetch(`/api/w/${workspaceSlug}/analytics`)
+      const searchParams = new URLSearchParams()
+      searchParams.set("days", String(days))
+      if (agent !== "all") {
+        searchParams.set("agent", agent)
+      }
+      const response = await fetch(`/api/w/${workspaceSlug}/analytics?${searchParams.toString()}`)
       if (!response.ok) throw new Error("Failed to fetch analytics")
       const data = await response.json()
       return data.data as AnalyticsData
