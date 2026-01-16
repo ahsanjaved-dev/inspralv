@@ -180,15 +180,11 @@ export async function syncWorkspaceCallsToAlgolia(
           total_cost: c.total_cost || 0,
           started_at_timestamp: c.started_at ? new Date(c.started_at).getTime() : null,
           ended_at_timestamp: c.ended_at ? new Date(c.ended_at).getTime() : null,
-<<<<<<< HEAD
-          created_at_timestamp: c.created_at ? new Date(c.created_at).getTime() : Date.now(),
-=======
           // For sorting, use ended_at if available (completed calls), otherwise created_at
           // This ensures recently completed calls appear at the top
           created_at_timestamp: c.ended_at 
             ? new Date(c.ended_at).getTime() 
             : (c.created_at ? new Date(c.created_at).getTime() : Date.now()),
->>>>>>> ahmed
           recording_url: c.recording_url || null,
         }
       })

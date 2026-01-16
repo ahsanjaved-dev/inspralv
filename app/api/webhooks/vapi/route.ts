@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
+import { createClient } from "@supabase/supabase-js"
 import { prisma } from "@/lib/prisma"
 import { processCallCompletion } from "@/lib/billing/usage"
 import { indexCallLogToAlgolia, configureCallLogsIndex } from "@/lib/algolia"
