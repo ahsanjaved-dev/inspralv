@@ -21,8 +21,6 @@ import {
   TrendingUp,
   Timer,
   RefreshCw,
-  Pause,
-  Play,
   Loader2,
 } from "lucide-react"
 import { CampaignProgressRing } from "./campaign-progress-ring"
@@ -30,7 +28,7 @@ import { CampaignProgressRing } from "./campaign-progress-ring"
 interface DashboardProps {
   campaignId: string
   campaignName: string
-  status: "active" | "paused" | "completed"
+  status: "active" | "completed"
   totalRecipients: number
   pendingCalls: number
   completedCalls: number
@@ -38,11 +36,9 @@ interface DashboardProps {
   failedCalls: number
   callsPerMinute?: number
   estimatedCompletion?: string
-  onPause?: () => void
-  onResume?: () => void
+  onCancel?: () => void
   onRefresh?: () => void
-  isPausing?: boolean
-  isResuming?: boolean
+  isCancelling?: boolean
   className?: string
 }
 
@@ -56,18 +52,15 @@ export function CampaignLiveDashboard({
   failedCalls,
   callsPerMinute = 0,
   estimatedCompletion,
-  onPause,
-  onResume,
+  onCancel,
   onRefresh,
-  isPausing,
-  isResuming,
+  isCancelling,
   className,
 }: DashboardProps) {
   // Calculate metrics
   const progress = totalRecipients > 0 ? Math.round((completedCalls / totalRecipients) * 100) : 0
   const successRate = completedCalls > 0 ? Math.round((successfulCalls / completedCalls) * 100) : 0
   const isActive = status === "active"
-  const isPaused = status === "paused"
 
   return (
     <Card className={cn("overflow-hidden", className)}>
@@ -78,7 +71,7 @@ export function CampaignLiveDashboard({
             <div
               className={cn(
                 "p-2 rounded-lg",
-                isActive ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"
+                isActive ? "bg-emerald-500/10 text-emerald-500" : "bg-blue-500/10 text-blue-500"
               )}
             >
               <Activity className="h-5 w-5" />
@@ -96,24 +89,20 @@ export function CampaignLiveDashboard({
 
           <div className="flex items-center gap-2">
             {/* Action buttons */}
-            {isActive && onPause && (
-              <Button variant="outline" size="sm" onClick={onPause} disabled={isPausing}>
-                {isPausing ? (
+            {isActive && onCancel && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={onCancel} 
+                disabled={isCancelling}
+                className="border-orange-500 text-orange-600 hover:bg-orange-50"
+              >
+                {isCancelling ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Pause className="h-4 w-4 mr-1" />
+                  <XCircle className="h-4 w-4 mr-1" />
                 )}
-                Pause
-              </Button>
-            )}
-            {isPaused && onResume && (
-              <Button size="sm" onClick={onResume} disabled={isResuming}>
-                {isResuming ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="h-4 w-4 mr-1" />
-                )}
-                Resume
+                Cancel
               </Button>
             )}
             {onRefresh && (
@@ -138,7 +127,7 @@ export function CampaignLiveDashboard({
               showCount={true}
               total={totalRecipients}
               processed={completedCalls}
-              variant={isActive ? "success" : isPaused ? "warning" : "default"}
+              variant={isActive ? "success" : "default"}
             />
           </div>
 

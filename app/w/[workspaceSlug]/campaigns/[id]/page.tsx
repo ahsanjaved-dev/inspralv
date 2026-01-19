@@ -56,8 +56,7 @@ import {
   useCampaign,
   useCampaignRecipients,
   useDeleteRecipient,
-  usePauseCampaign,
-  useResumeCampaign,
+  useTerminateCampaign,
   useStartCampaign,
   useCleanupCampaign,
   useProcessStuckCampaigns,
@@ -69,7 +68,7 @@ import {
   Users,
   Clock,
   Play,
-  Pause,
+  XCircle,
   Upload,
   Plus,
   Trash2,
@@ -130,8 +129,7 @@ export default function CampaignDetailPage() {
     refetch: refetchRecipients,
   } = useCampaignRecipients(campaignId, { status: statusFilter, page, pageSize })
   const deleteRecipientMutation = useDeleteRecipient()
-  const pauseMutation = usePauseCampaign()
-  const resumeMutation = useResumeCampaign()
+  const terminateMutation = useTerminateCampaign()
   const startMutation = useStartCampaign()
   const cleanupMutation = useCleanupCampaign()
   const processStuckMutation = useProcessStuckCampaigns()
@@ -247,29 +245,18 @@ export default function CampaignDetailPage() {
     : 0
 
   const canStart = campaign.status === "ready" && campaign.total_recipients > 0
-  const canResume = campaign.status === "paused" && campaign.total_recipients > 0
-  const canPause = campaign.status === "active"
+  const canCancel = campaign.status === "active"
   const isScheduled = campaign.status === "scheduled"
   const isReady = campaign.status === "ready"
   const isEditable = campaign.status === "draft"
 
-  const handlePause = async () => {
+  const handleCancel = async () => {
     try {
-      await pauseMutation.mutateAsync(campaignId)
-      toast.success("Campaign paused")
+      await terminateMutation.mutateAsync(campaignId)
+      toast.success("Campaign cancelled - all remaining calls stopped")
       refetchCampaign()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to pause campaign")
-    }
-  }
-
-  const handleResume = async () => {
-    try {
-      await resumeMutation.mutateAsync(campaignId)
-      toast.success("Campaign resumed")
-      refetchCampaign()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to resume campaign")
+      toast.error(error instanceof Error ? error.message : "Failed to cancel campaign")
     }
   }
 
@@ -403,24 +390,19 @@ export default function CampaignDetailPage() {
               Start Now
             </Button>
           )}
-          {canPause && (
-            <Button variant="outline" onClick={handlePause} disabled={pauseMutation.isPending}>
-              {pauseMutation.isPending ? (
+          {canCancel && (
+            <Button 
+              variant="outline" 
+              onClick={handleCancel} 
+              disabled={terminateMutation.isPending}
+              className="border-orange-500 text-orange-600 hover:bg-orange-50"
+            >
+              {terminateMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
-                <Pause className="h-4 w-4 mr-2" />
+                <XCircle className="h-4 w-4 mr-2" />
               )}
-              Pause
-            </Button>
-          )}
-          {canResume && (
-            <Button onClick={handleResume} disabled={resumeMutation.isPending}>
-              {resumeMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Play className="h-4 w-4 mr-2" />
-              )}
-              Resume
+              Cancel Campaign
             </Button>
           )}
           {isReady && !startMutation.isPending && (
@@ -456,9 +438,9 @@ export default function CampaignDetailPage() {
           completedCalls={processedCalls}
           successfulCalls={campaign.successful_calls || 0}
           failedCalls={campaign.failed_calls || 0}
-          onPause={handlePause}
+          onCancel={handleCancel}
           onRefresh={handleRefresh}
-          isPausing={pauseMutation.isPending}
+          isCancelling={terminateMutation.isPending}
         />
       )}
 
@@ -485,7 +467,7 @@ export default function CampaignDetailPage() {
                 showCount={true}
                 total={campaign.total_recipients}
                 processed={processedCalls}
-                variant={campaign.status === "active" ? "success" : campaign.status === "paused" ? "warning" : "default"}
+                variant={campaign.status === "active" ? "success" : "default"}
               />
               <div className="flex-1 space-y-4">
                 <div>
@@ -501,8 +483,8 @@ export default function CampaignDetailPage() {
         </Card>
       )}
 
-      {/* Analytics for completed/paused campaigns */}
-      {(campaign.status === "completed" || campaign.status === "paused") && processedCalls > 0 && (
+      {/* Analytics for completed/cancelled campaigns */}
+      {(campaign.status === "completed" || campaign.status === "cancelled") && processedCalls > 0 && (
         <CampaignAnalytics
           data={{
             total: campaign.total_recipients,

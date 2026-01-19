@@ -32,8 +32,7 @@ import {
   useCampaigns, 
   useDeleteCampaign,
   useStartCampaign,
-  usePauseCampaign,
-  useResumeCampaign,
+  useTerminateCampaign,
 } from "@/lib/hooks/use-campaigns"
 import { useRealtimeCampaignList } from "@/lib/hooks/use-realtime-campaign"
 import {
@@ -55,7 +54,6 @@ const statusOptions = [
   { value: "ready", label: "Ready" },
   { value: "scheduled", label: "Scheduled" },
   { value: "active", label: "Active" },
-  { value: "paused", label: "Paused" },
   { value: "completed", label: "Completed" },
   { value: "cancelled", label: "Cancelled" },
 ]
@@ -70,12 +68,11 @@ export default function CampaignsPage() {
   const [deleteTarget, setDeleteTarget] = useState<CallCampaignWithAgent | null>(null)
   const [isCreatingCampaign, setIsCreatingCampaign] = useState(false)
   const [startingCampaignId, setStartingCampaignId] = useState<string | null>(null)
-  const [pausingCampaignId, setPausingCampaignId] = useState<string | null>(null)
-  const [resumingCampaignId, setResumingCampaignId] = useState<string | null>(null)
+  const [cancellingCampaignId, setCancellingCampaignId] = useState<string | null>(null)
   
   // Track current action for overlay
   const [actionOverlay, setActionOverlay] = useState<{
-    action: "start" | "pause" | "resume" | "terminate" | null
+    action: "start" | "terminate" | null
     campaign: CallCampaignWithAgent | null
   }>({ action: null, campaign: null })
 
@@ -94,8 +91,7 @@ export default function CampaignsPage() {
   })
   const deleteMutation = useDeleteCampaign()
   const startMutation = useStartCampaign()
-  const pauseMutation = usePauseCampaign()
-  const resumeMutation = useResumeCampaign()
+  const terminateMutation = useTerminateCampaign()
 
   // Real-time updates for campaign status changes
   // Uses workspaceId from campaigns API response
@@ -107,8 +103,8 @@ export default function CampaignsPage() {
         toast.info("Campaign is now active", { description: "Calls are being processed" })
       } else if (status === "completed") {
         toast.success("Campaign completed")
-      } else if (status === "paused") {
-        toast.info("Campaign paused")
+      } else if (status === "cancelled") {
+        toast.info("Campaign cancelled")
       }
     },
   })
@@ -163,42 +159,27 @@ export default function CampaignsPage() {
     }
   }
 
-  const handlePause = async (campaign: CallCampaignWithAgent) => {
-    setPausingCampaignId(campaign.id)
-    setActionOverlay({ action: "pause", campaign })
+  const handleCancel = async (campaign: CallCampaignWithAgent) => {
+    setCancellingCampaignId(campaign.id)
+    setActionOverlay({ action: "terminate", campaign })
     
     try {
-      const result = await pauseMutation.mutateAsync(campaign.id)
-      toast.success(result.message || "Campaign paused")
+      const result = await terminateMutation.mutateAsync(campaign.id)
+      toast.success(result.message || "Campaign cancelled - all remaining calls stopped")
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to pause campaign")
+      toast.error(error instanceof Error ? error.message : "Failed to cancel campaign")
     } finally {
-      setPausingCampaignId(null)
-      setActionOverlay({ action: null, campaign: null })
-    }
-  }
-
-  const handleResume = async (campaign: CallCampaignWithAgent) => {
-    setResumingCampaignId(campaign.id)
-    setActionOverlay({ action: "resume", campaign })
-    
-    try {
-      const result = await resumeMutation.mutateAsync(campaign.id)
-      toast.success(result.message || "Campaign resumed")
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to resume campaign")
-    } finally {
-      setResumingCampaignId(null)
+      setCancellingCampaignId(null)
       setActionOverlay({ action: null, campaign: null })
     }
   }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
-    const wasActive = deleteTarget.status === "active" || deleteTarget.status === "paused"
+    const wasActive = deleteTarget.status === "active"
     try {
       await deleteMutation.mutateAsync(deleteTarget.id)
-      toast.success(wasActive ? "Campaign terminated and deleted" : "Campaign deleted")
+      toast.success(wasActive ? "Campaign cancelled and deleted" : "Campaign deleted")
       setDeleteTarget(null)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete campaign")
@@ -371,12 +352,10 @@ export default function CampaignsPage() {
               key={campaign.id}
               campaign={campaign}
               onStart={handleStart}
-              onPause={handlePause}
-              onResume={handleResume}
+              onCancel={handleCancel}
               onDelete={setDeleteTarget}
               isStarting={startingCampaignId === campaign.id}
-              isPausing={pausingCampaignId === campaign.id}
-              isResuming={resumingCampaignId === campaign.id}
+              isCancelling={cancellingCampaignId === campaign.id}
             />
           ))}
         </div>
@@ -389,9 +368,9 @@ export default function CampaignsPage() {
             <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete "{deleteTarget?.name}"?
-              {(deleteTarget?.status === "active" || deleteTarget?.status === "paused") && (
+              {deleteTarget?.status === "active" && (
                 <span className="block mt-2 text-orange-600 dark:text-orange-400 font-medium">
-                  This campaign is currently {deleteTarget?.status}. All pending calls will be stopped immediately.
+                  This campaign is currently active. All remaining calls will be stopped immediately.
                 </span>
               )}
               <span className="block mt-2">
@@ -409,13 +388,13 @@ export default function CampaignsPage() {
               {deleteMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {(deleteTarget?.status === "active" || deleteTarget?.status === "paused") 
-                    ? "Terminating..." 
+                  {deleteTarget?.status === "active" 
+                    ? "Cancelling..." 
                     : "Deleting..."}
                 </>
               ) : (
-                (deleteTarget?.status === "active" || deleteTarget?.status === "paused")
-                  ? "Terminate & Delete"
+                deleteTarget?.status === "active"
+                  ? "Cancel & Delete"
                   : "Delete"
               )}
             </AlertDialogAction>

@@ -18,7 +18,6 @@ import {
   Phone,
   MoreVertical,
   Play,
-  Pause,
   Trash2,
   Eye,
   Bot,
@@ -35,12 +34,10 @@ import type { CallCampaignWithAgent, CampaignStatus } from "@/types/database.typ
 interface CampaignCardProps {
   campaign: CallCampaignWithAgent
   onStart?: (campaign: CallCampaignWithAgent) => void
-  onPause?: (campaign: CallCampaignWithAgent) => void
-  onResume?: (campaign: CallCampaignWithAgent) => void
+  onCancel?: (campaign: CallCampaignWithAgent) => void
   onDelete?: (campaign: CallCampaignWithAgent) => void
   isStarting?: boolean
-  isPausing?: boolean
-  isResuming?: boolean
+  isCancelling?: boolean
 }
 
 const statusConfig: Record<CampaignStatus, { label: string; color: string; icon: React.ReactNode }> = {
@@ -84,12 +81,10 @@ const statusConfig: Record<CampaignStatus, { label: string; color: string; icon:
 export function CampaignCard({ 
   campaign, 
   onStart, 
-  onPause, 
-  onResume,
+  onCancel,
   onDelete,
   isStarting = false,
-  isPausing = false,
-  isResuming = false,
+  isCancelling = false,
 }: CampaignCardProps) {
   const params = useParams()
   const router = useRouter()
@@ -115,14 +110,11 @@ export function CampaignCard({
   const isReady = campaign.status === "ready"
   const isScheduled = campaign.status === "scheduled"
   const isActive = campaign.status === "active"
-  const isPaused = campaign.status === "paused"
   
   // Ready campaigns can be started (user clicks "Start Now")
   const canStart = isReady
-  // Paused campaigns can be resumed
-  const canResume = isPaused
-  // Active campaigns can be paused
-  const canPause = isActive
+  // Active campaigns can be cancelled (stops all future calls)
+  const canCancel = isActive
   // Delete is always available - the API will terminate active campaigns automatically
   const canDelete = true
   // Only incomplete drafts can be edited via wizard
@@ -161,7 +153,7 @@ export function CampaignCard({
                 <span>{campaign.total_recipients} recipients</span>
               </div>
               {/* Show call stats for campaigns that have started or completed */}
-              {(isActive || isPaused || campaign.status === "completed" || campaign.status === "cancelled") && (
+              {(isActive || campaign.status === "completed" || campaign.status === "cancelled") && (
                 <>
                   <div className="flex items-center gap-1">
                     <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -185,7 +177,7 @@ export function CampaignCard({
             </div>
 
             {/* Progress bar - show for campaigns that have started */}
-            {campaign.total_recipients > 0 && (isActive || isPaused || campaign.status === "completed" || campaign.status === "cancelled") && (
+            {campaign.total_recipients > 0 && (isActive || campaign.status === "completed" || campaign.status === "cancelled") && (
               <div className="mt-3">
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                   <span>{processedCalls} / {campaign.total_recipients} processed</span>
@@ -279,32 +271,19 @@ export function CampaignCard({
                       {isStarting ? "Starting..." : "Start Now"}
                     </DropdownMenuItem>
                   )}
-                  {/* Resume option for paused campaigns */}
-                  {canResume && onResume && (
+                  {/* Cancel option for active campaigns */}
+                  {canCancel && onCancel && (
                     <DropdownMenuItem 
-                      onClick={() => onResume(campaign)}
-                      disabled={isResuming}
+                      onClick={() => onCancel(campaign)}
+                      disabled={isCancelling}
+                      className="text-orange-600 focus:text-orange-600"
                     >
-                      {isResuming ? (
+                      {isCancelling ? (
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       ) : (
-                        <Play className="h-4 w-4 mr-2" />
+                        <XCircle className="h-4 w-4 mr-2" />
                       )}
-                      {isResuming ? "Resuming..." : "Resume Campaign"}
-                    </DropdownMenuItem>
-                  )}
-                  {/* Pause option for active campaigns */}
-                  {canPause && onPause && (
-                    <DropdownMenuItem 
-                      onClick={() => onPause(campaign)}
-                      disabled={isPausing}
-                    >
-                      {isPausing ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Pause className="h-4 w-4 mr-2" />
-                      )}
-                      {isPausing ? "Pausing..." : "Pause Campaign"}
+                      {isCancelling ? "Cancelling..." : "Cancel Campaign"}
                     </DropdownMenuItem>
                   )}
                   {/* View details - always available */}

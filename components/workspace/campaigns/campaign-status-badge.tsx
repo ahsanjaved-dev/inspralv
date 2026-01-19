@@ -1,7 +1,7 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle2, XCircle, Clock, Pause, FileEdit, Rocket, CalendarClock } from "lucide-react"
+import { CheckCircle2, XCircle, Clock, StopCircle, FileEdit, Rocket, CalendarClock } from "lucide-react"
 import type { CampaignStatus, RecipientCallStatus, RecipientCallOutcome } from "@/types/database.types"
 
 // Campaign Status Badge
@@ -29,7 +29,7 @@ const campaignStatusConfig: Record<CampaignStatus, { label: string; color: strin
   paused: {
     label: "Paused",
     color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-    icon: <Pause className="h-3 w-3 mr-1" />,
+    icon: <StopCircle className="h-3 w-3 mr-1" />,
   },
   completed: {
     label: "Completed",

@@ -564,61 +564,9 @@ export function useProcessCampaignCalls() {
   })
 }
 
-/**
- * Hook for pausing a campaign
- * Calls Inspra /pause-batch and updates local status
- */
-export function usePauseCampaign() {
-  const params = useParams()
-  const workspaceSlug = params.workspaceSlug as string
-  const queryClient = useQueryClient()
-
-  return useMutation<CampaignActionResponse, Error, string>({
-    mutationFn: async (campaignId: string) => {
-      const response = await fetch(
-        `/api/w/${workspaceSlug}/campaigns/${campaignId}/pause`,
-        { method: "POST" }
-      )
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to pause campaign")
-      }
-      return response.json()
-    },
-    onSuccess: (_, campaignId) => {
-      queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
-      queryClient.invalidateQueries({ queryKey: ["campaign", workspaceSlug, campaignId] })
-    },
-  })
-}
-
-/**
- * Hook for resuming a paused campaign
- * Calls Inspra /load-json with updated NBF and updates local status
- */
-export function useResumeCampaign() {
-  const params = useParams()
-  const workspaceSlug = params.workspaceSlug as string
-  const queryClient = useQueryClient()
-
-  return useMutation<CampaignActionResponse, Error, string>({
-    mutationFn: async (campaignId: string) => {
-      const response = await fetch(
-        `/api/w/${workspaceSlug}/campaigns/${campaignId}/resume`,
-        { method: "POST" }
-      )
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to resume campaign")
-      }
-      return response.json()
-    },
-    onSuccess: (_, campaignId) => {
-      queryClient.invalidateQueries({ queryKey: ["campaigns", workspaceSlug] })
-      queryClient.invalidateQueries({ queryKey: ["campaign", workspaceSlug, campaignId] })
-    },
-  })
-}
+// NOTE: usePauseCampaign and useResumeCampaign have been removed.
+// VAPI doesn't support pausing campaigns - once started, calls process automatically.
+// Use useTerminateCampaign to cancel a campaign and stop all future calls.
 
 /**
  * Hook for terminating a campaign

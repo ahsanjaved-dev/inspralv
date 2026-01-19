@@ -7,11 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, Play, Pause, XCircle, RotateCcw } from "lucide-react"
+import { Loader2, Play, XCircle } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
-import { cn } from "@/lib/utils"
 
-type CampaignAction = "start" | "pause" | "resume" | "terminate"
+type CampaignAction = "start" | "terminate"
 
 interface CampaignActionOverlayProps {
   open: boolean
@@ -33,19 +32,9 @@ const actionConfig: Record<CampaignAction, {
     icon: <Play className="h-6 w-6" />,
     progressDescription: "Queueing calls...",
   },
-  pause: {
-    title: "Pausing Campaign",
-    description: "Pausing active calls. Calls in progress will complete normally.",
-    icon: <Pause className="h-6 w-6" />,
-  },
-  resume: {
-    title: "Resuming Campaign",
-    description: "Resuming campaign. Remaining calls will start being processed.",
-    icon: <RotateCcw className="h-6 w-6" />,
-  },
   terminate: {
-    title: "Terminating Campaign",
-    description: "Stopping all pending calls. This action cannot be undone.",
+    title: "Cancelling Campaign",
+    description: "Stopping all remaining calls. Calls currently in progress will complete normally.",
     icon: <XCircle className="h-6 w-6" />,
   },
 }

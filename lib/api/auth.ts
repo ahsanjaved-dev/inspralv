@@ -161,36 +161,75 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
         // Get workspace IDs user is already a member of
         const userWorkspaceIds = new Set(userWorkspaces.map((w) => w.id))
 
-        // Get member counts and owner info for workspaces user doesn't have direct access to
-        const additionalWorkspaces: AccessibleWorkspace[] = []
+        // Filter to workspaces user doesn't have direct access to
+        const additionalWorkspaceIds = allPartnerWorkspaces
+          .filter((ws) => !userWorkspaceIds.has(ws.id))
+          .map((ws) => ws.id)
 
-        for (const ws of allPartnerWorkspaces) {
-          if (!userWorkspaceIds.has(ws.id)) {
-            // Get member count
-            const { count: memberCount } = await adminClient
+        if (additionalWorkspaceIds.length > 0) {
+          // BATCH QUERIES: Fetch all counts and owner info in parallel instead of N+1
+          const [memberCountsResult, agentCountsResult, ownersResult] = await Promise.all([
+            // Batch fetch member counts - group by workspace_id
+            adminClient
               .from("workspace_members")
-              .select("*", { count: "exact", head: true })
-              .eq("workspace_id", ws.id)
-              .is("removed_at", null)
+              .select("workspace_id")
+              .in("workspace_id", additionalWorkspaceIds)
+              .is("removed_at", null),
 
-            // Get agent count
-            const { count: agentCount } = await adminClient
+            // Batch fetch agent counts - group by workspace_id
+            adminClient
               .from("ai_agents")
-              .select("*", { count: "exact", head: true })
-              .eq("workspace_id", ws.id)
-              .is("deleted_at", null)
+              .select("workspace_id")
+              .in("workspace_id", additionalWorkspaceIds)
+              .is("deleted_at", null),
 
-            // Get owner email
-            const { data: ownerData } = await adminClient
+            // Batch fetch owners (role = owner) for each workspace
+            // NOTE: Cannot join to auth.users via PostgREST, so just get user_id
+            // Owner email lookup is skipped to avoid 400 errors from FK to auth schema
+            adminClient
               .from("workspace_members")
-              .select("user_id, users!workspace_members_user_id_fkey(email)")
-              .eq("workspace_id", ws.id)
+              .select("workspace_id, user_id")
+              .in("workspace_id", additionalWorkspaceIds)
               .eq("role", "owner")
-              .is("removed_at", null)
-              .limit(1)
-              .maybeSingle()
+              .is("removed_at", null),
+          ])
 
-            additionalWorkspaces.push({
+          // Build lookup maps from batch results
+          const memberCountMap = new Map<string, number>()
+          const agentCountMap = new Map<string, number>()
+          const ownerUserIdMap = new Map<string, string | null>()
+
+          // Count members per workspace
+          if (memberCountsResult.data) {
+            for (const row of memberCountsResult.data) {
+              const wsId = row.workspace_id
+              memberCountMap.set(wsId, (memberCountMap.get(wsId) || 0) + 1)
+            }
+          }
+
+          // Count agents per workspace
+          if (agentCountsResult.data) {
+            for (const row of agentCountsResult.data) {
+              const wsId = row.workspace_id
+              agentCountMap.set(wsId, (agentCountMap.get(wsId) || 0) + 1)
+            }
+          }
+
+          // Map owner user_ids to workspaces (email lookup skipped - auth.users not accessible via PostgREST)
+          if (ownersResult.data) {
+            for (const row of ownersResult.data as any[]) {
+              if (!ownerUserIdMap.has(row.workspace_id)) {
+                ownerUserIdMap.set(row.workspace_id, row.user_id || null)
+              }
+            }
+          }
+
+          // Build additional workspaces with pre-fetched data
+          // Note: owner_email is set to null since we can't join to auth.users via PostgREST
+          // The UI can display owner info differently if needed
+          const additionalWorkspaces: AccessibleWorkspace[] = allPartnerWorkspaces
+            .filter((ws) => !userWorkspaceIds.has(ws.id))
+            .map((ws) => ({
               id: ws.id,
               name: ws.name,
               slug: ws.slug,
@@ -200,16 +239,18 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
               resource_limits: ws.resource_limits || {},
               status: ws.status,
               is_partner_admin_access: true,
-              owner_email: (ownerData as any)?.users?.email || null,
-              member_count: memberCount || 0,
-              agent_count: agentCount || 0,
+              owner_email: null, // Cannot fetch from auth.users via PostgREST
+              member_count: memberCountMap.get(ws.id) || 0,
+              agent_count: agentCountMap.get(ws.id) || 0,
               created_at: ws.created_at,
-            })
-          }
-        }
+            }))
 
-        // Merge: user's direct workspaces first, then additional workspaces
-        workspaces = [...userWorkspaces, ...additionalWorkspaces]
+          // Merge: user's direct workspaces first, then additional workspaces
+          workspaces = [...userWorkspaces, ...additionalWorkspaces]
+        } else {
+          // No additional workspaces to fetch
+          workspaces = userWorkspaces
+        }
       }
     }
 

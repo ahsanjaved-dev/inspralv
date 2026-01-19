@@ -2,6 +2,11 @@ import { type NextRequest, NextResponse } from "next/server"
 import { updateSession } from "@/lib/supabase/middleware"
 import { createClient } from "@supabase/supabase-js"
 
+// In-memory cache for partner resolution to avoid redundant API calls
+// TTL: 60 seconds, cleared on each deployment
+const partnerCache = new Map<string, { data: { is_platform_partner: boolean } | null; timestamp: number }>()
+const PARTNER_CACHE_TTL = 60 * 1000 // 60 seconds
+
 /**
  * Partner Domain Access Control Proxy
  *
@@ -94,6 +99,7 @@ function isApiBlockedForPartner(pathname: string): boolean {
 /**
  * Resolve partner from hostname using Supabase directly
  * (Can't use the normal partner resolution as it uses server-only headers)
+ * Uses in-memory caching to avoid redundant API calls per request
  * 
  * @param hostname - The cleaned hostname (without port)
  * @param fullHostname - The original hostname (may include port)
@@ -102,6 +108,15 @@ async function resolvePartnerFromHostname(
   hostname: string,
   fullHostname?: string
 ): Promise<{ is_platform_partner: boolean } | null> {
+  // Generate cache key
+  const cacheKey = `${hostname}|${fullHostname || ""}`
+  
+  // Check cache first
+  const cached = partnerCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < PARTNER_CACHE_TTL) {
+    return cached.data
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -127,22 +142,29 @@ async function resolvePartnerFromHostname(
     }
   }
 
-  // Try to find partner by hostname in partner_domains (try multiple variations)
-  for (const hostnameVariant of hostnamesToTry) {
-    const { data: domainMatch } = await supabase
-      .from("partner_domains")
-      .select(
-        `
-        partner:partners!inner(
-          is_platform_partner
-        )
+  // OPTIMIZATION: Query all hostname variants in one request using OR filter
+  const { data: domainMatches } = await supabase
+    .from("partner_domains")
+    .select(
       `
+      hostname,
+      partner:partners!inner(
+        is_platform_partner
       )
-      .eq("hostname", hostnameVariant)
-      .single()
+    `
+    )
+    .in("hostname", hostnamesToTry)
 
-    if (domainMatch?.partner) {
-      return (domainMatch.partner as { is_platform_partner: boolean }[])?.[0] ?? null
+  if (domainMatches && domainMatches.length > 0) {
+    // Use first match (prefer the order in hostnamesToTry)
+    for (const hostnameVariant of hostnamesToTry) {
+      const match = domainMatches.find((d: any) => d.hostname === hostnameVariant)
+      if (match?.partner) {
+        const result = (match.partner as { is_platform_partner: boolean }[])?.[0] ?? null
+        // Cache the result
+        partnerCache.set(cacheKey, { data: result, timestamp: Date.now() })
+        return result
+      }
     }
   }
 
@@ -160,6 +182,8 @@ async function resolvePartnerFromHostname(
       .single()
 
     if (slugMatch) {
+      // Cache the result
+      partnerCache.set(cacheKey, { data: slugMatch, timestamp: Date.now() })
       return slugMatch
     }
   }
@@ -171,6 +195,8 @@ async function resolvePartnerFromHostname(
     .eq("is_platform_partner", true)
     .single()
 
+  // Cache the result
+  partnerCache.set(cacheKey, { data: platformPartner, timestamp: Date.now() })
   return platformPartner
 }
 

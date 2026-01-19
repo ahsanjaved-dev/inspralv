@@ -34,9 +34,8 @@ function getSupabaseAdmin() {
 
 /**
  * Create a callback that checks if the campaign should continue processing
- * This enables cancel support during batch execution
+ * This enables cancel support during batch execution.
  * 
- * NOTE: VAPI doesn't support pause, so we only check for cancellation.
  * "ready" and "active" both allow continuation (ready = initial state before status update)
  */
 function createCampaignStatusChecker(campaignId: string) {
@@ -234,7 +233,7 @@ async function executeVapiBatch(
     timezone: campaign.timezone,
     // Skip business hours check when user explicitly clicks "Start Now"
     skipBusinessHoursCheck: startNow,
-    // Enable pause/cancel support - checks campaign status between chunks
+    // Enable cancel support - checks campaign status between chunks
     shouldContinue: createCampaignStatusChecker(campaign.id),
   }
   
@@ -272,35 +271,7 @@ async function executeVapiBatch(
 }
 
 // ============================================================================
-// PAUSE OPERATION
-// ============================================================================
-
-/**
- * Pause a campaign batch
- * 
- * Note: VAPI doesn't have native batch pause - we track state locally via DB
- */
-export async function pauseCampaignBatch(
-  workspaceId: string,
-  agentId: string,
-  campaignId: string,
-  vapiConfig?: CampaignProviderConfig["vapi"]
-): Promise<CampaignBatchResult> {
-  const batchRef = `campaign-${campaignId}`
-  
-  // VAPI doesn't have native pause - just return success
-  // The campaign status in DB controls whether we continue making calls
-  console.log(`[CampaignProvider] VAPI pause (state-based): ${batchRef}`)
-  
-  return {
-    success: true,
-    provider: "vapi",
-    batchRef,
-  }
-}
-
-// ============================================================================
-// TERMINATE OPERATION
+// TERMINATE/CANCEL OPERATION
 // ============================================================================
 
 /**

@@ -19,9 +19,11 @@
 The Campaign Module enables bulk outbound calling via VAPI. It handles:
 - Creating and managing call campaigns
 - Importing recipients (CSV or manual)
-- Starting/pausing/resuming campaigns
+- Starting and cancelling campaigns
 - Real-time progress tracking
 - Error recovery and webhook chain resilience
+
+> **Note**: VAPI does not support pausing campaigns. Once a campaign starts, all calls are processed automatically. To stop a campaign, use the Cancel action which prevents any remaining calls from being initiated.
 
 ### Key Design Principles
 
@@ -29,6 +31,7 @@ The Campaign Module enables bulk outbound calling via VAPI. It handles:
 2. **Concurrency Respect**: System respects VAPI's concurrency limits by starting only 1 call per webhook (1-for-1 replacement).
 3. **Resilient to Failures**: Transient errors (522, 503, timeouts) don't break the chain - recipients stay pending for retry.
 4. **Polling Fallback**: If webhook chain breaks, frontend polling detects stuck campaigns and restarts processing.
+5. **No Pause Support**: VAPI queues calls server-side, making pause impossible. Use Cancel to stop remaining calls.
 
 ---
 

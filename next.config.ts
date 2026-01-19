@@ -62,6 +62,9 @@ const nextConfig: NextConfig = {
   },
 }
 
+// Determine if we're in production for Sentry configuration
+const isProduction = process.env.NODE_ENV === "production"
+
 export default withSentryConfig(nextConfig, {
   // For all available options, see:
   // https://www.npmjs.com/package/@sentry/webpack-plugin#options
@@ -81,9 +84,13 @@ export default withSentryConfig(nextConfig, {
 
   // Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
   // This can increase your server load as well as your hosting bill.
+  // DISABLED in development to prevent socket hang up / ECONNRESET errors
   // Note: Check that the configured route will not match with your Next.js middleware, otherwise reporting of client-
   // side errors will fail.
-  tunnelRoute: "/monitoring",
+  tunnelRoute: isProduction ? "/monitoring" : undefined,
+
+  // Disable Sentry in development to reduce noise and improve performance
+  disableLogger: !isProduction,
 
   webpack: {
     // Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)

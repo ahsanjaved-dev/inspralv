@@ -26,7 +26,6 @@ import {
   Phone,
   MoreVertical,
   Play,
-  Pause,
   Trash2,
   Eye,
   Bot,
@@ -37,6 +36,7 @@ import {
   Loader2,
   Calendar,
   TrendingUp,
+  StopCircle,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import type { CallCampaignWithAgent, CampaignStatus } from "@/types/database.types"
@@ -44,12 +44,10 @@ import type { CallCampaignWithAgent, CampaignStatus } from "@/types/database.typ
 interface CampaignCardEnhancedProps {
   campaign: CallCampaignWithAgent
   onStart?: (campaign: CallCampaignWithAgent) => void
-  onPause?: (campaign: CallCampaignWithAgent) => void
-  onResume?: (campaign: CallCampaignWithAgent) => void
+  onCancel?: (campaign: CallCampaignWithAgent) => void
   onDelete?: (campaign: CallCampaignWithAgent) => void
   isStarting?: boolean
-  isPausing?: boolean
-  isResuming?: boolean
+  isCancelling?: boolean
 }
 
 // Status configuration
@@ -84,7 +82,7 @@ const statusConfig: Record<
   paused: {
     label: "Paused",
     className: "bg-amber-500 text-white",
-    icon: <Pause className="h-3 w-3" />,
+    icon: <StopCircle className="h-3 w-3" />,
   },
   completed: {
     label: "Completed",
@@ -101,12 +99,10 @@ const statusConfig: Record<
 export function CampaignCardEnhanced({
   campaign,
   onStart,
-  onPause,
-  onResume,
+  onCancel,
   onDelete,
   isStarting = false,
-  isPausing = false,
-  isResuming = false,
+  isCancelling = false,
 }: CampaignCardEnhancedProps) {
   const params = useParams()
   const router = useRouter()
@@ -133,12 +129,10 @@ export function CampaignCardEnhanced({
   const isDraft = campaign.status === "draft"
   const isReady = campaign.status === "ready"
   const isActive = campaign.status === "active"
-  const isPaused = campaign.status === "paused"
   const isCompleted = campaign.status === "completed"
 
   const canStart = isReady
-  const canResume = isPaused
-  const canPause = isActive
+  const canCancel = isActive
   const canEdit = isDraft && !campaign.wizard_completed
 
   return (
@@ -186,7 +180,7 @@ export function CampaignCardEnhanced({
                 <span className="font-medium">{campaign.total_recipients.toLocaleString()}</span>
               </div>
 
-              {(isActive || isPaused || isCompleted) && (
+              {(isActive || isCompleted) && (
                 <>
                   <div className="flex items-center gap-1.5 text-emerald-600">
                     <CheckCircle2 className="h-4 w-4" />
@@ -228,7 +222,7 @@ export function CampaignCardEnhanced({
             </div>
 
             {/* Progress bar */}
-            {campaign.total_recipients > 0 && (isActive || isPaused || isCompleted) && (
+            {campaign.total_recipients > 0 && (isActive || isCompleted) && (
               <div className="mt-4">
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
                   <span>
@@ -282,43 +276,26 @@ export function CampaignCardEnhanced({
                 </Button>
               )}
 
-              {canResume && onResume && (
-                <Button
-                  size="sm"
-                  onClick={() => onResume(campaign)}
-                  disabled={isResuming}
-                  className="bg-amber-500 hover:bg-amber-600 text-white"
-                >
-                  {isResuming ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-1.5" />
-                      Resume
-                    </>
-                  )}
-                </Button>
-              )}
-
-              {canPause && onPause && (
+              {canCancel && onCancel && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onPause(campaign)}
-                  disabled={isPausing}
+                  onClick={() => onCancel(campaign)}
+                  disabled={isCancelling}
+                  className="border-orange-500 text-orange-600 hover:bg-orange-50"
                 >
-                  {isPausing ? (
+                  {isCancelling ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <>
-                      <Pause className="h-4 w-4 mr-1.5" />
-                      Pause
+                      <XCircle className="h-4 w-4 mr-1.5" />
+                      Cancel
                     </>
                   )}
                 </Button>
               )}
 
-              {!canEdit && !canStart && !canResume && (
+              {!canEdit && !canStart && !canCancel && (
                 <Button variant="ghost" size="sm" asChild>
                   <Link href={`/w/${workspaceSlug}/campaigns/${campaign.id}`}>
                     <Eye className="h-4 w-4 mr-1.5" />

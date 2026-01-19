@@ -9,12 +9,12 @@ export default async function NotFound() {
   const companyName = partner.branding.company_name || partner.name
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/30 px-6">
+    <div className="min-h-screen flex items-center justify-center bg-linear-to-b from-background to-muted/30 px-6">
       <div className="text-center max-w-md">
         {/* Logo/Brand */}
         {partner.branding.logo_url ? (
-          <img 
-            src={partner.branding.logo_url} 
+          <img
+            src={partner.branding.logo_url}
             alt={companyName}
             className="h-12 mx-auto mb-8 object-contain"
           />
@@ -32,7 +32,7 @@ export default async function NotFound() {
         {/* Message */}
         <h1 className="text-2xl font-bold mb-3">Page Not Found</h1>
         <p className="text-muted-foreground mb-8">
-          {isPlatformPartner 
+          {isPlatformPartner
             ? "The page you're looking for doesn't exist or has been moved."
             : "This page is not available. Please sign in to access your dashboard."}
         </p>
@@ -67,4 +67,3 @@ export default async function NotFound() {
     </div>
   )
 }
-
