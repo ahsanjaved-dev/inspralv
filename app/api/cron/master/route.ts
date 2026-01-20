@@ -242,7 +242,7 @@ export async function GET() {
       },
       {
         name: "syncAgentsToProviders",
-        description: "Sync agent configuration changes to VAPI/Retell/Synthflow",
+        description: "Sync agent configuration changes to VAPI/Retell",
         status: "disabled",
         note: "Heavy operation - consider alternative implementation or dedicated schedule",
       },

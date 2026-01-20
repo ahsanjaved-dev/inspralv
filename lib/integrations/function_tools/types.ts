@@ -307,7 +307,6 @@ export interface TransferDestination {
 export interface ToolProviderSupport {
   vapi: boolean
   retell: boolean
-  synthflow: boolean
 }
 
 /**

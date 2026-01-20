@@ -2,7 +2,7 @@
  * Usage Billing Service
  *
  * Handles credit deduction and monthly minutes tracking for voice calls.
- * Called by provider webhooks (VAPI, Retell, Synthflow) when calls complete.
+ * Called by provider webhooks (VAPI, Retell) when calls complete.
  * 
  * Billing priority:
  * 1. Postpaid subscriptions → Track usage, invoice at period end
@@ -24,7 +24,7 @@ export interface CallUsageData {
   workspaceId: string
   partnerId: string
   durationSeconds: number
-  provider: "vapi" | "retell" | "synthflow"
+  provider: "vapi" | "retell"
   externalCallId?: string
 }
 

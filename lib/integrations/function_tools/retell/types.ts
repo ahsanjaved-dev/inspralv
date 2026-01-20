@@ -114,6 +114,31 @@ export interface RetellSendSmsTool {
 }
 
 /**
+ * Custom Function Tool - webhook-based custom function
+ * 
+ * NOTE: Retell's general_tools array does NOT support custom function types.
+ * Custom functions are executed via webhook callbacks to the webhook_url.
+ * 
+ * How it works:
+ * 1. Agent is configured with a system prompt that mentions available functions
+ * 2. When the LLM decides to call a function, Retell sends a POST to webhook_url
+ * 3. The webhook handler executes the function and returns the result
+ * 
+ * This type is used for internal tracking, not sent to Retell API.
+ */
+export interface RetellCustomFunctionTool {
+  type: 'custom_function'
+  name: string
+  description: string
+  /** JSON Schema for function parameters */
+  parameters?: RetellParameterSchema
+  /** Optional webhook URL override (defaults to LLM's webhook_url) */
+  server_url?: string
+  /** Timeout in milliseconds for webhook execution */
+  timeout_ms?: number
+}
+
+/**
  * Retell General Tool - union of all supported `general_tools`.
  */
 export type RetellGeneralTool =
@@ -125,15 +150,20 @@ export type RetellGeneralTool =
   | RetellSendSmsTool
 
 /**
- * Retell Tool Type - string literal types
+ * Retell Tool Type - string literal types for native tools
  */
-export type RetellToolType =
+export type RetellNativeToolType =
   | 'end_call'
   | 'transfer_call'
   | 'press_digit'
   | 'check_availability_cal'
   | 'book_appointment_cal'
   | 'send_sms'
+
+/**
+ * Retell Tool Type - includes custom functions
+ */
+export type RetellToolType = RetellNativeToolType | 'custom_function' | 'custom' | 'function'
 
 // ============================================================================
 // RETELL LLM PAYLOAD

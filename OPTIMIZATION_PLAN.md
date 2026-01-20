@@ -25,7 +25,7 @@ This optimization plan is structured into **8 Phases**, progressing from foundat
 │  Workspace Layer                                                    │
 │  └── AI Agents, Conversations, Members, Analytics                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Integrations: VAPI | Retell | Synthflow | Stripe | Resend          │
+│  Integrations: VAPI | Retell | Stripe | Resend                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -186,7 +186,7 @@ refetchOnMount: false,
   - Implement key scoping (read-only, full access)
 
 - [ ] **2.3.3** Add request signing for external API calls
-  - Sign requests to VAPI, Retell, Synthflow
+  - Sign requests to VAPI, Retell
   - Verify webhook signatures
 
 - [ ] **2.3.4** Implement audit log encryption
@@ -678,7 +678,7 @@ response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
 ## Phase 7: Integration Improvements
 **Duration**: 2 weeks  
 **Priority**: Medium  
-**Focus**: VAPI, Retell, Synthflow, Stripe
+**Focus**: VAPI, Retell, Stripe
 
 ### 7.1 Voice Provider Integration Hardening
 

@@ -23,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { CampaignCardEnhanced } from "@/components/workspace/campaigns/campaign-card-enhanced"
+import { CampaignCard } from "@/components/workspace/campaigns/campaign-card"
 import { WizardDraftCard } from "@/components/workspace/campaigns/wizard-draft-card"
 import { CampaignActionOverlay } from "@/components/workspace/campaigns/campaign-action-overlay"
 import { CampaignHeroStats } from "@/components/workspace/campaigns/campaign-hero-stats"
@@ -348,7 +348,7 @@ export default function CampaignsPage() {
       ) : (
         <div className="space-y-4">
           {filteredCampaigns.map((campaign) => (
-            <CampaignCardEnhanced
+            <CampaignCard
               key={campaign.id}
               campaign={campaign}
               onStart={handleStart}

@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getPartnerFromHost, type ResolvedPartner } from "./partner"
+import { logger } from "@/lib/logger"
+import { cache } from "@/lib/cache"
 import type {
   PartnerAuthUser,
   AccessibleWorkspace,
@@ -8,6 +10,9 @@ import type {
   PartnerMemberRole,
   PartnerMembership,
 } from "@/types/database.types"
+
+// Cache TTL for auth context (5 minutes)
+const AUTH_CONTEXT_TTL = 5 * 60 * 1000
 
 // Helper to check if user is partner admin/owner
 function isPartnerAdminOrOwner(role: PartnerMemberRole | null): boolean {
@@ -40,8 +45,13 @@ export interface PartnerAuthContext {
  * This combines:
  * 1. Auth user from Supabase
  * 2. Partner resolved from hostname
- * 3. User's partner membership for that partner
- * 4. User's workspace memberships for that partner
+ * 3. User's partner membership for that partner (parallel with step 4)
+ * 4. User's workspace memberships for that partner (parallel with step 3)
+ * 
+ * Optimizations:
+ * - Steps 3 and 4 run in parallel
+ * - Results are cached for 5 minutes per user/partner combo
+ * - Batch queries for partner admin workspace data
  */
 export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null> {
   try {
@@ -54,7 +64,7 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
     } = await supabase.auth.getUser()
 
     if (authError || !authUser) {
-      console.log("[getPartnerAuthContext] No auth user:", authError?.message)
+      logger.debug("No auth user", { context: "getPartnerAuthContext", error: authError?.message })
       return null
     }
 
@@ -62,26 +72,83 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
     const partner = await getPartnerFromHost()
 
     const adminClient = createAdminClient()
+    
+    // Generate cache key for this user/partner combination
+    const cacheKey = `auth_context:${authUser.id}:${partner.id}`
+    
+    // Check cache first (for workspace/membership data only, not the full context)
+    const cachedData = await cache.get<{
+      partnerMemberData: any
+      memberships: any[]
+    }>(cacheKey)
 
-    // Step 3: Get user's partner membership
-    const { data: partnerMemberData, error: partnerMemberError } = await adminClient
-      .from("partner_members")
-      .select(
-        `
-        id,
-        role,
-        partner:partners!inner(
-          id,
-          name,
-          slug,
-          is_platform_partner
-        )
-      `
+    let partnerMemberData: any = null
+    let partnerMemberError: any = null
+    let memberships: any[] | null = null
+    let membershipError: any = null
+
+    if (cachedData) {
+      // Use cached data
+      partnerMemberData = cachedData.partnerMemberData
+      memberships = cachedData.memberships
+    } else {
+      // Steps 3 & 4: Run partner membership and workspace membership queries IN PARALLEL
+      const [partnerMemberResult, workspaceMemberResult] = await Promise.all([
+        // Step 3: Get user's partner membership
+        adminClient
+          .from("partner_members")
+          .select(
+            `
+            id,
+            role,
+            partner:partners!inner(
+              id,
+              name,
+              slug,
+              is_platform_partner
+            )
+          `
+          )
+          .eq("user_id", authUser.id)
+          .eq("partner_id", partner.id)
+          .is("removed_at", null)
+          .single(),
+
+        // Step 4: Get user's workspace memberships for this partner
+        adminClient
+          .from("workspace_members")
+          .select(
+            `
+            role,
+            workspace:workspaces!inner(
+              id,
+              name,
+              slug,
+              partner_id,
+              description,
+              resource_limits,
+              status,
+              deleted_at,
+              created_at
+            )
+          `
+          )
+          .eq("user_id", authUser.id)
+          .is("removed_at", null),
+      ])
+
+      partnerMemberData = partnerMemberResult.data
+      partnerMemberError = partnerMemberResult.error
+      memberships = workspaceMemberResult.data
+      membershipError = workspaceMemberResult.error
+
+      // Cache the results
+      await cache.set(
+        cacheKey,
+        { partnerMemberData, memberships },
+        AUTH_CONTEXT_TTL
       )
-      .eq("user_id", authUser.id)
-      .eq("partner_id", partner.id)
-      .is("removed_at", null)
-      .single()
+    }
 
     let partnerRole: PartnerMemberRole | null = null
     let partnerMembership: PartnerMembership | null = null
@@ -99,30 +166,8 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
       }
     }
 
-    // Step 4: Get user's workspace memberships for this partner
-    const { data: memberships, error: membershipError } = await adminClient
-      .from("workspace_members")
-      .select(
-        `
-        role,
-        workspace:workspaces!inner(
-          id,
-          name,
-          slug,
-          partner_id,
-          description,
-          resource_limits,
-          status,
-          deleted_at,
-          created_at
-        )
-      `
-      )
-      .eq("user_id", authUser.id)
-      .is("removed_at", null)
-
     if (membershipError) {
-      console.error("[getPartnerAuthContext] Membership query error:", membershipError)
+      logger.error("Membership query error", { context: "getPartnerAuthContext", error: membershipError })
     }
 
     // Filter to only workspaces belonging to current partner and not deleted
@@ -156,7 +201,7 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
         .order("created_at", { ascending: false })
 
       if (allWsError) {
-        console.error("[getPartnerAuthContext] All workspaces query error:", allWsError)
+        logger.error("All workspaces query error", { context: "getPartnerAuthContext", error: allWsError })
       } else if (allPartnerWorkspaces) {
         // Get workspace IDs user is already a member of
         const userWorkspaceIds = new Set(userWorkspaces.map((w) => w.id))
@@ -276,7 +321,7 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
       adminClient,
     }
   } catch (error) {
-    console.error("[getPartnerAuthContext] Unexpected error:", error)
+    logger.error("Unexpected error in getPartnerAuthContext", { error })
     return null
   }
 }

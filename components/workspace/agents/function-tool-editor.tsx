@@ -85,7 +85,7 @@ interface FunctionToolEditorProps {
   tools: FunctionTool[]
   onChange: (tools: FunctionTool[]) => void
   disabled?: boolean
-  provider?: "vapi" | "retell" | "synthflow"
+  provider?: "vapi" | "retell"
 }
 
 // ============================================================================

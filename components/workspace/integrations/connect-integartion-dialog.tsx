@@ -28,7 +28,9 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Key, Eye, EyeOff, ExternalLink, Plus, Trash2, Check, ShieldCheck, Phone, Server } from "lucide-react"
+import { Loader2, Key, Eye, EyeOff, ExternalLink, Plus, Trash2, Check, ShieldCheck, Phone, Server, AlertTriangle, ArrowRight } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import Link from "next/link"
 import {
   useCreateWorkspaceIntegration,
   useUpdateWorkspaceIntegration,
@@ -96,10 +98,6 @@ const providerInfo: Record<string, { docsUrl: string; secretKeyLabel: string; pu
     docsUrl: "https://docs.retellai.com/get-started/authentication",
     secretKeyLabel: "API Key",
     publicKeyLabel: "Public Key",
-  },
-  synthflow: {
-    docsUrl: "https://docs.synthflow.ai",
-    secretKeyLabel: "API Key",
   },
 }
 
@@ -349,6 +347,27 @@ export function ConnectIntegrationDialog({
                 : `Enter your ${integration.name} API credentials to enable this integration.`}
             </DialogDescription>
           </DialogHeader>
+
+          {/* Deprecation Warning */}
+          <Alert className="mb-4 border-amber-500/50 bg-amber-500/10">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <AlertTitle className="text-amber-700 dark:text-amber-400">
+              Workspace-level integrations are deprecated
+            </AlertTitle>
+            <AlertDescription className="text-amber-600/80 dark:text-amber-300/80">
+              <p className="mb-2">
+                This feature will be removed in a future update. Please manage your API keys at 
+                the organization level instead for better security and centralized management.
+              </p>
+              <Link 
+                href="/org/integrations" 
+                className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300 hover:underline font-medium"
+              >
+                Go to Organization Integrations
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            </AlertDescription>
+          </Alert>
 
           <ScrollArea className="max-h-[60vh] pr-4">
             {isManageMode && isLoadingDetails ? (

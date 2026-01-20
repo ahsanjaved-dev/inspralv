@@ -191,8 +191,6 @@ export function WorkspaceAgentForm({
         return "VAPI"
       case "retell":
         return "Retell AI"
-      case "synthflow":
-        return "Synthflow"
       default:
         return provider
     }

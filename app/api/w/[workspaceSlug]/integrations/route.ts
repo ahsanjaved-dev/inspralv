@@ -1,16 +1,56 @@
-import { NextRequest } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getWorkspaceContext, checkWorkspacePaywall } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import { createWorkspaceIntegrationSchema } from "@/types/database.types"
 import { createAuditLog, getRequestMetadata } from "@/lib/audit"
 
+/**
+ * @deprecated This route is deprecated. Use org-level integrations at /api/partner/integrations instead.
+ * Workspace-level integrations will be removed in a future release.
+ * 
+ * Migration path:
+ * 1. Create org-level integration at POST /api/partner/integrations
+ * 2. Assign to workspace at POST /api/partner/workspaces/[id]/integrations
+ */
+
 interface RouteContext {
   params: Promise<{ workspaceSlug: string }>
+}
+
+// Deprecation date - when this API will be removed
+const SUNSET_DATE = "2026-06-01"
+
+/**
+ * Add deprecation headers to response per RFC 8594
+ */
+function addDeprecationHeaders(response: NextResponse): NextResponse {
+  response.headers.set("Deprecation", "true")
+  response.headers.set("Sunset", SUNSET_DATE)
+  response.headers.set(
+    "Link",
+    '</api/partner/integrations>; rel="successor-version"'
+  )
+  return response
+}
+
+/**
+ * Log deprecation warning for monitoring
+ */
+function logDeprecationWarning(method: string, workspaceSlug: string): void {
+  console.warn(
+    `[DEPRECATED] ${method} /api/w/${workspaceSlug}/integrations - ` +
+    `Use org-level integrations at /api/partner/integrations instead. ` +
+    `This endpoint will be removed after ${SUNSET_DATE}.`
+  )
 }
 
 export async function GET(request: NextRequest, { params }: RouteContext) {
   try {
     const { workspaceSlug } = await params
+    
+    // Log deprecation warning
+    logDeprecationWarning("GET", workspaceSlug)
+    
     const ctx = await getWorkspaceContext(workspaceSlug)
 
     if (!ctx) {
@@ -56,7 +96,17 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       }
     })
 
-    return apiResponse({ data: safeIntegrations })
+    // Include deprecation notice in response body
+    const response = apiResponse({ 
+      data: safeIntegrations,
+      _deprecation: {
+        warning: "This endpoint is deprecated. Use org-level integrations at /org/integrations instead.",
+        migration: "Manage API keys at the organization level and assign them to workspaces.",
+        successor: "/api/partner/integrations",
+        sunset: SUNSET_DATE
+      }
+    })
+    return addDeprecationHeaders(response)
   } catch (error) {
     console.error("GET /api/w/[slug]/integrations error:", error)
     return serverError()
@@ -66,6 +116,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 export async function POST(request: NextRequest, { params }: RouteContext) {
   try {
     const { workspaceSlug } = await params
+    
+    // Log deprecation warning
+    logDeprecationWarning("POST", workspaceSlug)
+    
     const ctx = await getWorkspaceContext(workspaceSlug, ["owner", "admin"])
 
     if (!ctx) {
@@ -143,7 +197,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       userAgent,
     })
 
-    // Return safe version
+    // Return safe version with deprecation notice
     const safeIntegration = {
       id: integration.id,
       workspace_id: integration.workspace_id,
@@ -155,9 +209,16 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       config: integration.config,
       created_at: integration.created_at,
       updated_at: integration.updated_at,
+      _deprecation: {
+        warning: "Workspace-level integrations are deprecated. Consider using org-level integrations.",
+        migration: "Create integrations at /org/integrations and assign to workspaces.",
+        successor: "/api/partner/integrations",
+        sunset: SUNSET_DATE
+      }
     }
 
-    return apiResponse(safeIntegration, 201)
+    const response = apiResponse(safeIntegration, 201)
+    return addDeprecationHeaders(response)
   } catch (error) {
     console.error("POST /api/w/[slug]/integrations error:", error)
     return serverError()

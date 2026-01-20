@@ -23,7 +23,7 @@ import {
   isWithinBusinessHours,
   type OptimizedBatchConfig,
   type ChunkResult,
-} from "./batch-caller-optimized"
+} from "./batch-caller"
 
 // ============================================================================
 // TYPES

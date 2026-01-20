@@ -206,7 +206,7 @@ export default async function Home() {
             TRUSTED BY INNOVATIVE COMPANIES
           </p>
           <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12 opacity-60">
-            {["VAPI", "Retell", "Synthflow", "Twilio", "OpenAI"].map((name) => (
+            {["VAPI", "Retell", "Twilio", "OpenAI"].map((name) => (
               <span key={name} className="text-lg font-semibold tracking-wider">
                 {name}
               </span>

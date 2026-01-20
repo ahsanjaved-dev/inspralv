@@ -118,7 +118,7 @@ If you're trying to answer a question quickly, start here:
 - **Campaigns**: `app/api/w/[workspaceSlug]/campaigns/*`
   - Cron processing: `app/api/cron/process-campaigns/route.ts`, `app/api/cron/master/route.ts`
   - Queue-based processing: `lib/campaigns/queue-processor.ts`, `lib/campaigns/call-queue-manager.ts`
-  - Batch calling: `lib/campaigns/batch-caller.ts`, `lib/campaigns/batch-caller-optimized.ts`
+  - Batch calling: `lib/campaigns/batch-caller.ts` (optimized with chunking and progress tracking)
 - **Knowledge base**: `app/api/w/[workspaceSlug]/knowledge-base/*`
 - **Client invitations**: `app/api/partner/client-invitations/route.ts`
 - **Function tools system (VAPI/Retell mapping)**: `lib/integrations/function_tools/*`, editor UI: `components/workspace/agents/function-tool-editor.tsx`
@@ -218,8 +218,8 @@ genius365/
   - `paywall-banner.tsx`
   - `agents/*` (wizard + tool editor + agent cards)
   - `campaigns/*` (comprehensive campaign UI):
-    - Wizards: `campaign-wizard.tsx`, `campaign-wizard-optimized.tsx`, `campaign-wizard-dynamic.tsx`
-    - Cards: `campaign-card.tsx`, `campaign-card-enhanced.tsx`, `wizard-draft-card.tsx`
+    - Wizards: `campaign-wizard-optimized.tsx` (main), `campaign-wizard-dynamic.tsx` (lazy loader)
+    - Cards: `campaign-card.tsx`, `wizard-draft-card.tsx`
     - Dashboard: `campaign-live-dashboard.tsx`, `campaign-hero-stats.tsx`, `campaign-analytics.tsx`
     - Components: `campaign-status-badge.tsx`, `campaign-progress-ring.tsx`, `campaign-stats-card.tsx`
     - Dialogs: `add-recipient-dialog.tsx`, `import-recipients-dialog.tsx`
@@ -669,7 +669,7 @@ Authoritative schema:
 
 **Agent/Provider**:
 
-- `AgentProvider`: `vapi` | `retell` | `synthflow`
+- `AgentProvider`: `vapi` | `retell`
 - `VoiceProvider`: `elevenlabs` | `deepgram` | `azure` | `openai` | `cartesia`
 - `ModelProvider`: `openai` | `anthropic` | `google` | `groq`
 - `TranscriberProvider`: `deepgram` | `assemblyai` | `openai`
@@ -1161,8 +1161,7 @@ Campaign actions:
 
 Campaign infrastructure:
 
-- `lib/campaigns/batch-caller.ts` - Legacy batch calling logic
-- `lib/campaigns/batch-caller-optimized.ts` - Optimized batch calling with chunking
+- `lib/campaigns/batch-caller.ts` - Batch calling with chunking, progress tracking, and serverless optimization
 - `lib/campaigns/queue-processor.ts` - Queue-based campaign processing
 - `lib/campaigns/call-queue-manager.ts` - Call queue management and concurrency control
 - `lib/campaigns/batch-processor.ts` - Batch processing utilities
@@ -1172,14 +1171,13 @@ Campaign infrastructure:
 
 UI components:
 
-- `components/workspace/campaigns/campaign-wizard.tsx` - Main campaign wizard
-- `components/workspace/campaigns/campaign-wizard-optimized.tsx` - Performance-optimized wizard
+- `components/workspace/campaigns/campaign-wizard-optimized.tsx` - Main campaign wizard (with Zustand state)
 - `components/workspace/campaigns/campaign-wizard-dynamic.tsx` - Dynamic loading wrapper
 - `components/workspace/campaigns/wizard-draft-card.tsx` - Draft campaign display card
 - `components/workspace/campaigns/campaign-live-dashboard.tsx` - Live campaign monitoring dashboard
 - `components/workspace/campaigns/campaign-analytics.tsx` - Campaign analytics display
 - `components/workspace/campaigns/campaign-hero-stats.tsx` - Hero stats display
-- `components/workspace/campaigns/campaign-card-enhanced.tsx` - Enhanced campaign card with progress
+- `components/workspace/campaigns/campaign-card.tsx` - Campaign card with progress
 - `components/workspace/campaigns/campaign-progress-ring.tsx` - Visual progress indicator
 - `components/workspace/campaigns/campaign-activity-feed.tsx` - Activity feed component
 - `components/workspace/campaigns/webhook-status-alert.tsx` - Webhook URL mismatch alert

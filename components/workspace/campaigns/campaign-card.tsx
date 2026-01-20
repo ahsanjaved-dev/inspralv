@@ -1,9 +1,16 @@
 "use client"
 
+/**
+ * Campaign Card Component
+ * 
+ * Lightweight campaign card without heavy animations
+ * Uses CSS transitions for smooth hover effects
+ */
+
 import { useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -14,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { cn } from "@/lib/utils"
 import {
   Phone,
   MoreVertical,
@@ -26,12 +34,14 @@ import {
   XCircle,
   Edit,
   Loader2,
-  Clock,
+  Calendar,
+  TrendingUp,
+  StopCircle,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import type { CallCampaignWithAgent, CampaignStatus } from "@/types/database.types"
 
-interface CampaignCardProps {
+export interface CampaignCardProps {
   campaign: CallCampaignWithAgent
   onStart?: (campaign: CallCampaignWithAgent) => void
   onCancel?: (campaign: CallCampaignWithAgent) => void
@@ -40,47 +50,55 @@ interface CampaignCardProps {
   isCancelling?: boolean
 }
 
-const statusConfig: Record<CampaignStatus, { label: string; color: string; icon: React.ReactNode }> = {
+// Status configuration
+const statusConfig: Record<
+  CampaignStatus,
+  {
+    label: string
+    className: string
+    icon: React.ReactNode
+  }
+> = {
   draft: {
     label: "Draft",
-    color: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
-    icon: null,
+    className: "bg-slate-500 text-white",
+    icon: <Edit className="h-3 w-3" />,
   },
   ready: {
     label: "Ready",
-    color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
-    icon: <Play className="h-3 w-3 mr-1" />,
+    className: "bg-cyan-500 text-white",
+    icon: <Play className="h-3 w-3" />,
   },
   scheduled: {
     label: "Scheduled",
-    color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
-    icon: <Clock className="h-3 w-3 mr-1" />,
+    className: "bg-purple-500 text-white",
+    icon: <Calendar className="h-3 w-3" />,
   },
   active: {
     label: "Active",
-    color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-    icon: <span className="relative flex h-2 w-2 mr-1"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span></span>,
+    className: "bg-emerald-500 text-white",
+    icon: <span className="h-2 w-2 rounded-full bg-white" />,
   },
   paused: {
     label: "Paused",
-    color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-    icon: null,
+    className: "bg-amber-500 text-white",
+    icon: <StopCircle className="h-3 w-3" />,
   },
   completed: {
     label: "Completed",
-    color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-    icon: <CheckCircle2 className="h-3 w-3 mr-1" />,
+    className: "bg-blue-500 text-white",
+    icon: <CheckCircle2 className="h-3 w-3" />,
   },
   cancelled: {
     label: "Cancelled",
-    color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-    icon: <XCircle className="h-3 w-3 mr-1" />,
+    className: "bg-red-500 text-white",
+    icon: <XCircle className="h-3 w-3" />,
   },
 }
 
-export function CampaignCard({ 
-  campaign, 
-  onStart, 
+export function CampaignCard({
+  campaign,
+  onStart,
   onCancel,
   onDelete,
   isStarting = false,
@@ -96,92 +114,121 @@ export function CampaignCard({
     router.push(`/w/${workspaceSlug}/campaigns/new?draft=${campaign.id}`)
   }
 
-  // Progress is based on all processed calls (completed + failed)
-  // completed_calls now includes both successful and failed calls from the API
-  const processedCalls = campaign.completed_calls || 0
+  // Progress calculation
+  const processedCalls = campaign.completed_calls ?? 0
+  const successfulCalls = campaign.successful_calls ?? 0
+  const failedCalls = campaign.failed_calls ?? 0
   const progress = campaign.total_recipients > 0
     ? Math.round((processedCalls / campaign.total_recipients) * 100)
     : 0
+  const successRate = processedCalls > 0 ? Math.round((successfulCalls / processedCalls) * 100) : 0
 
   const statusInfo = statusConfig[campaign.status]
-  
-  // Determine available actions based on status
+
+  // Status-based actions
   const isDraft = campaign.status === "draft"
   const isReady = campaign.status === "ready"
-  const isScheduled = campaign.status === "scheduled"
   const isActive = campaign.status === "active"
-  
-  // Ready campaigns can be started (user clicks "Start Now")
+  const isCompleted = campaign.status === "completed"
+
   const canStart = isReady
-  // Active campaigns can be cancelled (stops all future calls)
   const canCancel = isActive
-  // Delete is always available - the API will terminate active campaigns automatically
-  const canDelete = true
-  // Only incomplete drafts can be edited via wizard
   const canEdit = isDraft && !campaign.wizard_completed
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-5">
+    <Card
+      className={cn(
+        "relative overflow-hidden transition-shadow duration-200",
+        "hover:shadow-md border-border/50",
+        isActive && "ring-1 ring-emerald-500/50"
+      )}
+    >
+      <div className="relative p-5">
         <div className="flex items-start justify-between gap-4">
           {/* Left side - Info */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-primary/10 rounded-lg shrink-0">
-                <Phone className="h-5 w-5 text-primary" />
+            {/* Header with icon and name */}
+            <div className="flex items-center gap-3 mb-3">
+              <div className={cn("p-2.5 rounded-xl shadow-sm", statusInfo.className)}>
+                <Phone className="h-5 w-5" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <Link
-                  href={canEdit ? `/w/${workspaceSlug}/campaigns/new?draft=${campaign.id}` : `/w/${workspaceSlug}/campaigns/${campaign.id}`}
-                  className="font-semibold text-foreground hover:text-primary transition-colors truncate block"
+                  href={
+                    canEdit
+                      ? `/w/${workspaceSlug}/campaigns/new?draft=${campaign.id}`
+                      : `/w/${workspaceSlug}/campaigns/${campaign.id}`
+                  }
+                  className="font-semibold text-foreground hover:text-primary transition-colors truncate block text-lg"
                 >
                   {campaign.name}
                 </Link>
                 {campaign.agent && (
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <Bot className="h-3 w-3" />
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
+                    <Bot className="h-3.5 w-3.5" />
                     <span className="truncate">{campaign.agent.name}</span>
+                    <span className="text-xs opacity-60">• {campaign.agent.provider}</span>
                   </div>
                 )}
               </div>
             </div>
 
             {/* Stats row */}
-            <div className="flex items-center gap-4 text-sm text-muted-foreground mt-3">
-              <div className="flex items-center gap-1">
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Users className="h-4 w-4" />
-                <span>{campaign.total_recipients} recipients</span>
+                <span className="font-medium">{campaign.total_recipients.toLocaleString()}</span>
               </div>
-              {/* Show call stats for campaigns that have started or completed */}
-              {(isActive || campaign.status === "completed" || campaign.status === "cancelled") && (
+
+              {(isActive || isCompleted) && (
                 <>
-                  <div className="flex items-center gap-1">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <span>{campaign.successful_calls} answered</span>
+                  <div className="flex items-center gap-1.5 text-emerald-600">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span className="font-medium tabular-nums">{successfulCalls}</span>
                   </div>
-                  {campaign.failed_calls > 0 && (
-                    <div className="flex items-center gap-1">
-                      <XCircle className="h-4 w-4 text-red-500" />
-                      <span>{campaign.failed_calls} failed</span>
+
+                  {failedCalls > 0 && (
+                    <div className="flex items-center gap-1.5 text-red-500">
+                      <XCircle className="h-4 w-4" />
+                      <span className="font-medium tabular-nums">{failedCalls}</span>
                     </div>
+                  )}
+
+                  {processedCalls > 0 && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "font-mono",
+                        successRate >= 70 ? "border-emerald-500/50 text-emerald-600"
+                          : successRate >= 40 ? "border-amber-500/50 text-amber-600"
+                          : "border-red-500/50 text-red-600"
+                      )}
+                    >
+                      <TrendingUp className="h-3 w-3 mr-1" />
+                      {successRate}%
+                    </Badge>
                   )}
                 </>
               )}
-              {/* Show scheduled time for scheduled campaigns */}
-              {isScheduled && campaign.scheduled_start_at && (
-                <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4 text-purple-600" />
-                  <span>Starts {new Date(campaign.scheduled_start_at).toLocaleDateString()}</span>
+
+              {campaign.status === "scheduled" && campaign.scheduled_start_at && (
+                <div className="flex items-center gap-1.5 text-purple-600">
+                  <Calendar className="h-4 w-4" />
+                  <span className="text-xs">
+                    Starts {new Date(campaign.scheduled_start_at).toLocaleDateString()}
+                  </span>
                 </div>
               )}
             </div>
 
-            {/* Progress bar - show for campaigns that have started */}
-            {campaign.total_recipients > 0 && (isActive || campaign.status === "completed" || campaign.status === "cancelled") && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                  <span>{processedCalls} / {campaign.total_recipients} processed</span>
-                  <span>{progress}%</span>
+            {/* Progress bar */}
+            {campaign.total_recipients > 0 && (isActive || isCompleted) && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                  <span>
+                    {processedCalls.toLocaleString()} / {campaign.total_recipients.toLocaleString()} processed
+                  </span>
+                  <span className="font-medium">{progress}%</span>
                 </div>
                 <Progress value={progress} className="h-2" />
               </div>
@@ -189,62 +236,69 @@ export function CampaignCard({
           </div>
 
           {/* Right side - Status & Actions */}
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <Badge className={`flex items-center ${statusInfo.color}`}>
+          <div className="flex flex-col items-end gap-3 shrink-0">
+            {/* Status badge */}
+            <Badge className={cn("flex items-center gap-1.5 px-3 py-1", statusInfo.className)}>
               {statusInfo.icon}
               {statusInfo.label}
             </Badge>
 
-            <div className="flex items-center gap-1">
-              {/* Quick action for incomplete drafts - Continue editing */}
+            {/* Action buttons */}
+            <div className="flex items-center gap-2">
               {canEdit && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleContinue}
-                  disabled={isNavigating}
-                >
+                <Button variant="outline" size="sm" onClick={handleContinue} disabled={isNavigating}>
                   {isNavigating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      Loading...
-                    </>
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <>
-                      <Edit className="h-4 w-4 mr-1" />
+                      <Edit className="h-4 w-4 mr-1.5" />
                       Continue
                     </>
                   )}
                 </Button>
               )}
 
-              {/* Start Now button for ready campaigns */}
               {canStart && onStart && (
-                <Button 
-                  variant="default" 
-                  size="sm" 
+                <Button
+                  size="sm"
                   onClick={() => onStart(campaign)}
                   disabled={isStarting}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white"
                 >
                   {isStarting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      Starting...
-                    </>
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <>
-                      <Play className="h-4 w-4 mr-1" />
+                      <Play className="h-4 w-4 mr-1.5" />
                       Start Now
                     </>
                   )}
                 </Button>
               )}
 
-              {/* View button for non-actionable campaigns */}
-              {!canEdit && !canStart && (
+              {canCancel && onCancel && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onCancel(campaign)}
+                  disabled={isCancelling}
+                  className="border-orange-500 text-orange-600 hover:bg-orange-50"
+                >
+                  {isCancelling ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <XCircle className="h-4 w-4 mr-1.5" />
+                      Cancel
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {!canEdit && !canStart && !canCancel && (
                 <Button variant="ghost" size="sm" asChild>
                   <Link href={`/w/${workspaceSlug}/campaigns/${campaign.id}`}>
-                    <Eye className="h-4 w-4 mr-1" />
+                    <Eye className="h-4 w-4 mr-1.5" />
                     View
                   </Link>
                 </Button>
@@ -256,45 +310,14 @@ export function CampaignCard({
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {/* Start option for ready campaigns (also in main button) */}
-                  {canStart && onStart && (
-                    <DropdownMenuItem 
-                      onClick={() => onStart(campaign)}
-                      disabled={isStarting}
-                    >
-                      {isStarting ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Play className="h-4 w-4 mr-2" />
-                      )}
-                      {isStarting ? "Starting..." : "Start Now"}
-                    </DropdownMenuItem>
-                  )}
-                  {/* Cancel option for active campaigns */}
-                  {canCancel && onCancel && (
-                    <DropdownMenuItem 
-                      onClick={() => onCancel(campaign)}
-                      disabled={isCancelling}
-                      className="text-orange-600 focus:text-orange-600"
-                    >
-                      {isCancelling ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <XCircle className="h-4 w-4 mr-2" />
-                      )}
-                      {isCancelling ? "Cancelling..." : "Cancel Campaign"}
-                    </DropdownMenuItem>
-                  )}
-                  {/* View details - always available */}
+                <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem asChild>
                     <Link href={`/w/${workspaceSlug}/campaigns/${campaign.id}`}>
                       <Eye className="h-4 w-4 mr-2" />
                       View Details
                     </Link>
                   </DropdownMenuItem>
-                  {/* Delete is always available */}
-                  {canDelete && onDelete && (
+                  {onDelete && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -315,7 +338,7 @@ export function CampaignCard({
             </span>
           </div>
         </div>
-      </CardContent>
+      </div>
     </Card>
   )
 }

@@ -38,16 +38,6 @@ export function useTestCallValidation(agent: AIAgent): TestCallValidation {
     staleTime: 30000,
   })
 
-  // Check if synthflow (not supported)
-  if (agent.provider === "synthflow") {
-    return {
-      canCall: false,
-      reason: "Not supported",
-      solution: "Synthflow doesn't support browser test calls.",
-      isLoading: false,
-    }
-  }
-
   // Still loading integration data
   if (isLoading) {
     return { canCall: false, isLoading: true }

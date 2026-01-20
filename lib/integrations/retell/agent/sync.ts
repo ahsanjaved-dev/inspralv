@@ -26,6 +26,9 @@ import {
   deleteRetellAgentWithKey,
 } from "./config"
 import { processRetellResponse, processRetellDeleteResponse } from "./response"
+import { logger } from "@/lib/logger"
+
+const log = logger.child({ module: "RetellSync" })
 
 // ============================================================================
 // TYPES
@@ -79,7 +82,7 @@ async function getRetellApiKeyForAgent(
 ): Promise<string | null> {
   // Need workspace_id to fetch the assigned integration
   if (!agent.workspace_id) {
-    console.error("[RetellSync] Agent has no workspace_id, cannot fetch integration keys")
+    log.error("Agent has no workspace_id, cannot fetch integration keys")
     return null
   }
 
@@ -101,25 +104,25 @@ async function getRetellApiKeyForAgent(
       .single()
 
     if (assignmentError || !assignment?.partner_integration) {
-      console.log("[RetellSync] No Retell integration assigned to workspace")
+      log.debug("No Retell integration assigned to workspace")
       return null
     }
 
     const partnerIntegration = assignment.partner_integration as any
     if (!partnerIntegration.is_active) {
-      console.log("[RetellSync] Assigned Retell integration is not active")
+      log.debug("Assigned Retell integration is not active")
       return null
     }
 
     const apiKeys = partnerIntegration.api_keys as any
     if (!apiKeys?.default_secret_key) {
-      console.error("[RetellSync] Assigned integration has no secret key")
+      log.error("Assigned integration has no secret key")
       return null
     }
 
     return apiKeys.default_secret_key
   } catch (error) {
-    console.error("[RetellSync] Error fetching API keys for agent:", error)
+    log.error("Error fetching API keys for agent", { error })
     return null
   }
 }
@@ -134,14 +137,14 @@ export async function safeRetellSync(
 ): Promise<RetellSyncResult> {
   try {
     if (!shouldSyncToRetell(agent)) {
-      console.log("[RetellSync] Skipping sync - no API key configured")
+      log.debug("Skipping sync - no API key configured")
       return { success: true }
     }
 
     const secretKey = await getRetellApiKeyForAgent(agent)
 
     if (!secretKey) {
-      console.error("[RetellSync] No API key found for agent")
+      log.error("No API key found for agent")
       return {
         success: false,
         error: "No Retell API key configured. Please assign an API key in the agent settings.",
@@ -151,15 +154,15 @@ export async function safeRetellSync(
     switch (operation) {
       case "create": {
         // Step 1: Create LLM first
-        console.log("[RetellSync] Creating LLM on Retell...")
+        log.info("Creating LLM on Retell")
         const llmPayload = mapToRetellLLM(agent)
-        console.log("[RetellSync] LLM Payload:", JSON.stringify(llmPayload, null, 2))
+        log.debug("LLM Payload", { model: llmPayload.model })
         const llmResponse = await createRetellLLMWithKey(llmPayload, secretKey)
 
-        console.log("[RetellSync] LLM Response:", { success: llmResponse.success, error: llmResponse.error, llmId: llmResponse.data?.llm_id })
+        log.debug("LLM Response", { success: llmResponse.success, error: llmResponse.error, llmId: llmResponse.data?.llm_id })
 
         if (!llmResponse.success || !llmResponse.data) {
-          console.error("[RetellSync] LLM creation failed:", llmResponse.error)
+          log.error("LLM creation failed", { error: llmResponse.error })
           return {
             success: false,
             error: `Failed to create Retell LLM: ${llmResponse.error}`,
@@ -167,20 +170,20 @@ export async function safeRetellSync(
         }
 
         const llmId = llmResponse.data.llm_id
-        console.log("[RetellSync] LLM created successfully:", llmId)
+        log.info("LLM created successfully", { llmId })
 
         // Step 2: Create Agent with LLM ID
-        console.log("[RetellSync] Creating Agent on Retell with LLM:", llmId)
+        log.info("Creating Agent on Retell", { llmId })
         const agentPayload = mapToRetellAgent(agent, llmId)
-        console.log("[RetellSync] Agent Payload:", JSON.stringify(agentPayload, null, 2))
+        log.debug("Agent Payload", { agentName: agentPayload.agent_name })
         const agentResponse = await createRetellAgentWithKey(agentPayload, secretKey)
 
-        console.log("[RetellSync] Agent Response:", { success: agentResponse.success, error: agentResponse.error, agentId: agentResponse.data?.agent_id })
+        log.debug("Agent Response", { success: agentResponse.success, error: agentResponse.error, agentId: agentResponse.data?.agent_id })
 
         if (!agentResponse.success || !agentResponse.data) {
           // Cleanup: Delete the LLM we just created
-          console.error("[RetellSync] Agent creation failed:", agentResponse.error)
-          console.log("[RetellSync] Cleaning up LLM:", llmId)
+          log.error("Agent creation failed", { error: agentResponse.error })
+          log.info("Cleaning up LLM", { llmId })
           await deleteRetellLLMWithKey(llmId, secretKey)
           return {
             success: false,
@@ -188,7 +191,7 @@ export async function safeRetellSync(
           }
         }
 
-        console.log("[RetellSync] Agent created successfully:", agentResponse.data.agent_id)
+        log.info("Agent created successfully", { agentId: agentResponse.data.agent_id })
 
         // Process response with both LLM and Agent data
         const processResult = await processRetellResponse(
@@ -196,13 +199,13 @@ export async function safeRetellSync(
           agent.id
         )
         
-        console.log("[RetellSync] Process response result:", { success: processResult.success, error: processResult.error })
+        log.debug("Process response result", { success: processResult.success, error: processResult.error })
         return processResult
       }
 
       case "update": {
         if (!agent.external_agent_id) {
-          console.log("[RetellSync] No external_agent_id, creating new agent on Retell...")
+          log.info("No external_agent_id, creating new agent on Retell")
           return await safeRetellSync(agent, "create")
         }
 
@@ -211,18 +214,18 @@ export async function safeRetellSync(
         // Try to update LLM if we have the llm_id stored
         let llmUpdateFailed = false
         if (config.retell_llm_id) {
-          console.log("[RetellSync] Updating LLM on Retell:", config.retell_llm_id)
+          log.info("Updating LLM on Retell", { llmId: config.retell_llm_id })
           const llmPayload = mapToRetellLLM(agent)
           const llmUpdateResponse = await updateRetellLLMWithKey(config.retell_llm_id, llmPayload, secretKey)
           
           if (!llmUpdateResponse.success) {
-            console.log("[RetellSync] LLM update failed, will create new agent...")
+            log.info("LLM update failed, will create new agent")
             llmUpdateFailed = true
           }
         }
 
         // Try to update Agent
-        console.log("[RetellSync] Updating Agent on Retell:", agent.external_agent_id)
+        log.info("Updating Agent on Retell", { externalAgentId: agent.external_agent_id })
         const agentPayload = mapToRetellAgent(agent, config.retell_llm_id || "")
         // Remove response_engine from update payload (can't change LLM reference)
         const { response_engine, ...updatePayload } = agentPayload
@@ -235,7 +238,7 @@ export async function safeRetellSync(
 
         // If update fails (agent doesn't exist or API key from different account), create new agent
         if (!agentResponse.success || llmUpdateFailed) {
-          console.log("[RetellSync] Update failed, creating new agent on Retell instead...")
+          log.info("Update failed, creating new agent on Retell instead")
           return await safeRetellSync(agent, "create")
         }
 
@@ -250,7 +253,7 @@ export async function safeRetellSync(
         const deleteConfig = agent.config || {}
 
         // Delete Agent first
-        console.log("[RetellSync] Deleting Agent on Retell:", agent.external_agent_id)
+        log.info("Deleting Agent on Retell", { externalAgentId: agent.external_agent_id })
         const agentResponse = await deleteRetellAgentWithKey(
           agent.external_agent_id,
           secretKey
@@ -265,7 +268,7 @@ export async function safeRetellSync(
 
         // Delete LLM if we have the llm_id stored
         if (deleteConfig.retell_llm_id) {
-          console.log("[RetellSync] Deleting LLM on Retell:", deleteConfig.retell_llm_id)
+          log.info("Deleting LLM on Retell", { llmId: deleteConfig.retell_llm_id })
           await deleteRetellLLMWithKey(deleteConfig.retell_llm_id, secretKey)
         }
 
@@ -278,11 +281,11 @@ export async function safeRetellSync(
         const toolsConfig = agent.config || {}
 
         if (!toolsConfig.retell_llm_id) {
-          console.log("[RetellSync] No LLM ID found, performing full sync...")
+          log.info("No LLM ID found, performing full sync")
           return await safeRetellSync(agent, "update")
         }
 
-        console.log("[RetellSync] Updating LLM tools on Retell:", toolsConfig.retell_llm_id)
+        log.info("Updating LLM tools on Retell", { llmId: toolsConfig.retell_llm_id })
         const llmPayload = mapToRetellLLM(agent)
         const llmUpdateResponse = await updateRetellLLMWithKey(
           toolsConfig.retell_llm_id,
@@ -291,12 +294,12 @@ export async function safeRetellSync(
         )
 
         if (!llmUpdateResponse.success) {
-          console.error("[RetellSync] LLM tools update failed:", llmUpdateResponse.error)
+          log.error("LLM tools update failed", { error: llmUpdateResponse.error })
           // If LLM update fails, try full sync (might need to recreate)
           return await safeRetellSync(agent, "update")
         }
 
-        console.log("[RetellSync] LLM tools updated successfully")
+        log.info("LLM tools updated successfully")
         return {
           success: true,
           llm_id: toolsConfig.retell_llm_id,
@@ -307,7 +310,7 @@ export async function safeRetellSync(
         return { success: false, error: "Invalid sync operation" }
     }
   } catch (error) {
-    console.error("[RetellSync] Sync error:", error)
+    log.error("Sync error", { error })
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown sync error",

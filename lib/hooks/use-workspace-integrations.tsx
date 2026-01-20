@@ -1,11 +1,37 @@
 "use client"
 
+/**
+ * @deprecated This module is deprecated. Use org-level integration hooks instead.
+ * 
+ * Migration guide:
+ * - usePartnerIntegrations() - List org-level integrations
+ * - useWorkspaceIntegrationAssignments() - Get workspace assignments
+ * - useAssignWorkspaceIntegration() - Assign org integration to workspace
+ * 
+ * Import from: '@/lib/hooks/use-partner-integrations'
+ * 
+ * Sunset date: 2026-06-01
+ */
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "next/navigation"
 import type {
   CreateWorkspaceIntegrationInput,
   UpdateWorkspaceIntegrationInput,
 } from "@/types/database.types"
+
+// Log deprecation warning once per session
+let hasWarnedDeprecation = false
+function warnDeprecation(hookName: string): void {
+  if (process.env.NODE_ENV === "development" && !hasWarnedDeprecation) {
+    console.warn(
+      `[DEPRECATED] ${hookName} is deprecated. ` +
+      `Use hooks from '@/lib/hooks/use-partner-integrations' instead. ` +
+      `Workspace-level integrations will be removed after 2026-06-01.`
+    )
+    hasWarnedDeprecation = true
+  }
+}
 
 // Safe integration type for listing (without actual keys)
 export interface WorkspaceIntegrationSafe {
@@ -42,7 +68,12 @@ export interface WorkspaceIntegrationDetails {
   additional_keys_count: number
 }
 
+/**
+ * @deprecated Use usePartnerIntegrations and useWorkspaceIntegrationAssignments instead.
+ */
 export function useWorkspaceIntegrations() {
+  warnDeprecation("useWorkspaceIntegrations")
+  
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
 
@@ -61,7 +92,12 @@ export function useWorkspaceIntegrations() {
   })
 }
 
+/**
+ * @deprecated Use org-level integration hooks instead.
+ */
 export function useWorkspaceIntegration(provider: string) {
+  warnDeprecation("useWorkspaceIntegration")
+  
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
 
@@ -87,8 +123,13 @@ export function useWorkspaceIntegration(provider: string) {
   })
 }
 
-// Hook to get integration details for a specific provider (for agent form)
+/**
+ * @deprecated Use org-level integration hooks instead.
+ * Hook to get integration details for a specific provider (for agent form)
+ */
 export function useProviderIntegration(provider: string) {
+  warnDeprecation("useProviderIntegration")
+  
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
 
@@ -115,8 +156,13 @@ export function useProviderIntegration(provider: string) {
   })
 }
 
-// Hook to get all integrations with details (for agent form dropdown)
+/**
+ * @deprecated Use org-level integration hooks instead.
+ * Hook to get all integrations with details (for agent form dropdown)
+ */
 export function useAllIntegrationsWithDetails() {
+  warnDeprecation("useAllIntegrationsWithDetails")
+  
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
 
@@ -156,7 +202,12 @@ export function useAllIntegrationsWithDetails() {
   })
 }
 
+/**
+ * @deprecated Use useCreatePartnerIntegration from '@/lib/hooks/use-partner-integrations' instead.
+ */
 export function useCreateWorkspaceIntegration() {
+  warnDeprecation("useCreateWorkspaceIntegration")
+  
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
   const queryClient = useQueryClient()
@@ -183,7 +234,12 @@ export function useCreateWorkspaceIntegration() {
   })
 }
 
+/**
+ * @deprecated Use useUpdatePartnerIntegration from '@/lib/hooks/use-partner-integrations' instead.
+ */
 export function useUpdateWorkspaceIntegration(provider: string) {
+  warnDeprecation("useUpdateWorkspaceIntegration")
+  
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
   const queryClient = useQueryClient()
@@ -213,7 +269,12 @@ export function useUpdateWorkspaceIntegration(provider: string) {
   })
 }
 
+/**
+ * @deprecated Use useDeletePartnerIntegration from '@/lib/hooks/use-partner-integrations' instead.
+ */
 export function useDeleteWorkspaceIntegration() {
+  warnDeprecation("useDeleteWorkspaceIntegration")
+  
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
   const queryClient = useQueryClient()

@@ -304,3 +304,57 @@ export function resetCacheStats(): void {
   cacheHits = 0
   cacheMisses = 0
 }
+
+// ============================================================================
+// CACHE OBJECT WRAPPER
+// ============================================================================
+
+/**
+ * Cache object wrapper for convenient usage with object-style API
+ * This provides a simpler interface: cache.get(), cache.set(), cache.delete()
+ * 
+ * Note: TTL can be provided in milliseconds or seconds.
+ * Values >= 1000 are treated as milliseconds and auto-converted.
+ */
+export const cache = {
+  /**
+   * Get a value from cache
+   */
+  async get<T>(key: string): Promise<T | null> {
+    return cacheGet<T>(key)
+  },
+
+  /**
+   * Set a value in cache
+   * @param key - Cache key
+   * @param value - Value to cache
+   * @param ttl - Time-to-live (auto-detects ms vs seconds: >= 1000 treated as ms)
+   */
+  async set<T>(key: string, value: T, ttl: number = 300): Promise<void> {
+    // Auto-detect milliseconds vs seconds
+    // If ttl >= 1000, assume milliseconds and convert to seconds
+    const ttlSeconds = ttl >= 1000 ? Math.floor(ttl / 1000) : ttl
+    return cacheSet(key, value, ttlSeconds)
+  },
+
+  /**
+   * Delete a specific key from cache
+   */
+  async delete(key: string): Promise<void> {
+    return cacheDelete(key)
+  },
+
+  /**
+   * Delete all keys matching a pattern
+   */
+  async deletePattern(pattern: string): Promise<void> {
+    return cacheDeletePattern(pattern)
+  },
+
+  /**
+   * Clear all cache entries
+   */
+  async clear(): Promise<void> {
+    return cacheClear()
+  },
+}

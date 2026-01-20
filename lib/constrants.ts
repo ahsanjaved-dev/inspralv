@@ -28,7 +28,6 @@ export const PAGINATION = {
 export const PROVIDER_NAMES: Record<string, string> = {
   vapi: "Vapi",
   retell: "Retell AI",
-  synthflow: "Synthflow",
   elevenlabs: "ElevenLabs",
   deepgram: "Deepgram",
   openai: "OpenAI",

@@ -1481,9 +1481,8 @@ After cleanup, the utility checks if the campaign should be marked as completed:
 
 | Component | File |
 |-----------|------|
-| CampaignWizard | `components/workspace/campaigns/campaign-wizard.tsx` |
 | CampaignWizardOptimized | `components/workspace/campaigns/campaign-wizard-optimized.tsx` |
-| CampaignWizardDynamic | `components/workspace/campaigns/campaign-wizard-dynamic.tsx` |
+| CampaignWizardDynamic | `components/workspace/campaigns/campaign-wizard-dynamic.tsx` (lazy loader) |
 | CampaignCard | `components/workspace/campaigns/campaign-card.tsx` |
 | CampaignStatusBadge | `components/workspace/campaigns/campaign-status-badge.tsx` |
 | CampaignLoading | `components/workspace/campaigns/campaign-loading.tsx` |

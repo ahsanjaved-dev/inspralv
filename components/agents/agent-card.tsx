@@ -34,7 +34,6 @@ interface AgentCardProps {
 const providerColors: Record<string, string> = {
   vapi: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
   retell: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  synthflow: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
 }
 
 export function AgentCard({ agent, onDelete, onToggleActive }: AgentCardProps) {

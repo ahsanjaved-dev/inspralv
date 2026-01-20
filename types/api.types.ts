@@ -38,7 +38,7 @@ export const agentDirectionSchema = z.enum(["inbound", "outbound"] as const)
 export const createWorkspaceAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(40, "Agent name must be 40 characters or less"),
   description: z.string().optional(),
-  provider: z.enum(["vapi", "retell", "synthflow"] as const),
+  provider: z.enum(["vapi", "retell"] as const),
   voice_provider: z
     .enum(["elevenlabs", "deepgram", "azure", "openai", "cartesia"] as const)
     .optional(),
@@ -169,7 +169,6 @@ export type UpdateDepartmentInput = UpdateWorkspaceInput
 export type IntegrationProvider =
   | "vapi"
   | "retell"
-  | "synthflow"
   | "hubspot"
   | "salesforce"
   | "zapier"
@@ -192,7 +191,15 @@ export const createIntegrationSchema = z.object({
 
 export type CreateIntegrationInput = z.infer<typeof createIntegrationSchema>
 
-// Re-export integration schemas from database.types to avoid duplication
+/**
+ * @deprecated These workspace-level integration schemas are deprecated.
+ * Use org-level PartnerIntegration management instead:
+ * - Create: POST /api/partner/integrations
+ * - Assign: POST /api/partner/workspaces/[id]/integrations
+ * - Update: PATCH /api/partner/integrations/[id]
+ * 
+ * Sunset date: 2026-06-01
+ */
 export {
   createWorkspaceIntegrationSchema,
   updateWorkspaceIntegrationSchema,
@@ -234,13 +241,6 @@ export interface RetellAgentConfig {
   voice_id: string
   llm_websocket_url?: string
   webhook_url?: string
-}
-
-export interface SynthflowAgentConfig {
-  name: string
-  voice_id: string
-  model_id: string
-  instructions: string
 }
 
 // ============================================================================

@@ -6,7 +6,7 @@
 
 // Core components
 export { CampaignCard } from "./campaign-card"
-export { CampaignCardEnhanced } from "./campaign-card-enhanced"
+export type { CampaignCardProps } from "./campaign-card"
 export { CampaignStatusBadge, CallStatusBadge, CallOutcomeBadge } from "./campaign-status-badge"
 
 // Progress & Stats

@@ -32,7 +32,6 @@ datasource db {
 enum AgentProvider {
   vapi
   retell
-  synthflow
   @@map("agent_provider")
   @@schema("public")
 }
@@ -393,8 +392,8 @@ model Workspace {
   agents                   AiAgent[]
   conversations            Conversation[]
   usageTracking            UsageTracking[]
-  integrations             WorkspaceIntegration[]           // Legacy - to be deprecated
-  integrationAssignments   WorkspaceIntegrationAssignment[] // New org-level key assignments
+  integrations             WorkspaceIntegration[]           // ⚠️ DEPRECATED - Use integrationAssignments instead
+  integrationAssignments   WorkspaceIntegrationAssignment[] // ✅ PREFERRED - Org-level key assignments
   knowledgeDocuments       KnowledgeDocument[]
   leads                    Lead[]
   workspaceCredits         WorkspaceCredits?
@@ -457,7 +456,24 @@ model WorkspaceInvitation {
 }
 
 // =============================================================================
-// WORKSPACE INTEGRATIONS (API Keys for Providers) - LEGACY/DEPRECATED
+// WORKSPACE INTEGRATIONS (API Keys for Providers)
+// ⚠️ DEPRECATED - Use PartnerIntegration + WorkspaceIntegrationAssignment instead
+// =============================================================================
+// 
+// This model is being phased out. New integrations should use the org-level
+// pattern where:
+//   1. API keys are stored in `partner_integrations` at the organization level
+//   2. Keys are assigned to workspaces via `workspace_integration_assignments`
+//   3. This allows centralized key management and easier workspace provisioning
+//
+// Migration timeline:
+//   - Current: Both models supported, org-level preferred
+//   - 2026-06-01: Workspace-level model will be removed
+//
+// Migration path for existing workspace integrations:
+//   1. Create org-level integration at /org/integrations with your API keys
+//   2. Assign the integration to your workspace(s)
+//   3. Remove the workspace-level integration
 // =============================================================================
 
 model WorkspaceIntegration {

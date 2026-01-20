@@ -173,6 +173,42 @@ const MODEL_MAP: Record<string, string> = {
   "llama-3.1-70b": "gpt-4.1",
 }
 
+/**
+ * Generate a function description block for the system prompt
+ * Custom functions are described in the prompt so the LLM knows to call them
+ */
+function generateCustomFunctionPrompt(tools: FunctionTool[]): string {
+  const customTools = tools.filter(
+    t => t.enabled !== false && 
+    (t.tool_type === 'custom' || t.tool_type === 'function' || t.tool_type === 'custom_function')
+  )
+  
+  if (customTools.length === 0) return ""
+  
+  let prompt = "\n\n## Available Functions\n"
+  prompt += "You have access to the following functions. Call them when appropriate:\n\n"
+  
+  for (const tool of customTools) {
+    prompt += `### ${tool.name}\n`
+    prompt += `${tool.description || 'No description provided.'}\n`
+    
+    if (tool.parameters?.properties) {
+      prompt += `Parameters:\n`
+      for (const [paramName, paramDef] of Object.entries(tool.parameters.properties)) {
+        const required = tool.parameters.required?.includes(paramName) ? ' (required)' : ' (optional)'
+        const paramType = (paramDef as any).type || 'string'
+        const paramDesc = (paramDef as any).description || ''
+        prompt += `- ${paramName}: ${paramType}${required}${paramDesc ? ` - ${paramDesc}` : ''}\n`
+      }
+    }
+    prompt += "\n"
+  }
+  
+  prompt += "To call a function, state that you're calling it and provide the parameters."
+  
+  return prompt
+}
+
 export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
   const config = agent.config || {}
 
@@ -184,9 +220,20 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
     model: model as string,
   }
 
-  // System prompt
-  if (config.system_prompt) {
-    payload.general_prompt = config.system_prompt
+  // System prompt with custom function descriptions appended
+  let systemPrompt = config.system_prompt || ""
+  
+  // Add custom function descriptions to the system prompt
+  // Custom functions in Retell are executed via webhook, not general_tools
+  if (config.tools && config.tools.length > 0) {
+    const customFunctionPrompt = generateCustomFunctionPrompt(config.tools)
+    if (customFunctionPrompt) {
+      systemPrompt += customFunctionPrompt
+    }
+  }
+  
+  if (systemPrompt) {
+    payload.general_prompt = systemPrompt
   }
 
   // Begin message / greeting
@@ -194,8 +241,9 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
     payload.begin_message = config.first_message
   }
 
-  // Add tools to LLM configuration using the function_tools mapper
-  // Tools are mapped from internal FunctionTool format to Retell GeneralTool format
+  // Add native tools to LLM configuration using the function_tools mapper
+  // Only native Retell tools (end_call, transfer_call, etc.) go in general_tools
+  // Custom functions are handled via webhook and described in the prompt
   if (config.tools && config.tools.length > 0) {
     const retellTools = mapFunctionToolsToRetell(config.tools)
     if (retellTools.length > 0) {

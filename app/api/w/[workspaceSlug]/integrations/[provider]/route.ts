@@ -1,12 +1,48 @@
-import { NextRequest } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, apiError, unauthorized, forbidden, notFound, serverError } from "@/lib/api/helpers"
 import { updateWorkspaceIntegrationSchema } from "@/types/database.types"
 import { createAuditLog, getRequestMetadata } from "@/lib/audit"
 import { clearAlgoliaCache } from "@/lib/algolia/client"
 
+/**
+ * @deprecated This route is deprecated. Use org-level integrations instead.
+ * 
+ * Migration path:
+ * - GET: Use /api/partner/integrations/[id] for org-level integration details
+ * - PATCH: Use /api/partner/integrations/[id] for updates
+ * - DELETE: Use /api/partner/integrations/[id] for deletion
+ */
+
 interface RouteContext {
   params: Promise<{ workspaceSlug: string; provider: string }>
+}
+
+// Deprecation date - when this API will be removed
+const SUNSET_DATE = "2026-06-01"
+
+/**
+ * Add deprecation headers to response per RFC 8594
+ */
+function addDeprecationHeaders(response: NextResponse): NextResponse {
+  response.headers.set("Deprecation", "true")
+  response.headers.set("Sunset", SUNSET_DATE)
+  response.headers.set(
+    "Link",
+    '</api/partner/integrations>; rel="successor-version"'
+  )
+  return response
+}
+
+/**
+ * Log deprecation warning for monitoring
+ */
+function logDeprecationWarning(method: string, workspaceSlug: string, provider: string): void {
+  console.warn(
+    `[DEPRECATED] ${method} /api/w/${workspaceSlug}/integrations/${provider} - ` +
+    `Use org-level integrations at /api/partner/integrations instead. ` +
+    `This endpoint will be removed after ${SUNSET_DATE}.`
+  )
 }
 
 // Helper to check if a key value is valid (not __KEEP__ or empty)
@@ -75,6 +111,10 @@ function mergeAdditionalKeys(
 export async function GET(request: NextRequest, { params }: RouteContext) {
   try {
     const { workspaceSlug, provider } = await params
+    
+    // Log deprecation warning
+    logDeprecationWarning("GET", workspaceSlug, provider)
+    
     const ctx = await getWorkspaceContext(workspaceSlug)
 
     if (!ctx) {
@@ -128,7 +168,8 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       updated_at: integration.updated_at,
     }
 
-    return apiResponse(safeIntegration)
+    const response = apiResponse(safeIntegration)
+    return addDeprecationHeaders(response)
   } catch (error) {
     console.error("GET /api/w/[slug]/integrations/[provider] error:", error)
     return serverError()
@@ -138,6 +179,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   try {
     const { workspaceSlug, provider } = await params
+    
+    // Log deprecation warning
+    logDeprecationWarning("PATCH", workspaceSlug, provider)
+    
     const ctx = await getWorkspaceContext(workspaceSlug, ["owner", "admin"])
 
     if (!ctx) {
@@ -264,7 +309,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       updated_at: integration.updated_at,
     }
 
-    return apiResponse(safeIntegration)
+    const response = apiResponse(safeIntegration)
+    return addDeprecationHeaders(response)
   } catch (error) {
     console.error("PATCH /api/w/[slug]/integrations/[provider] error:", error)
     return serverError()
@@ -274,6 +320,10 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 export async function DELETE(request: NextRequest, { params }: RouteContext) {
   try {
     const { workspaceSlug, provider } = await params
+    
+    // Log deprecation warning
+    logDeprecationWarning("DELETE", workspaceSlug, provider)
+    
     const ctx = await getWorkspaceContext(workspaceSlug, ["owner", "admin"])
 
     if (!ctx) {
@@ -319,7 +369,8 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       userAgent,
     })
 
-    return apiResponse({ message: "Integration disconnected" })
+    const response = apiResponse({ message: "Integration disconnected" })
+    return addDeprecationHeaders(response)
   } catch (error) {
     console.error("DELETE /api/w/[slug]/integrations/[provider] error:", error)
     return serverError()

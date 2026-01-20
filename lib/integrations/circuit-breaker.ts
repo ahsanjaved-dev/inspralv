@@ -260,11 +260,6 @@ export const voiceProviderCircuitBreakers = {
     resetTimeout: 30000,
     callTimeout: 10000,
   }),
-  synthflow: getCircuitBreaker("synthflow", {
-    failureThreshold: 3,
-    resetTimeout: 30000,
-    callTimeout: 10000,
-  }),
 }
 
 /**

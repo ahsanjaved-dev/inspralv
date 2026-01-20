@@ -1305,7 +1305,7 @@ export type Database = {
       generate_slug: { Args: { input_text: string }; Returns: string }
     }
     Enums: {
-      agent_provider: "vapi" | "retell" | "synthflow"
+      agent_provider: "vapi" | "retell"
       agent_direction: "inbound" | "outbound"
       call_direction: "inbound" | "outbound"
       call_status:
@@ -1466,7 +1466,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      agent_provider: ["vapi", "retell", "synthflow"],
+      agent_provider: ["vapi", "retell"],
       call_direction: ["inbound", "outbound"],
       call_status: [
         "initiated",
@@ -1581,7 +1581,23 @@ export type Conversation = Tables<"conversations">
 export type UsageTracking = Tables<"usage_tracking">
 export type User = Tables<"users">
 export type AuditLog = Tables<"audit_log">
+
+/**
+ * @deprecated Use PartnerIntegration with WorkspaceIntegrationAssignment instead.
+ * 
+ * Workspace-level integrations are being phased out in favor of org-level management.
+ * This type will be removed after 2026-06-01.
+ * 
+ * Migration path:
+ * 1. Create PartnerIntegration at org level
+ * 2. Use WorkspaceIntegrationAssignment to link to workspaces
+ * 3. Remove workspace-level integrations
+ * 
+ * @see PartnerIntegration
+ * @see WorkspaceIntegrationAssignment
+ */
 export type WorkspaceIntegration = Tables<"workspace_integrations">
+
 export type PartnerMember = Tables<"partner_members">
 export type PartnerInvitation = Tables<"partner_invitations">
 
@@ -2392,11 +2408,20 @@ export const createWorkspaceSchema = z.object({
 
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceSchema>
 
+/**
+ * @deprecated Use PartnerIntegration creation at /api/partner/integrations instead.
+ * 
+ * Workspace-level integrations are being phased out in favor of org-level management.
+ * This schema will be removed after 2026-06-01.
+ * 
+ * New approach:
+ * 1. Create org-level integration via POST /api/partner/integrations
+ * 2. Assign to workspace via POST /api/partner/workspaces/[id]/integrations
+ */
 export const createWorkspaceIntegrationSchema = z.object({
   provider: z.enum([
     "vapi",
     "retell",
-    "synthflow",
     "hubspot",
     "salesforce",
     "zapier",
@@ -2494,6 +2519,12 @@ export const algoliaIntegrationConfigSchema = z.object({
   call_logs_index: z.string().optional(),
 })
 
+/**
+ * @deprecated Use PartnerIntegration update at /api/partner/integrations/[id] instead.
+ * 
+ * Workspace-level integrations are being phased out in favor of org-level management.
+ * This schema will be removed after 2026-06-01.
+ */
 export const updateWorkspaceIntegrationSchema = z.object({
   name: z.string().min(1, "Connection name is required").max(255).optional(),
   default_secret_key: z.string().min(1, "Default secret API key is required").optional(),
@@ -2503,7 +2534,9 @@ export const updateWorkspaceIntegrationSchema = z.object({
 })
 
 // Infer types from Zod schemas
+/** @deprecated Use PartnerIntegration creation instead. See createWorkspaceIntegrationSchema for details. */
 export type CreateWorkspaceIntegrationInput = z.infer<typeof createWorkspaceIntegrationSchema>
+/** @deprecated Use PartnerIntegration update instead. See updateWorkspaceIntegrationSchema for details. */
 export type UpdateWorkspaceIntegrationInput = z.infer<typeof updateWorkspaceIntegrationSchema>
 
 export const createWorkspaceInvitationSchema = z.object({

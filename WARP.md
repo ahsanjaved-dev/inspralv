@@ -4,7 +4,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Project Overview
 
-Genius365 is a multi-tenant, white-label AI voice agent management platform built with Next.js 16 (App Router), TypeScript, Supabase (Postgres + Auth), Prisma, Tailwind CSS 4, Radix/shadcn UI, React Query, and Zustand. Agencies (partners) manage voice agents across providers (VAPI, Retell, Synthflow) with strong isolation between partners and their workspaces.
+Genius365 is a multi-tenant, white-label AI voice agent management platform built with Next.js 16 (App Router), TypeScript, Supabase (Postgres + Auth), Prisma, Tailwind CSS 4, Radix/shadcn UI, React Query, and Zustand. Agencies (partners) manage voice agents across providers (VAPI, Retell) with strong isolation between partners and their workspaces.
 
 For a deep, file-by-file walkthrough of the system, see `CODEBASE_REFERENCE.md` (source of truth for architecture, flows, and important files).
 
