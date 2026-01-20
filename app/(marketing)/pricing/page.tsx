@@ -105,7 +105,7 @@ export default async function PricingPage() {
           {/* Agency Plan */}
           <Card className="relative hover:shadow-lg transition-all border-2 border-dashed border-primary/30">
             <div className="absolute -top-3 left-6">
-              <Badge variant="secondary" className="gap-1 bg-gradient-to-r from-primary/20 to-primary/10">
+              <Badge variant="secondary" className="gap-1 bg-linear-to-r from-primary/20 to-primary/10">
                 <Building2 className="h-3 w-3" />
                 White-Label
               </Badge>
@@ -251,7 +251,7 @@ export default async function PricingPage() {
         </div>
 
         {/* Bottom CTA */}
-        <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10">
+        <Card className="border-primary/20 bg-linear-to-br from-primary/5 to-primary/10">
           <CardContent className="p-8 md:p-12 text-center">
             <h2 className="text-2xl md:text-3xl font-bold mb-4">Ready to get started?</h2>
             <p className="text-muted-foreground mb-8 max-w-xl mx-auto">

@@ -129,7 +129,8 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
               resource_limits,
               status,
               deleted_at,
-              created_at
+              created_at,
+              is_billing_exempt
             )
           `
           )
@@ -186,6 +187,7 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
         status: m.workspace.status,
         is_partner_admin_access: false,
         created_at: m.workspace.created_at,
+        is_billing_exempt: m.workspace.is_billing_exempt ?? false,
       }))
 
     // Step 5: For partner admins/owners, also fetch ALL workspaces under this partner
@@ -195,7 +197,7 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
       // Fetch all workspaces for this partner
       const { data: allPartnerWorkspaces, error: allWsError } = await adminClient
         .from("workspaces")
-        .select("id, name, slug, partner_id, description, resource_limits, status, created_at")
+        .select("id, name, slug, partner_id, description, resource_limits, status, created_at, is_billing_exempt")
         .eq("partner_id", partner.id)
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
@@ -274,7 +276,7 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
           // The UI can display owner info differently if needed
           const additionalWorkspaces: AccessibleWorkspace[] = allPartnerWorkspaces
             .filter((ws) => !userWorkspaceIds.has(ws.id))
-            .map((ws) => ({
+            .map((ws: any) => ({
               id: ws.id,
               name: ws.name,
               slug: ws.slug,
@@ -288,6 +290,7 @@ export async function getPartnerAuthContext(): Promise<PartnerAuthContext | null
               member_count: memberCountMap.get(ws.id) || 0,
               agent_count: agentCountMap.get(ws.id) || 0,
               created_at: ws.created_at,
+              is_billing_exempt: ws.is_billing_exempt ?? false,
             }))
 
           // Merge: user's direct workspaces first, then additional workspaces

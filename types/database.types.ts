@@ -2269,6 +2269,8 @@ export interface AccessibleWorkspace {
   agent_count?: number
   /** Created at timestamp */
   created_at?: string
+  /** If true, workspace is exempt from billing (uses partner credits) */
+  is_billing_exempt?: boolean
 }
 
 export interface PartnerMembership {

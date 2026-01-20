@@ -258,31 +258,38 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     // BILLING CHECKS
     // ============================================================================
 
-    // 1. Check if partner has sufficient credits (estimate 5 minutes for outbound call)
-    const estimatedMinutes = 5
-    const hasCredits = await hasSufficientCredits(ctx.partner.id, estimatedMinutes)
+    // Check if workspace is billing exempt (uses partner credits, no pre-check needed)
+    const isBillingExempt = ctx.workspace.is_billing_exempt
 
-    if (!hasCredits) {
-      return apiError(
-        "Insufficient credits. Please top up your account before making outbound calls.",
-        402 // Payment Required
-      )
+    if (!isBillingExempt) {
+      // 1. Check if partner has sufficient credits (estimate 5 minutes for outbound call)
+      const estimatedMinutes = 5
+      const hasCredits = await hasSufficientCredits(ctx.partner.id, estimatedMinutes)
+
+      if (!hasCredits) {
+        return apiError(
+          "Insufficient credits. Please top up your account before making outbound calls.",
+          402 // Payment Required
+        )
+      }
+
+      // 2. Check if workspace has remaining monthly minutes
+      const minutesCheck = await checkMonthlyMinutesLimit(ctx.workspace.id)
+
+      if (!minutesCheck.allowed) {
+        return apiError(
+          `Monthly minutes limit reached. You have used ${minutesCheck.currentUsage} of ${minutesCheck.limit} minutes this month. Please upgrade your plan or wait until next month.`,
+          429 // Too Many Requests
+        )
+      }
+
+      console.log("[OutboundCall] Billing checks passed:", {
+        hasCredits: true,
+        monthlyMinutesRemaining: minutesCheck.remaining,
+      })
+    } else {
+      console.log("[OutboundCall] Billing checks skipped - workspace is billing exempt")
     }
-
-    // 2. Check if workspace has remaining monthly minutes
-    const minutesCheck = await checkMonthlyMinutesLimit(ctx.workspace.id)
-
-    if (!minutesCheck.allowed) {
-      return apiError(
-        `Monthly minutes limit reached. You have used ${minutesCheck.currentUsage} of ${minutesCheck.limit} minutes this month. Please upgrade your plan or wait until next month.`,
-        429 // Too Many Requests
-      )
-    }
-
-    console.log("[OutboundCall] Billing checks passed:", {
-      hasCredits: true,
-      monthlyMinutesRemaining: minutesCheck.remaining,
-    })
 
     // Create the outbound call
     // Key: assistantId = agent's Vapi assistant (determines behavior)
