@@ -48,7 +48,6 @@ import {
 import { ImportRecipientsDialog } from "@/components/workspace/campaigns/import-recipients-dialog"
 import { AddRecipientDialog } from "@/components/workspace/campaigns/add-recipient-dialog"
 import { CampaignAnalytics } from "@/components/workspace/campaigns/campaign-analytics"
-import { WebhookStatusAlert } from "@/components/workspace/campaigns/webhook-status-alert"
 import { CampaignLiveDashboard } from "@/components/workspace/campaigns/campaign-live-dashboard"
 import { CampaignProgressRing } from "@/components/workspace/campaigns/campaign-progress-ring"
 import { CampaignStatsGrid } from "@/components/workspace/campaigns/campaign-stats-card"
@@ -122,12 +121,23 @@ export default function CampaignDetailPage() {
     data: campaignData,
     isLoading: campaignLoading,
     refetch: refetchCampaign,
-  } = useCampaign(campaignId)
+  } = useCampaign(campaignId, { enablePolling: true, pollingInterval: 5000 })
+  
+  // Determine if campaign is active for polling
+  const isCampaignActive = campaignData?.data?.status === "active"
+  
   const {
     data: recipientsData,
     isLoading: recipientsLoading,
     refetch: refetchRecipients,
-  } = useCampaignRecipients(campaignId, { status: statusFilter, page, pageSize })
+  } = useCampaignRecipients(campaignId, { 
+    status: statusFilter, 
+    page, 
+    pageSize,
+    enablePolling: true,
+    pollingInterval: 5000,
+    campaignActive: isCampaignActive,
+  })
   const deleteRecipientMutation = useDeleteRecipient()
   const terminateMutation = useTerminateCampaign()
   const startMutation = useStartCampaign()
@@ -421,11 +431,6 @@ export default function CampaignDetailPage() {
           )}
         </div>
       </div>
-
-      {/* Webhook Status Alert */}
-      {(campaign.status === "active" || campaign.status === "ready") && (
-        <WebhookStatusAlert showOnlyOnIssues={true} />
-      )}
 
       {/* Live Dashboard for Active Campaigns */}
       {campaign.status === "active" && (

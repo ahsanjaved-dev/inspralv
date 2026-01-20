@@ -124,9 +124,17 @@ export function useCampaigns(options: UseCampaignsOptions = {}) {
   }
 }
 
-export function useCampaign(campaignId: string | null) {
+interface UseCampaignOptions {
+  /** Enable auto-polling when campaign is active (default: true) */
+  enablePolling?: boolean
+  /** Polling interval in milliseconds for active campaigns (default: 5000ms = 5 seconds) */
+  pollingInterval?: number
+}
+
+export function useCampaign(campaignId: string | null, options: UseCampaignOptions = {}) {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
+  const { enablePolling = true, pollingInterval = 5000 } = options
 
   return useQuery<CampaignResponse>({
     queryKey: ["campaign", workspaceSlug, campaignId],
@@ -141,6 +149,21 @@ export function useCampaign(campaignId: string | null) {
       return response.json()
     },
     enabled: !!workspaceSlug && !!campaignId,
+    // Auto-poll when campaign is active to keep UI updated
+    refetchInterval: (query) => {
+      if (!enablePolling) return false
+      const campaign = query.state.data?.data
+      // Poll every 5 seconds if campaign is active, otherwise don't poll
+      return campaign?.status === "active" ? pollingInterval : false
+    },
+    // Only poll when window is visible
+    refetchIntervalInBackground: false,
+    // Consider data stale immediately for active campaigns
+    staleTime: 0,
+    // Always refetch on mount
+    refetchOnMount: "always",
+    // Refetch when window regains focus
+    refetchOnWindowFocus: true,
   })
 }
 
@@ -252,6 +275,12 @@ interface UseRecipientsOptions {
   status?: RecipientCallStatus | "all"
   page?: number
   pageSize?: number
+  /** Enable auto-polling for active campaigns (default: true) */
+  enablePolling?: boolean
+  /** Polling interval in milliseconds (default: 5000ms = 5 seconds) */
+  pollingInterval?: number
+  /** Whether the parent campaign is active - enables polling */
+  campaignActive?: boolean
 }
 
 export function useCampaignRecipients(
@@ -260,7 +289,14 @@ export function useCampaignRecipients(
 ) {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
-  const { status = "all", page = 1, pageSize = 50 } = options
+  const { 
+    status = "all", 
+    page = 1, 
+    pageSize = 50,
+    enablePolling = true,
+    pollingInterval = 5000,
+    campaignActive = false,
+  } = options
 
   return useQuery<RecipientsResponse>({
     queryKey: ["campaign-recipients", workspaceSlug, campaignId, { status, page, pageSize }],
@@ -281,6 +317,12 @@ export function useCampaignRecipients(
       return response.json()
     },
     enabled: !!workspaceSlug && !!campaignId,
+    // Auto-poll when campaign is active
+    refetchInterval: enablePolling && campaignActive ? pollingInterval : false,
+    refetchIntervalInBackground: false,
+    staleTime: campaignActive ? 0 : 30000, // Stale immediately for active campaigns
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   })
 }
 
