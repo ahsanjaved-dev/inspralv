@@ -41,11 +41,12 @@ export default function DocsPage() {
     // Check if already loaded
     if ((window as any).SwaggerUIBundle) {
       initSwagger()
-    } else {
-      // Wait for script to load
-      window.addEventListener("swagger-loaded", initSwagger)
-      return () => window.removeEventListener("swagger-loaded", initSwagger)
+      return
     }
+    
+    // Wait for script to load
+    window.addEventListener("swagger-loaded", initSwagger)
+    return () => window.removeEventListener("swagger-loaded", initSwagger)
   }, [])
 
   return (

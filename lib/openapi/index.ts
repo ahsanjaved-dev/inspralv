@@ -30,7 +30,7 @@ export const registry = new OpenAPIRegistry()
 const errorResponseSchema = z.object({
   error: z.string().describe("Error message"),
   code: z.string().optional().describe("Error code"),
-  details: z.record(z.unknown()).optional().describe("Additional error details"),
+  details: z.record(z.string(), z.unknown()).optional().describe("Additional error details"),
 })
 
 registry.register("ErrorResponse", errorResponseSchema)

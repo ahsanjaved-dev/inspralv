@@ -180,7 +180,7 @@ const MODEL_MAP: Record<string, string> = {
 function generateCustomFunctionPrompt(tools: FunctionTool[]): string {
   const customTools = tools.filter(
     t => t.enabled !== false && 
-    (t.tool_type === 'custom' || t.tool_type === 'function' || t.tool_type === 'custom_function')
+    (t.tool_type === 'function' || t.tool_type === 'custom_function')
   )
   
   if (customTools.length === 0) return ""

@@ -90,7 +90,7 @@ export async function getMFAStatus(): Promise<MFAStatus | null> {
       ...(factorsData.phone || []).map(f => ({
         id: f.id,
         type: "phone" as const,
-        friendly_name: f.phone,
+        friendly_name: f.friendly_name,
         status: f.status as "unverified" | "verified",
         created_at: f.created_at,
         updated_at: f.updated_at,
