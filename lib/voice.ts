@@ -22,6 +22,8 @@ export interface VoiceOption {
   characteristics: string
   /** Provider-specific voice ID (if different from id) */
   providerId?: string
+  /** URL to preview audio sample */
+  previewUrl?: string
 }
 
 export interface VoiceConfig {
@@ -30,11 +32,28 @@ export interface VoiceConfig {
 }
 
 // ============================================================================
+// ELEVENLABS PREVIEW URL HELPER
+// ElevenLabs provides public preview URLs for their stock voices
+// ============================================================================
+
+const ELEVENLABS_PREVIEW_BASE = "https://api.elevenlabs.io/v1/text-to-speech"
+
+/**
+ * Generate preview URL for an ElevenLabs voice
+ * Note: These are publicly accessible sample audio files
+ */
+function getElevenLabsPreviewUrl(voiceId: string): string {
+  // ElevenLabs hosts preview samples at this URL pattern
+  return `https://storage.googleapis.com/eleven-public-prod/premade/voices/${voiceId}/manifest.json`
+}
+
+// ============================================================================
 // VAPI VOICES (Using ElevenLabs provider)
 // Reference: https://docs.vapi.ai/providers/voice/elevenlabs
 // NOTE: VAPI built-in voices are ALL deprecated as of Jan 2026
 // We now use ElevenLabs voices which are fully supported
 // ElevenLabs voice IDs are used with provider: "11labs"
+// Preview URLs are from ElevenLabs public CDN
 // ============================================================================
 
 export const VAPI_VOICES: VoiceOption[] = [
@@ -46,6 +65,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 28,
     characteristics: "Warm, professional, clear",
     providerId: "21m00Tcm4TlvDq8ikWAM",
+    // Preview URL not available
   },
   {
     id: "drew",
@@ -55,6 +75,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 30,
     characteristics: "Well-rounded, informative, professional",
     providerId: "29vD33N1CtxCmqQRPOHJ",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/29vD33N1CtxCmqQRPOHJ/e8b52a3f-9732-440f-b78a-16d5e26407a1.mp3",
   },
   {
     id: "clyde",
@@ -64,6 +85,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 35,
     characteristics: "War veteran, deep, gruff",
     providerId: "2EiwWnXFnvU5JabPnv8n",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/2EiwWnXFnvU5JabPnv8n/65d80f52-703f-4cae-a91d-75d4e200ed02.mp3",
   },
   {
     id: "paul",
@@ -73,6 +95,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 32,
     characteristics: "Ground reporter, calm, authoritative",
     providerId: "5Q0t7uMcjvnagumLfvZi",
+    // Preview URL not available
   },
   {
     id: "domi",
@@ -82,6 +105,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 25,
     characteristics: "Strong, confident, assertive",
     providerId: "AZnzlk1XvdvUeBnXmlld",
+    // Preview URL not available
   },
   {
     id: "dave",
@@ -91,6 +115,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 28,
     characteristics: "Conversational, video games, young",
     providerId: "CYw3kZ02Hs0563khs1Fj",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/CYw3kZ02Hs0563khs1Fj/872cb056-45d3-419e-b5c6-de2b387a93a0.mp3",
   },
   {
     id: "fin",
@@ -100,6 +125,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 35,
     characteristics: "Sailor, gruff, intense",
     providerId: "D38z5RcWu1voky8WS1ja",
+    // Preview URL not available
   },
   {
     id: "bella",
@@ -109,6 +135,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 26,
     characteristics: "Soft, pleasant, warm",
     providerId: "EXAVITQu4vr4xnSDxMaL",
+    // Preview URL not available
   },
   {
     id: "antoni",
@@ -118,6 +145,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 29,
     characteristics: "Well-rounded, calm, professional",
     providerId: "ErXwobaYiN019PkySvjV",
+    // Preview URL not available
   },
   {
     id: "thomas",
@@ -127,6 +155,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 32,
     characteristics: "Calm, collected, professional",
     providerId: "GBv7mTt0atIp3Br8iCZE",
+    // Preview URL not available
   },
   {
     id: "charlie",
@@ -136,6 +165,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 26,
     characteristics: "Casual, conversational, friendly",
     providerId: "IKne3meq5aSn9XLyUdCD",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/IKne3meq5aSn9XLyUdCD/102de6f2-22ed-43e0-a1f1-111fa75c5481.mp3",
   },
   {
     id: "emily",
@@ -145,6 +175,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 24,
     characteristics: "Calm, gentle, soft-spoken",
     providerId: "LcfcDJNUP1GQjkzn1xUU",
+    // Preview URL not available
   },
   {
     id: "elli",
@@ -154,6 +185,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 27,
     characteristics: "Emotional, expressive, warm",
     providerId: "MF3mGyEYCl7XYWbV9V6O",
+    // Preview URL not available
   },
   {
     id: "callum",
@@ -163,6 +195,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 30,
     characteristics: "Video character, intense, hoarse",
     providerId: "N2lVS1w4EtoT3dr4eOWO",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/N2lVS1w4EtoT3dr4eOWO/ac833bd8-ffda-4938-9ebc-b0f99ca25481.mp3",
   },
   {
     id: "patrick",
@@ -170,8 +203,9 @@ export const VAPI_VOICES: VoiceOption[] = [
     gender: "Male",
     accent: "American",
     age: 28,
-    characteristics: "Should, confident, professional",
+    characteristics: "Shouty, confident, professional",
     providerId: "ODq5zmih8GrVes37Dizd",
+    // Preview URL not available
   },
   {
     id: "harry",
@@ -181,6 +215,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 32,
     characteristics: "Anxious, soft, nervous",
     providerId: "SOYHLrjzK2X1ezoPC6cr",
+    // Preview URL not available
   },
   {
     id: "josh",
@@ -190,6 +225,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 28,
     characteristics: "Deep, narrative, articulate",
     providerId: "TxGEqnHWrfWFTfGW9XjX",
+    // Preview URL not available
   },
   {
     id: "arnold",
@@ -199,6 +235,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 40,
     characteristics: "Crisp, narrative, authoritative",
     providerId: "VR6AewLTigWG4xSOukaG",
+    // Preview URL not available
   },
   {
     id: "charlotte",
@@ -208,6 +245,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 30,
     characteristics: "Seductive, video games, mysterious",
     providerId: "XB0fDUnXU5powFXDhCwa",
+    // Preview URL not available
   },
   {
     id: "matilda",
@@ -217,6 +255,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 28,
     characteristics: "Warm, friendly, pleasant",
     providerId: "XrExE9yKIg1WjnnlVkGX",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/XrExE9yKIg1WjnnlVkGX/b930e18d-6b4d-466e-bab2-0ae97c6d8535.mp3",
   },
   {
     id: "james",
@@ -226,6 +265,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 35,
     characteristics: "Calm, old, news presenter",
     providerId: "ZQe5CZNOzWyzPSCn5a3c",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/ZQe5CZNOzWyzPSCn5a3c/35734112-7b72-48df-bc2f-64d5ab2f791b.mp3",
   },
   {
     id: "joseph",
@@ -235,6 +275,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 40,
     characteristics: "News anchor, authoritative, clear",
     providerId: "Zlb1dXrM653N07WRdFW3",
+    // Preview URL not available
   },
   {
     id: "adam",
@@ -244,6 +285,7 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 30,
     characteristics: "Deep, narrative, professional",
     providerId: "pNInz6obpgDQGcFmaJgB",
+    previewUrl: "https://storage.googleapis.com/eleven-public-prod/premade/voices/pNInz6obpgDQGcFmaJgB/e0b45450-78db-49b9-aaa4-d5358a6871bd.mp3",
   },
   {
     id: "sam",
@@ -253,13 +295,15 @@ export const VAPI_VOICES: VoiceOption[] = [
     age: 28,
     characteristics: "Raspy, young, dynamic",
     providerId: "yoZ06aMxZJJ28mfd3POQ",
+    // Preview URL not available
   },
 ]
 
 // ============================================================================
 // RETELL VOICES
 // Reference: https://docs.retellai.com/api-references/list-voices
-// Currently only Adrian is supported
+// Note: Retell voices are now fetched dynamically from the API
+// This static list is kept as fallback only
 // ============================================================================
 
 export const RETELL_VOICES: VoiceOption[] = [
@@ -268,7 +312,7 @@ export const RETELL_VOICES: VoiceOption[] = [
     name: "Adrian",
     gender: "Male",
     accent: "American",
-    age: 25, // Young
+    age: 25,
     characteristics: "Professional, clear, confident voice from ElevenLabs",
     providerId: "11labs-Adrian",
   },
@@ -346,4 +390,3 @@ export function getVoiceCardColor(gender: "Male" | "Female"): { bg: string; text
     ? { bg: "bg-pink-100", text: "text-pink-600" }
     : { bg: "bg-blue-100", text: "text-blue-600" }
 }
-

@@ -46,6 +46,9 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { getVoicesForProvider, getVoiceCardColor, type VoiceOption } from "@/lib/voice"
+import { useRetellVoices } from "@/lib/hooks/use-retell-voices"
+import type { RetellVoice } from "@/lib/integrations/retell/voices"
+import { Play, Volume2 } from "lucide-react"
 
 interface WorkspaceAgentFormProps {
   initialData?: AIAgent
@@ -105,6 +108,10 @@ export function WorkspaceAgentForm({
 
   // Voice list state
   const [isVoiceListOpen, setIsVoiceListOpen] = useState(false)
+  
+  // Audio preview state
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null)
+  const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null)
 
   // Fetch available phone numbers for assignment (only for outbound agents)
   const {
@@ -145,6 +152,49 @@ export function WorkspaceAgentForm({
   // Fetch the assigned integration for the selected provider (from org-level)
   const { data: assignedIntegration, isLoading: assignedIntegrationLoading } =
     useWorkspaceAssignedIntegration(selectedProvider || "vapi")
+
+  // Fetch Retell voices dynamically
+  const { 
+    data: retellVoicesData, 
+    isLoading: isLoadingRetellVoices,
+    error: retellVoicesError 
+  } = useRetellVoices()
+
+  // Audio preview handlers
+  const playVoicePreview = (voiceId: string, previewUrl: string | undefined) => {
+    if (!previewUrl) return
+
+    // Stop any currently playing audio
+    if (audioRef) {
+      audioRef.pause()
+      audioRef.currentTime = 0
+    }
+
+    // If clicking the same voice that's playing, just stop it
+    if (playingVoiceId === voiceId) {
+      setPlayingVoiceId(null)
+      return
+    }
+
+    // Play new audio
+    const audio = new Audio(previewUrl)
+    audio.onended = () => setPlayingVoiceId(null)
+    audio.onerror = () => {
+      setPlayingVoiceId(null)
+      toast.error("Failed to play voice preview")
+    }
+    audio.play()
+    setAudioRef(audio)
+    setPlayingVoiceId(voiceId)
+  }
+
+  const stopVoicePreview = () => {
+    if (audioRef) {
+      audioRef.pause()
+      audioRef.currentTime = 0
+    }
+    setPlayingVoiceId(null)
+  }
 
   // Check if agent is synced
   const syncStatus = initialData?.sync_status || "not_synced"
@@ -638,8 +688,12 @@ export function WorkspaceAgentForm({
 
             {(() => {
               const selectedVoiceId = watch("config.voice_id")
-              const availableVoices = getVoicesForProvider(selectedProvider as "vapi" | "retell")
+              // For Retell: use dynamically fetched voices, for VAPI: use static list
+              const availableVoices: (VoiceOption | RetellVoice)[] = selectedProvider === "retell" 
+                ? (retellVoicesData?.voices || [])
+                : getVoicesForProvider(selectedProvider as "vapi" | "retell")
               const selectedVoice = availableVoices.find((v) => v.id === selectedVoiceId)
+              const isRetellProvider = selectedProvider === "retell"
 
               return (
                 <div className="space-y-3">
@@ -649,6 +703,10 @@ export function WorkspaceAgentForm({
                       <div className="flex items-start gap-3">
                         {(() => {
                           const colors = getVoiceCardColor(selectedVoice.gender)
+                          const retellVoice = isRetellProvider ? (selectedVoice as RetellVoice) : null
+                          const vapiVoice = !isRetellProvider ? (selectedVoice as VoiceOption) : null
+                          const isPlaying = playingVoiceId === selectedVoice.id
+
                           return (
                             <>
                               <div
@@ -670,18 +728,16 @@ export function WorkspaceAgentForm({
                                   <Check className="h-4 w-4 text-green-600 ml-auto" />
                                 </div>
                                 <p className="text-xs text-muted-foreground">
-                                  {selectedVoice.accent} • Age {selectedVoice.age}
+                                  {selectedVoice.accent} • {isRetellProvider ? `Age: ${retellVoice?.age}` : `Age ${vapiVoice?.age}`}
                                 </p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {selectedVoice.characteristics}
-                                </p>
-                                {selectedProvider === "retell" && (
+                                {vapiVoice?.characteristics && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {vapiVoice.characteristics}
+                                  </p>
+                                )}
+                                {isRetellProvider && (
                                   <p className="text-xs text-muted-foreground mt-2">
-                                    Voice ID:{" "}
-                                    <code className="bg-muted px-1 rounded">
-                                      {selectedVoice.id}
-                                    </code>{" "}
-                                    • Provider: ElevenLabs
+                                    Provider: ElevenLabs
                                   </p>
                                 )}
                               </div>
@@ -689,7 +745,37 @@ export function WorkspaceAgentForm({
                           )
                         })()}
                       </div>
-                      <div className="mt-3">
+                      <div className="mt-3 flex gap-2">
+                        {/* Audio Preview Button for selected voice */}
+                        {(() => {
+                          const previewUrl = isRetellProvider 
+                            ? (selectedVoice as RetellVoice)?.previewAudioUrl 
+                            : (selectedVoice as VoiceOption)?.previewUrl
+                          if (!previewUrl) return null
+                          return (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => playVoicePreview(selectedVoice.id, previewUrl)}
+                              className={cn(
+                                playingVoiceId === selectedVoice.id && "bg-primary text-primary-foreground"
+                              )}
+                            >
+                              {playingVoiceId === selectedVoice.id ? (
+                                <>
+                                  <Volume2 className="h-4 w-4 mr-1 animate-pulse" />
+                                  Playing...
+                                </>
+                              ) : (
+                                <>
+                                  <Play className="h-4 w-4 mr-1" />
+                                  Preview
+                                </>
+                              )}
+                            </Button>
+                          )
+                        })()}
                         <Button
                           type="button"
                           variant="outline"
@@ -714,81 +800,152 @@ export function WorkspaceAgentForm({
                             type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => setIsVoiceListOpen(false)}
+                            onClick={() => {
+                              setIsVoiceListOpen(false)
+                              stopVoicePreview()
+                            }}
                           >
                             <X className="h-4 w-4 mr-1" />
                             Cancel
                           </Button>
                         )}
                       </div>
-                      <ScrollArea
-                        className={cn(
-                          "rounded-lg border p-2",
-                          availableVoices.length <= 3 ? "h-auto" : "h-[320px]"
-                        )}
-                      >
+
+                      {/* Loading state for Retell voices */}
+                      {isRetellProvider && isLoadingRetellVoices && (
                         <div className="space-y-2">
-                          {availableVoices.map((voice) => {
-                            const colors = getVoiceCardColor(voice.gender)
-                            return (
-                              <div
-                                key={voice.id}
-                                className="p-3 rounded-lg hover:bg-muted border border-transparent hover:border-border transition-all"
-                              >
-                                <div className="flex items-start gap-3">
-                                  <div
-                                    className={cn(
-                                      "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
-                                      colors.bg
-                                    )}
-                                  >
-                                    <span className={cn("font-semibold", colors.text)}>
-                                      {voice.name[0]}
-                                    </span>
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <p className="font-medium text-sm">{voice.name}</p>
-                                      <Badge variant="outline" className="text-xs">
-                                        {voice.gender}
-                                      </Badge>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {voice.accent} • Age {voice.age}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                      {voice.characteristics}
-                                    </p>
-                                    {selectedProvider === "retell" && (
-                                      <p className="text-xs text-muted-foreground mt-1">
-                                        Voice ID:{" "}
-                                        <code className="bg-muted px-1 rounded text-xs">
-                                          {voice.id}
-                                        </code>
-                                      </p>
-                                    )}
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    onClick={() => {
-                                      setValue("config.voice_id", voice.id)
-                                      setIsVoiceListOpen(false)
-                                    }}
-                                  >
-                                    <Plus className="h-4 w-4 mr-1" />
-                                    Add
-                                  </Button>
+                          {[1, 2, 3].map((i) => (
+                            <div key={i} className="p-3 rounded-lg border">
+                              <div className="flex items-start gap-3">
+                                <Skeleton className="w-10 h-10 rounded-full" />
+                                <div className="flex-1 space-y-2">
+                                  <Skeleton className="h-4 w-24" />
+                                  <Skeleton className="h-3 w-32" />
+                                  <Skeleton className="h-3 w-40" />
                                 </div>
+                                <Skeleton className="h-8 w-16" />
                               </div>
-                            )
-                          })}
+                            </div>
+                          ))}
                         </div>
-                      </ScrollArea>
-                      <p className="text-xs text-muted-foreground">
-                        {availableVoices.length} voice{availableVoices.length !== 1 ? "s" : ""}{" "}
-                        available for {selectedProvider === "vapi" ? "Vapi" : "Retell"}
-                      </p>
+                      )}
+
+                      {/* Error state for Retell voices */}
+                      {isRetellProvider && retellVoicesError && (
+                        <div className="p-4 rounded-lg border border-destructive/50 bg-destructive/10">
+                          <div className="flex items-center gap-2 text-destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <p className="text-sm font-medium">Failed to load voices</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {retellVoicesError instanceof Error 
+                              ? retellVoicesError.message 
+                              : "Please ensure a Retell integration is configured for this workspace."}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Voice list */}
+                      {!(isRetellProvider && isLoadingRetellVoices) && 
+                       !(isRetellProvider && retellVoicesError) && (
+                        <>
+                          <ScrollArea
+                            className={cn(
+                              "rounded-lg border p-2",
+                              availableVoices.length <= 3 ? "h-auto" : "h-[320px]"
+                            )}
+                          >
+                            <div className="space-y-2">
+                              {availableVoices.map((voice) => {
+                                const colors = getVoiceCardColor(voice.gender)
+                                const retellVoice = isRetellProvider ? (voice as RetellVoice) : null
+                                const vapiVoice = !isRetellProvider ? (voice as VoiceOption) : null
+                                const isPlaying = playingVoiceId === voice.id
+
+                                return (
+                                  <div
+                                    key={voice.id}
+                                    className="p-3 rounded-lg hover:bg-muted border border-transparent hover:border-border transition-all"
+                                  >
+                                    <div className="flex items-start gap-3">
+                                      <div
+                                        className={cn(
+                                          "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
+                                          colors.bg
+                                        )}
+                                      >
+                                        <span className={cn("font-semibold", colors.text)}>
+                                          {voice.name[0]}
+                                        </span>
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <p className="font-medium text-sm">{voice.name}</p>
+                                          <Badge variant="outline" className="text-xs">
+                                            {voice.gender}
+                                          </Badge>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                          {voice.accent} • {isRetellProvider ? `Age: ${retellVoice?.age}` : `Age ${vapiVoice?.age}`}
+                                        </p>
+                                        {vapiVoice?.characteristics && (
+                                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                            {vapiVoice.characteristics}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {/* Audio Preview Button */}
+                                        {(() => {
+                                          const previewUrl = isRetellProvider 
+                                            ? retellVoice?.previewAudioUrl 
+                                            : vapiVoice?.previewUrl
+                                          if (!previewUrl) return null
+                                          return (
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => playVoicePreview(voice.id, previewUrl)}
+                                              className={cn(
+                                                "w-8 h-8 p-0",
+                                                isPlaying && "bg-primary text-primary-foreground"
+                                              )}
+                                            >
+                                              {isPlaying ? (
+                                                <Volume2 className="h-4 w-4 animate-pulse" />
+                                              ) : (
+                                                <Play className="h-4 w-4" />
+                                              )}
+                                            </Button>
+                                          )
+                                        })()}
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          onClick={() => {
+                                            setValue("config.voice_id", voice.id)
+                                            setIsVoiceListOpen(false)
+                                            stopVoicePreview()
+                                          }}
+                                        >
+                                          <Plus className="h-4 w-4 mr-1" />
+                                          Select
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </ScrollArea>
+                          <p className="text-xs text-muted-foreground">
+                            {availableVoices.length} voice{availableVoices.length !== 1 ? "s" : ""}{" "}
+                            available for {selectedProvider === "vapi" ? "Vapi" : "Retell"}
+                            {isRetellProvider && " (ElevenLabs)"}
+                          </p>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

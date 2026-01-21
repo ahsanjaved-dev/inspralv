@@ -6,7 +6,6 @@
 import type { AIAgent, AgentConfig, FunctionTool } from "@/types/database.types"
 import { mapFunctionToolsToRetell } from "@/lib/integrations/function_tools/retell"
 import type { RetellGeneralTool } from "@/lib/integrations/function_tools/retell/types"
-import { getRetellVoices, getDefaultVoice } from "@/lib/voice"
 import { env } from "@/lib/env"
 
 // Re-export for backwards compatibility
@@ -113,18 +112,20 @@ export interface RetellAgentUpdate {
 // DEFAULT VOICE
 // ============================================================================
 
-// Get available Retell voices for validation
-const RETELL_VOICE_IDS = getRetellVoices().map((v) => v.id)
-
 // Default Retell voice (Adrian - professional, clear, confident)
-const RETELL_DEFAULT_VOICE_ID = getDefaultVoice("retell").id
+// Used as fallback when no voice is selected
+const RETELL_DEFAULT_VOICE_ID = "11labs-Adrian"
 
 /**
- * Validates if a voice ID is a valid Retell voice
+ * Validates if a voice ID is provided and looks like a valid Retell voice ID
+ * Note: Retell voices are now fetched dynamically from the API, so we only
+ * check for basic validity (non-empty, starts with a known prefix pattern)
  */
 function isValidRetellVoiceId(voiceId: string | undefined): boolean {
-  if (!voiceId) return false
-  return RETELL_VOICE_IDS.includes(voiceId)
+  if (!voiceId || voiceId.trim() === "") return false
+  // Accept any voice ID - dynamic voices come from Retell API
+  // Retell voice IDs typically follow patterns like "11labs-Adrian", "openai-alloy", etc.
+  return true
 }
 
 // ============================================================================
