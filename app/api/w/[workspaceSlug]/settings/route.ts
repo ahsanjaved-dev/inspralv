@@ -169,8 +169,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
           if (varIndex === -1) {
             return apiError("Variable not found")
           }
+          const existingVar = existingVariables[varIndex]!
           // Check if the variable is a standard variable
-          if (existingVariables[varIndex].is_standard) {
+          if (existingVar.is_standard) {
             return apiError("Cannot modify standard variables")
           }
           // Check for duplicate name (excluding current variable)
@@ -183,10 +184,10 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
           // Update the variable
           const updatedVariables = [...existingVariables]
           updatedVariables[varIndex] = {
-            ...updatedVariables[varIndex],
+            ...existingVar,
             ...variable,
             id: variable_id, // Keep original ID
-            created_at: updatedVariables[varIndex].created_at, // Keep original timestamp
+            created_at: existingVar.created_at, // Keep original timestamp
           }
           newSettings.custom_variables = updatedVariables
           break

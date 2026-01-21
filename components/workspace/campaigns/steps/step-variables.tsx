@@ -62,7 +62,9 @@ export function StepVariables({
     const promptText = agentSystemPrompt + " " + agentGreeting
     let match
     while ((match = regex.exec(promptText)) !== null) {
-      matches.add(match[1].toLowerCase())
+      if (match[1]) {
+        matches.add(match[1].toLowerCase())
+      }
     }
     
     return matches

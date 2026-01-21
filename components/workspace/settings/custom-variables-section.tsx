@@ -399,11 +399,16 @@ export function CustomVariablesSection() {
 
   const handleSave = async (data: VariableFormData) => {
     try {
+      // Ensure category is not "standard" for API calls (standard vars can't be added/edited)
+      const apiData = {
+        ...data,
+        category: data.category as "contact" | "business" | "custom",
+      }
       if (editingVariable) {
-        await updateVariable.mutateAsync({ id: editingVariable.id, ...data })
+        await updateVariable.mutateAsync({ id: editingVariable.id, ...apiData })
         toast.success("Variable updated successfully")
       } else {
-        await addVariable.mutateAsync(data)
+        await addVariable.mutateAsync(apiData)
         toast.success("Variable added successfully")
       }
       setDialogOpen(false)
