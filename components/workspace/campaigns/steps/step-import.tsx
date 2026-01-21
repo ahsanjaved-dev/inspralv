@@ -9,6 +9,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectSeparator,
 } from "@/components/ui/select"
 import {
   Table,
@@ -28,9 +29,11 @@ import {
   ArrowRight,
   Info,
   AlertTriangle,
+  Sparkles,
 } from "lucide-react"
 import type { CreateRecipientInput } from "@/types/database.types"
 import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
+import { useWorkspaceCustomVariables } from "@/lib/hooks/use-workspace-settings"
 
 interface StepImportProps {
   formData: WizardFormData
@@ -40,22 +43,23 @@ interface StepImportProps {
 
 // Standard field mappings - aligned with Inspra Outbound API variables
 const STANDARD_FIELDS = [
-  { key: "phone_number", label: "Phone Number", required: true },
-  { key: "first_name", label: "First Name", required: false },
-  { key: "last_name", label: "Last Name", required: false },
-  { key: "email", label: "Email", required: false },
-  { key: "company", label: "Company", required: false },
-  { key: "reason_for_call", label: "Reason for Call", required: false },
-  { key: "address_line_1", label: "Address Line 1", required: false },
-  { key: "address_line_2", label: "Address Line 2", required: false },
-  { key: "suburb", label: "Suburb/City", required: false },
-  { key: "state", label: "State", required: false },
-  { key: "post_code", label: "Post Code", required: false },
-  { key: "country", label: "Country", required: false },
-  { key: "skip", label: "Skip Column", required: false },
+  { key: "phone_number", label: "Phone Number", required: true, isCustom: false },
+  { key: "first_name", label: "First Name", required: false, isCustom: false },
+  { key: "last_name", label: "Last Name", required: false, isCustom: false },
+  { key: "email", label: "Email", required: false, isCustom: false },
+  { key: "company", label: "Company", required: false, isCustom: false },
+  { key: "reason_for_call", label: "Reason for Call", required: false, isCustom: false },
+  { key: "address_line_1", label: "Address Line 1", required: false, isCustom: false },
+  { key: "address_line_2", label: "Address Line 2", required: false, isCustom: false },
+  { key: "suburb", label: "Suburb/City", required: false, isCustom: false },
+  { key: "state", label: "State", required: false, isCustom: false },
+  { key: "post_code", label: "Post Code", required: false, isCustom: false },
+  { key: "country", label: "Country", required: false, isCustom: false },
+  { key: "skip", label: "Skip Column", required: false, isCustom: false },
 ] as const
 
-type FieldKey = (typeof STANDARD_FIELDS)[number]["key"]
+type StandardFieldKey = (typeof STANDARD_FIELDS)[number]["key"]
+type FieldKey = StandardFieldKey | string // Allow custom variable keys
 
 interface ColumnMapping {
   csvColumn: string
@@ -86,6 +90,31 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
   const [step, setStep] = useState<"upload" | "mapping" | "preview">(
     formData.recipients.length > 0 ? "preview" : "upload"
   )
+
+  // Get workspace custom variables for mapping dropdown
+  const { customVariables: workspaceVariables } = useWorkspaceCustomVariables()
+
+  // Combine standard fields with workspace custom variables
+  const allMappingFields = useMemo(() => {
+    const fields: Array<{ key: string; label: string; required: boolean; isCustom: boolean }> = [
+      ...STANDARD_FIELDS.map(f => ({ ...f, isCustom: false })),
+    ]
+    
+    // Add workspace custom variables
+    workspaceVariables.forEach(v => {
+      // Don't add if already exists in standard fields
+      if (!STANDARD_FIELDS.some(sf => sf.key === v.name)) {
+        fields.push({
+          key: v.name,
+          label: v.description || v.name,
+          required: false,
+          isCustom: true,
+        })
+      }
+    })
+    
+    return fields
+  }, [workspaceVariables])
 
   // Analyze data quality
   const dataQualityReport = useMemo((): DataQualityReport | null => {
@@ -171,12 +200,14 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
   }
 
   // Auto-detect column mapping based on header names
-  const autoDetectMapping = (headers: string[]): ColumnMapping[] => {
+  const autoDetectMapping = useCallback((headers: string[]): ColumnMapping[] => {
     return headers.map((header) => {
       const lowerHeader = header.toLowerCase().replace(/[_\s-]/g, "")
+      const exactHeader = header.toLowerCase().replace(/[\s-]/g, "_")
 
       let mappedTo: FieldKey = "skip"
 
+      // First check standard fields
       if (["phone", "phonenumber", "mobile", "cell", "telephone"].includes(lowerHeader)) {
         mappedTo = "phone_number"
       } else if (["firstname", "first", "fname", "givenname"].includes(lowerHeader)) {
@@ -217,6 +248,14 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
         ["country", "countryname", "countrycode"].includes(lowerHeader)
       ) {
         mappedTo = "country"
+      } else {
+        // Check if it matches a workspace custom variable
+        const matchingCustomVar = workspaceVariables.find(
+          v => v.name.toLowerCase() === exactHeader || v.name.toLowerCase() === lowerHeader
+        )
+        if (matchingCustomVar) {
+          mappedTo = matchingCustomVar.name
+        }
       }
 
       return {
@@ -224,7 +263,7 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
         mappedTo,
       }
     })
-  }
+  }, [workspaceVariables])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -524,16 +563,38 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
                         value={mapping.mappedTo}
                         onValueChange={(value) => updateColumnMapping(index, value as FieldKey)}
                       >
-                        <SelectTrigger className="w-[180px]">
+                        <SelectTrigger className="w-[200px]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
+                          {/* Standard Fields */}
                           {STANDARD_FIELDS.map((field) => (
                             <SelectItem key={field.key} value={field.key}>
                               {field.label}
                               {field.required && " *"}
                             </SelectItem>
                           ))}
+                          
+                          {/* Workspace Custom Variables */}
+                          {workspaceVariables.length > 0 && (
+                            <>
+                              <SelectSeparator />
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                                <Sparkles className="h-3 w-3" />
+                                Custom Variables
+                              </div>
+                              {workspaceVariables.map((variable) => (
+                                <SelectItem key={variable.id} value={variable.name}>
+                                  {variable.name}
+                                  {variable.description && (
+                                    <span className="text-muted-foreground ml-1">
+                                      ({variable.description})
+                                    </span>
+                                  )}
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                     </TableCell>

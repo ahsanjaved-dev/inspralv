@@ -1,19 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -42,9 +34,6 @@ import {
   Info,
   Copy,
   CheckCircle,
-  Briefcase,
-  User,
-  Sparkles,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -55,10 +44,8 @@ import {
 } from "@/lib/hooks/use-workspace-settings"
 import {
   type CustomVariableDefinition,
-  type CustomVariableCategory,
   STANDARD_CAMPAIGN_VARIABLES,
 } from "@/types/database.types"
-import { cn } from "@/lib/utils"
 
 // =============================================================================
 // TYPES
@@ -68,38 +55,12 @@ interface VariableFormData {
   name: string
   description: string
   default_value: string
-  is_required: boolean
-  category: CustomVariableCategory
 }
 
 const DEFAULT_FORM_DATA: VariableFormData = {
   name: "",
   description: "",
   default_value: "",
-  is_required: false,
-  category: "custom",
-}
-
-// =============================================================================
-// CATEGORY BADGES
-// =============================================================================
-
-const categoryConfig: Record<CustomVariableCategory, { label: string; color: string; icon: React.ComponentType<{ className?: string }> }> = {
-  standard: { label: "Standard", color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300", icon: Lock },
-  contact: { label: "Contact", color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300", icon: User },
-  business: { label: "Business", color: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300", icon: Briefcase },
-  custom: { label: "Custom", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300", icon: Sparkles },
-}
-
-function CategoryBadge({ category }: { category: CustomVariableCategory }) {
-  const config = categoryConfig[category]
-  const Icon = config.icon
-  return (
-    <Badge variant="secondary" className={cn("text-xs gap-1", config.color)}>
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </Badge>
-  )
 }
 
 // =============================================================================
@@ -142,9 +103,8 @@ function VariableCard({ variable, isStandard, onEdit, onDelete }: VariableCardPr
               <Copy className="h-3.5 w-3.5 text-muted-foreground" />
             )}
           </Button>
-          <CategoryBadge category={variable.category} />
-          {variable.is_required && (
-            <Badge variant="destructive" className="text-xs">Required</Badge>
+          {isStandard && (
+            <Badge variant="secondary" className="text-xs">Standard</Badge>
           )}
         </div>
         <p className="text-sm text-muted-foreground line-clamp-2">
@@ -200,35 +160,28 @@ interface VariableDialogProps {
 }
 
 function VariableDialog({ open, onOpenChange, variable, onSave, isSaving }: VariableDialogProps) {
-  const [formData, setFormData] = useState<VariableFormData>(
-    variable
-      ? {
-          name: variable.name,
-          description: variable.description,
-          default_value: variable.default_value,
-          is_required: variable.is_required,
-          category: variable.category,
-        }
-      : DEFAULT_FORM_DATA
-  )
+  const [formData, setFormData] = useState<VariableFormData>(DEFAULT_FORM_DATA)
   const [error, setError] = useState<string | null>(null)
 
-  // Reset form when dialog opens/closes or variable changes
-  const handleOpenChange = (newOpen: boolean) => {
-    if (newOpen) {
-      setFormData(
-        variable
-          ? {
-              name: variable.name,
-              description: variable.description,
-              default_value: variable.default_value,
-              is_required: variable.is_required,
-              category: variable.category,
-            }
-          : DEFAULT_FORM_DATA
-      )
+  // Update form data when variable changes or dialog opens
+  // This fixes the issue where edit dialog shows empty fields
+  useEffect(() => {
+    if (open) {
+      if (variable) {
+        setFormData({
+          name: variable.name,
+          description: variable.description || "",
+          default_value: variable.default_value || "",
+        })
+      } else {
+        setFormData(DEFAULT_FORM_DATA)
+      }
       setError(null)
     }
+  }, [open, variable])
+
+  // Reset form when dialog opens/closes
+  const handleOpenChange = (newOpen: boolean) => {
     onOpenChange(newOpen)
   }
 
@@ -306,38 +259,6 @@ function VariableDialog({ open, onOpenChange, variable, onSave, isSaving }: Vari
             </p>
           </div>
 
-          {/* Category */}
-          <div className="space-y-2">
-            <Label>Category</Label>
-            <Select
-              value={formData.category}
-              onValueChange={(v) => setFormData({ ...formData, category: v as CustomVariableCategory })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="contact">Contact</SelectItem>
-                <SelectItem value="business">Business</SelectItem>
-                <SelectItem value="custom">Custom</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Required Toggle */}
-          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-            <div>
-              <Label className="mb-0">Required Variable</Label>
-              <p className="text-xs text-muted-foreground">
-                Campaign CSV must include this variable
-              </p>
-            </div>
-            <Switch
-              checked={formData.is_required}
-              onCheckedChange={(checked) => setFormData({ ...formData, is_required: checked })}
-            />
-          </div>
-
           {error && (
             <p className="text-sm text-destructive">{error}</p>
           )}
@@ -399,10 +320,11 @@ export function CustomVariablesSection() {
 
   const handleSave = async (data: VariableFormData) => {
     try {
-      // Ensure category is not "standard" for API calls (standard vars can't be added/edited)
+      // Always use "custom" category and not required for user-created variables
       const apiData = {
         ...data,
-        category: data.category as "contact" | "business" | "custom",
+        category: "custom" as const,
+        is_required: false,
       }
       if (editingVariable) {
         await updateVariable.mutateAsync({ id: editingVariable.id, ...apiData })
