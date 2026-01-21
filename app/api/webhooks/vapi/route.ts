@@ -458,10 +458,11 @@ function determineCallType(call: VapiCall): "web" | "inbound" | "outbound" {
 
 /**
  * Extract formatted transcript from VAPI webhook payload
- * IMPORTANT: VAPI sends messages at ROOT level of the webhook payload, NOT inside call.artifact!
+ * PRIORITY: Messages arrays (have roles) > Transcript strings (may not have roles)
+ * This ensures we capture BOTH agent and user speech with proper speaker identification
  */
 function extractFormattedTranscript(call: VapiCall, payload?: VapiWebhookPayload): string | null {
-  // Priority 1: ROOT LEVEL messages (VAPI's ACTUAL format!)
+  // Priority 1: ROOT LEVEL messages (VAPI's ACTUAL format - best quality)
   if (payload?.messages && payload.messages.length > 0) {
     return payload.messages
       .filter((m) => m.role === "assistant" || m.role === "user" || m.role === "bot")
@@ -473,33 +474,7 @@ function extractFormattedTranscript(call: VapiCall, payload?: VapiWebhookPayload
       .join("\n")
   }
 
-  // Priority 2: ROOT LEVEL transcript string
-  if (payload?.transcript) {
-    return payload.transcript
-  }
-
-  // Priority 3: Use artifact.transcript (per VAPI docs, but may not be sent)
-  if (call.artifact?.transcript) {
-    // Check if it's an array or string
-    if (Array.isArray(call.artifact.transcript)) {
-      return call.artifact.transcript
-        .filter((m) => m.role === "assistant" || m.role === "user" || m.role === "bot")
-        .map((m) => {
-          const role = m.role === "assistant" || m.role === "bot" ? "Agent" : "User"
-          const content = m.message || m.content || ""
-          return `${role}: ${content}`
-        })
-        .join("\n")
-    }
-    return call.artifact.transcript as string
-  }
-
-  // Priority 4: Use call.transcript (legacy location)
-  if (call.transcript) {
-    return call.transcript
-  }
-
-  // Priority 5: Build from artifact.messages
+  // Priority 2: artifact.messages (has roles and timestamps)
   if (call.artifact?.messages && call.artifact.messages.length > 0) {
     return call.artifact.messages
       .filter((m) => m.role === "assistant" || m.role === "user" || m.role === "bot")
@@ -511,7 +486,19 @@ function extractFormattedTranscript(call: VapiCall, payload?: VapiWebhookPayload
       .join("\n")
   }
 
-  // Priority 6: Build from deprecated messages array at call level
+  // Priority 3: artifact.transcript as array (has roles)
+  if (call.artifact?.transcript && Array.isArray(call.artifact.transcript)) {
+    return call.artifact.transcript
+      .filter((m) => m.role === "assistant" || m.role === "user" || m.role === "bot")
+      .map((m) => {
+        const role = m.role === "assistant" || m.role === "bot" ? "Agent" : "User"
+        const content = m.message || m.content || ""
+        return `${role}: ${content}`
+      })
+      .join("\n")
+  }
+
+  // Priority 4: call.messages (legacy location but has roles)
   if (call.messages && call.messages.length > 0) {
     return call.messages
       .filter((m) => m.role === "assistant" || m.role === "user" || m.role === "bot")
@@ -521,6 +508,21 @@ function extractFormattedTranscript(call: VapiCall, payload?: VapiWebhookPayload
         return `${role}: ${content}`
       })
       .join("\n")
+  }
+
+  // Priority 5: ROOT LEVEL transcript string (may not have speaker IDs)
+  if (payload?.transcript) {
+    return payload.transcript
+  }
+
+  // Priority 6: artifact.transcript as string (may not have speaker IDs)
+  if (call.artifact?.transcript && typeof call.artifact.transcript === "string") {
+    return call.artifact.transcript
+  }
+
+  // Priority 7: call.transcript legacy string (may not have speaker IDs)
+  if (call.transcript) {
+    return call.transcript
   }
 
   return null

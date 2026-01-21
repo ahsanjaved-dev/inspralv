@@ -627,22 +627,12 @@ async function handleEndOfCallReport(
     }
 
     // Extract transcript from message.artifact
+    // PRIORITY: artifact.messages (has roles) > artifact.transcript array > artifact.transcript string > call.transcript
+    // This ensures we capture BOTH agent and user speech with proper speaker identification
     let transcript: string | null = null
-    if (artifact?.transcript) {
-      // artifact.transcript can be string or array
-      if (typeof artifact.transcript === "string") {
-        transcript = artifact.transcript
-      } else if (Array.isArray(artifact.transcript)) {
-        transcript = artifact.transcript
-          .filter((t: any) => t.role === "assistant" || t.role === "user" || t.role === "bot")
-          .map((t: any) => {
-            const role = t.role === "assistant" || t.role === "bot" ? "Agent" : "User"
-            return `${role}: ${t.message || t.content || ""}`
-          })
-          .join("\n")
-      }
-    } else if (artifact?.messages && artifact.messages.length > 0) {
-      // artifact.messages array
+    
+    // Priority 1: Use artifact.messages array (best quality - has roles and timestamps)
+    if (artifact?.messages && artifact.messages.length > 0) {
       transcript = artifact.messages
         .filter((m: any) => m.role === "assistant" || m.role === "user" || m.role === "bot")
         .map((m: any) => {
@@ -650,8 +640,23 @@ async function handleEndOfCallReport(
           return `${role}: ${m.message || m.content || ""}`
         })
         .join("\n")
-    } else if (call.transcript) {
-      // Legacy fallback
+    }
+    // Priority 2: Use artifact.transcript if it's an array with role info
+    else if (artifact?.transcript && Array.isArray(artifact.transcript)) {
+      transcript = artifact.transcript
+        .filter((t: any) => t.role === "assistant" || t.role === "user" || t.role === "bot")
+        .map((t: any) => {
+          const role = t.role === "assistant" || t.role === "bot" ? "Agent" : "User"
+          return `${role}: ${t.message || t.content || ""}`
+        })
+        .join("\n")
+    }
+    // Priority 3: Use artifact.transcript string (may not have speaker IDs)
+    else if (artifact?.transcript && typeof artifact.transcript === "string") {
+      transcript = artifact.transcript
+    }
+    // Priority 4: Legacy fallback
+    else if (call.transcript) {
       transcript = call.transcript
     }
 
@@ -760,22 +765,12 @@ async function handleEndOfCallReport(
   }
 
   // Extract transcript from message.artifact
+  // PRIORITY: artifact.messages (has roles) > artifact.transcript array > artifact.transcript string > call.transcript
+  // This ensures we capture BOTH agent and user speech with proper speaker identification
   let transcript: string | null = null
-  if (artifact?.transcript) {
-    // artifact.transcript can be string or array
-    if (typeof artifact.transcript === "string") {
-      transcript = artifact.transcript
-    } else if (Array.isArray(artifact.transcript)) {
-      transcript = artifact.transcript
-        .filter((t: any) => t.role === "assistant" || t.role === "user" || t.role === "bot")
-        .map((t: any) => {
-          const role = t.role === "assistant" || t.role === "bot" ? "Agent" : "User"
-          return `${role}: ${t.message || t.content || ""}`
-        })
-        .join("\n")
-    }
-  } else if (artifact?.messages && artifact.messages.length > 0) {
-    // artifact.messages array
+  
+  // Priority 1: Use artifact.messages array (best quality - has roles and timestamps)
+  if (artifact?.messages && artifact.messages.length > 0) {
     transcript = artifact.messages
       .filter((m: any) => m.role === "assistant" || m.role === "user" || m.role === "bot")
       .map((m: any) => {
@@ -783,9 +778,28 @@ async function handleEndOfCallReport(
         return `${role}: ${m.message || m.content || ""}`
       })
       .join("\n")
-  } else if (call.transcript) {
-    // Legacy fallback
+    console.log(`[VAPI Webhook] Built transcript from artifact.messages (${artifact.messages.length} messages)`)
+  }
+  // Priority 2: Use artifact.transcript if it's an array with role info
+  else if (artifact?.transcript && Array.isArray(artifact.transcript)) {
+    transcript = artifact.transcript
+      .filter((t: any) => t.role === "assistant" || t.role === "user" || t.role === "bot")
+      .map((t: any) => {
+        const role = t.role === "assistant" || t.role === "bot" ? "Agent" : "User"
+        return `${role}: ${t.message || t.content || ""}`
+      })
+      .join("\n")
+    console.log(`[VAPI Webhook] Built transcript from artifact.transcript array`)
+  }
+  // Priority 3: Use artifact.transcript string (may not have speaker IDs)
+  else if (artifact?.transcript && typeof artifact.transcript === "string") {
+    transcript = artifact.transcript
+    console.log(`[VAPI Webhook] Using artifact.transcript string (no role info)`)
+  }
+  // Priority 4: Legacy fallback
+  else if (call.transcript) {
     transcript = call.transcript
+    console.log(`[VAPI Webhook] Using legacy call.transcript fallback`)
   }
 
   // Extract summary from message.analysis (VAPI's actual structure!)

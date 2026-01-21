@@ -16,22 +16,39 @@ import { env } from "@/lib/env"
 import { getVapiVoices, getDefaultVoice, findVoiceById } from "@/lib/voice"
 
 // ============================================================================
-// DEFAULT VOICE
+// DEFAULT VOICE (Using ElevenLabs)
 // ============================================================================
 
-// Get available VAPI voices for validation
-const VAPI_VOICE_IDS = getVapiVoices().map((v) => v.id)
+// Get available VAPI voices for validation (these are now ElevenLabs voices)
+const VAPI_VOICE_OPTIONS = getVapiVoices()
+const VAPI_VOICE_IDS = VAPI_VOICE_OPTIONS.map((v) => v.id)
 
-// Default VAPI voice (Harry - clear, energetic, professional)
-const DEFAULT_VAPI_VOICE_ID = getDefaultVoice("vapi").id
+// Default voice (Rachel - warm, professional, clear - ElevenLabs)
+const DEFAULT_VOICE = getDefaultVoice("vapi")
+const DEFAULT_ELEVENLABS_VOICE_ID = DEFAULT_VOICE.providerId || "21m00Tcm4TlvDq8ikWAM"
 
 /**
- * Validates if a voice ID is a valid VAPI built-in voice
- * IMPORTANT: VAPI voice IDs are case-sensitive (e.g., "Rohan" not "rohan")
+ * Gets the ElevenLabs voice ID for a given internal voice ID
+ * Returns the providerId (ElevenLabs ID) for the voice, or default if not found
  */
-function isValidVapiVoiceId(voiceId: string | undefined): boolean {
+function getElevenLabsVoiceId(voiceId: string | undefined): string {
+  if (!voiceId) return DEFAULT_ELEVENLABS_VOICE_ID
+  
+  // Find the voice option by id (case-insensitive)
+  const voice = VAPI_VOICE_OPTIONS.find(
+    (v) => v.id.toLowerCase() === voiceId.toLowerCase()
+  )
+  
+  // Return the providerId (ElevenLabs voice ID) or the default
+  return voice?.providerId || DEFAULT_ELEVENLABS_VOICE_ID
+}
+
+/**
+ * Validates if a voice ID is a valid voice option
+ */
+function isValidVoiceId(voiceId: string | undefined): boolean {
   if (!voiceId) return false
-  return VAPI_VOICE_IDS.includes(voiceId)
+  return VAPI_VOICE_IDS.some((id) => id.toLowerCase() === voiceId.toLowerCase())
 }
 
 // ============================================================================
@@ -286,24 +303,26 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
     payload.firstMessage = config.first_message
   }
 
-  // Voice configuration - ALWAYS include with validated voice ID
-  // Check if it's a valid VAPI built-in voice first
-  // IMPORTANT: VAPI expects capitalized voice IDs (e.g., "Rohan" not "rohan")
-  // NOTE: VAPI's built-in voices don't support additional settings like speed
-  if (isValidVapiVoiceId(config.voice_id)) {
-    // Use VAPI's built-in voice provider - no additional settings supported
-    payload.voice = {
-      provider: "vapi",
-      voiceId: config.voice_id!, // Keep original capitalization
-    }
-  } else {
-    // Fall back to default VAPI voice
-    payload.voice = {
-      provider: "vapi",
-      voiceId: DEFAULT_VAPI_VOICE_ID,
-    }
+  // Voice configuration - Using ElevenLabs (11labs) provider
+  // NOTE: VAPI built-in voices are ALL deprecated as of Jan 2026
+  // We now use ElevenLabs voices which are fully supported
+  const elevenLabsVoiceId = getElevenLabsVoiceId(config.voice_id)
+  
+  payload.voice = {
+    provider: "11labs",
+    voiceId: elevenLabsVoiceId,
   }
-  // Note: Speed and other voice settings are not supported for VAPI's built-in voices
+  
+  // Add voice settings if provided (ElevenLabs supports these)
+  if (config.voice_settings) {
+    if (config.voice_settings.stability !== undefined) {
+      payload.voice.stability = config.voice_settings.stability
+    }
+    if (config.voice_settings.similarity_boost !== undefined) {
+      payload.voice.similarityBoost = config.voice_settings.similarity_boost
+    }
+    // Note: ElevenLabs doesn't support speed setting directly
+  }
 
   // Model configuration
   // NOTE: We create a model block if any model-related settings OR tools are present,
