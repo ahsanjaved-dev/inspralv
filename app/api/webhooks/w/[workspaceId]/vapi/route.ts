@@ -894,28 +894,8 @@ async function handleEndOfCallReport(
       `[VAPI Webhook] Indexing UPDATED conversation to Algolia: ${conversationData.id}, workspace: ${actualConversationWorkspaceId}, cost: ${finalConversation.total_cost}`
     )
     try {
-      // Map Supabase snake_case to Conversation type
-      const mappedConversation: Conversation = {
-        id: finalConversation.id,
-        externalId: finalConversation.external_id,
-        workspaceId: finalConversation.workspace_id,
-        agentId: finalConversation.agent_id,
-        direction: finalConversation.direction,
-        status: finalConversation.status,
-        startedAt: finalConversation.started_at ? new Date(finalConversation.started_at) : null,
-        endedAt: finalConversation.ended_at ? new Date(finalConversation.ended_at) : null,
-        durationSeconds: finalConversation.duration_seconds,
-        transcript: finalConversation.transcript,
-        recordingUrl: finalConversation.recording_url,
-        summary: finalConversation.summary,
-        sentiment: finalConversation.sentiment,
-        phoneNumber: finalConversation.phone_number,
-        callerName: finalConversation.caller_name,
-        totalCost: finalConversation.total_cost,
-        metadata: finalConversation.metadata,
-        createdAt: new Date(finalConversation.created_at),
-        updatedAt: new Date(finalConversation.updated_at),
-      }
+      // Cast finalConversation to Conversation type (already in correct format from Supabase)
+      const mappedConversation = finalConversation as unknown as Conversation
 
       const indexResult = await indexCallLogToAlgolia({
         conversation: mappedConversation,

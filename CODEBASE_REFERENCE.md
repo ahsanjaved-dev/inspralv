@@ -1220,6 +1220,54 @@ Agent integration:
 
 ---
 
+## Custom Variables Module
+
+**Workspace-level custom variables for campaign personalization:**
+
+Storage:
+
+- `workspace.settings.custom_variables` (JSONB array in workspaces table)
+- Each variable has: id, name, description, default_value, is_required, category, created_at
+
+Types:
+
+- `CustomVariableDefinition` interface in `types/database.types.ts`
+- `STANDARD_CAMPAIGN_VARIABLES` constant for built-in variables (first_name, last_name, email, company, phone_number)
+- `WorkspaceSettings` interface includes custom_variables array
+
+API:
+
+- `PATCH /api/w/[workspaceSlug]/settings` with `custom_variable_operation` for CRUD
+  - Actions: `add`, `update`, `delete`
+- Settings API handles variable validation, duplicate prevention, and standard variable protection
+
+Hooks:
+
+- `useWorkspaceCustomVariables()` - Fetch workspace custom variables
+- `useAddCustomVariable()` - Add new variable
+- `useUpdateCustomVariable()` - Update existing variable
+- `useDeleteCustomVariable()` - Delete variable
+
+UI Components:
+
+- `components/workspace/settings/custom-variables-section.tsx` - Settings page section
+- Agent Wizard shows available variables for insertion into prompts
+- Campaign Wizard Step Variables shows standard + workspace + CSV variables
+
+Variable Flow:
+
+1. **Define**: Workspace Settings → Custom Variables → Add
+2. **Use**: Agent prompts use `{{variable_name}}` syntax
+3. **Provide**: Campaign CSV includes columns matching variable names
+4. **Resolve**: During calls, variables are replaced with recipient data
+
+Documentation:
+
+- `docs/CUSTOM_VARIABLES_GUIDE.md` - Complete guide with flowcharts and testing
+- `docs/campaign_custom_variables_test_data.csv` - Sample test data
+
+---
+
 ## Leads Module
 
 **New module for lead management:**

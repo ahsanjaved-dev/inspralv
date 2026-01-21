@@ -114,12 +114,20 @@ export function CampaignCard({
     router.push(`/w/${workspaceSlug}/campaigns/new?draft=${campaign.id}`)
   }
 
-  // Progress calculation
+  // Progress calculation - handle edge cases where stats might be stale
   const processedCalls = campaign.completed_calls ?? 0
   const successfulCalls = campaign.successful_calls ?? 0
   const failedCalls = campaign.failed_calls ?? 0
-  const progress = campaign.total_recipients > 0
-    ? Math.round((processedCalls / campaign.total_recipients) * 100)
+  const pendingCalls = campaign.pending_calls ?? 0
+  const totalRecipients = campaign.total_recipients ?? 0
+  
+  // Use actual total if available, otherwise infer from stats
+  const effectiveTotal = totalRecipients > 0 
+    ? totalRecipients 
+    : (processedCalls + pendingCalls)
+  
+  const progress = effectiveTotal > 0
+    ? Math.round((processedCalls / effectiveTotal) * 100)
     : 0
   const successRate = processedCalls > 0 ? Math.round((successfulCalls / processedCalls) * 100) : 0
 
@@ -131,6 +139,7 @@ export function CampaignCard({
   const isActive = campaign.status === "active"
   const isCompleted = campaign.status === "completed"
 
+  // Can start if ready - don't block on recipient count here, API validates
   const canStart = isReady
   const canCancel = isActive
   const canEdit = isDraft && !campaign.wizard_completed
@@ -177,7 +186,7 @@ export function CampaignCard({
             <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Users className="h-4 w-4" />
-                <span className="font-medium">{campaign.total_recipients.toLocaleString()}</span>
+                <span className="font-medium">{effectiveTotal.toLocaleString()}</span>
               </div>
 
               {(isActive || isCompleted) && (
@@ -222,11 +231,11 @@ export function CampaignCard({
             </div>
 
             {/* Progress bar */}
-            {campaign.total_recipients > 0 && (isActive || isCompleted) && (
+            {effectiveTotal > 0 && (isActive || isCompleted) && (
               <div className="mt-4">
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
                   <span>
-                    {processedCalls.toLocaleString()} / {campaign.total_recipients.toLocaleString()} processed
+                    {processedCalls.toLocaleString()} / {effectiveTotal.toLocaleString()} processed
                   </span>
                   <span className="font-medium">{progress}%</span>
                 </div>

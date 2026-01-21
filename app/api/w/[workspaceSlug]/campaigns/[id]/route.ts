@@ -14,6 +14,13 @@ import { terminateCampaignBatch } from "@/lib/integrations/campaign-provider"
 /**
  * Calculate accurate campaign stats from actual recipient data
  * This ensures stats are always correct regardless of webhook race conditions
+ * 
+ * IMPORTANT: Stats logic must match get_campaign_stats_batch SQL function and
+ * calculateCampaignStatsDirectQuery in the list endpoint:
+ * - pending = pending + queued + calling
+ * - completed = completed + failed  
+ * - successful = completed with outcome 'answered'
+ * - failed = failed status
  */
 async function calculateCampaignStats(
   campaignId: string,
@@ -26,9 +33,21 @@ async function calculateCampaignStats(
     .select("call_status, call_outcome")
     .eq("campaign_id", campaignId)
 
-  if (error || !recipients) {
+  if (error) {
     console.error("[CampaignAPI] Error calculating stats:", error)
     return null
+  }
+
+  // Handle case where campaign has no recipients yet
+  if (!recipients || recipients.length === 0) {
+    console.log("[CampaignAPI] No recipients found for campaign:", campaignId)
+    return {
+      total_recipients: 0,
+      pending_calls: 0,
+      completed_calls: 0,
+      successful_calls: 0,
+      failed_calls: 0,
+    }
   }
 
   const stats = {
@@ -40,13 +59,9 @@ async function calculateCampaignStats(
   }
 
   for (const r of recipients as { call_status: string; call_outcome: string | null }[]) {
-    // Count by status
-    if (r.call_status === "pending" || r.call_status === "queued") {
+    // Count by status - must match list endpoint and SQL function
+    if (r.call_status === "pending" || r.call_status === "queued" || r.call_status === "calling") {
       stats.pending_calls++
-    } else if (r.call_status === "calling") {
-      // "calling" counts as in-progress, not pending or completed
-      // but for progress calculation, we don't count it as complete
-      stats.pending_calls++ // Still pending from user's perspective
     } else if (r.call_status === "completed") {
       stats.completed_calls++
       // Only count as successful if outcome is "answered"
@@ -58,6 +73,8 @@ async function calculateCampaignStats(
       stats.failed_calls++
     }
   }
+
+  console.log("[CampaignAPI] Calculated stats for campaign:", campaignId.slice(0, 8), stats)
 
   return stats
 }

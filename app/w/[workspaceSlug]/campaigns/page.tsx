@@ -130,16 +130,22 @@ export default function CampaignsPage() {
   )
 
   const handleStart = async (campaign: CallCampaignWithAgent) => {
-    if (campaign.total_recipients === 0) {
-      toast.error("Add recipients before starting the campaign")
-      return
+    // Check both total_recipients and pending_calls - campaign might have recipients
+    // but stats could be stale. The API will do a final check.
+    const hasRecipients = campaign.total_recipients > 0 || (campaign.pending_calls ?? 0) > 0
+    
+    if (!hasRecipients) {
+      // Show warning but still try to start - API will validate
+      console.log("[Campaigns] Campaign appears to have no recipients, attempting start anyway:", campaign.id)
     }
     
     setStartingCampaignId(campaign.id)
     
     // Show immediate feedback toast - don't block with overlay
     const toastId = toast.loading("Starting campaign...", {
-      description: `${campaign.total_recipients} recipients will be called`
+      description: hasRecipients 
+        ? `${campaign.total_recipients} recipients will be called`
+        : "Checking recipients..."
     })
     
     try {
@@ -151,9 +157,18 @@ export default function CampaignsPage() {
         duration: 4000,
       })
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to start campaign", {
-        id: toastId,
-      })
+      const errorMessage = error instanceof Error ? error.message : "Failed to start campaign"
+      toast.error(errorMessage, { id: toastId })
+      
+      // If the error is about recipients, suggest adding them
+      if (errorMessage.toLowerCase().includes("recipient")) {
+        toast.info("Go to campaign details to add recipients", {
+          action: {
+            label: "View",
+            onClick: () => router.push(`/w/${workspaceSlug}/campaigns/${campaign.id}`)
+          }
+        })
+      }
     } finally {
       setStartingCampaignId(null)
     }

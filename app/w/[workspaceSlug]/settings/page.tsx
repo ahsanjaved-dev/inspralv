@@ -47,6 +47,7 @@ import {
 } from "@/lib/hooks/use-workspace-settings"
 import { PasswordStrengthIndicator } from "@/components/auth/password-strength"
 import { validatePassword } from "@/lib/auth/password"
+import { CustomVariablesSection } from "@/components/workspace/settings/custom-variables-section"
 
 // Common timezones
 const timezones = [
@@ -236,7 +237,7 @@ export default function WorkspaceSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-3xl">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold">Settings</h1>
@@ -332,6 +333,9 @@ export default function WorkspaceSettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Custom Variables Section */}
+      <CustomVariablesSection />
 
       {/* Account Security - Password Change */}
       <Card>

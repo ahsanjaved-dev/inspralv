@@ -1,0 +1,22 @@
+phone_number,first_name,last_name,email,company,product_interest,appointment_date,account_balance,referral_source,custom_notes
++15551234567,John,Smith,john.smith@example.com,Acme Corp,Solar Panels,January 25 at 2pm,$1500.00,Google Search,VIP customer
++15551234568,Sarah,Johnson,sarah.j@example.com,Tech Solutions,Home Security,January 26 at 10am,$2300.50,Friend Referral,Follow up required
++15551234569,Michael,Williams,m.williams@example.com,StartupXYZ,Smart Thermostat,January 27 at 3pm,$800.00,Facebook Ad,First time caller
++15551234570,Emily,Brown,emily.b@example.com,ConsultingCo,Energy Audit,January 28 at 11am,$3200.00,Email Campaign,Existing customer
++15551234571,David,Davis,david.d@example.com,RetailPlus,Window Replacement,January 29 at 4pm,$4500.00,Website,High priority
++15551234572,Jessica,Miller,j.miller@example.com,HealthFirst,Insulation,January 30 at 9am,$1100.00,TV Commercial,Budget conscious
++15551234573,Robert,Wilson,r.wilson@example.com,FinanceGroup,Solar Panels,February 1 at 1pm,$5000.00,Radio Ad,Business decision maker
++15551234574,Jennifer,Taylor,jennifer.t@example.com,EduCenter,Home Security,February 2 at 2pm,$950.00,Referral Program,Education focused
++15551234575,William,Anderson,will.a@example.com,LegalServices,Smart Thermostat,February 3 at 10am,$2800.00,LinkedIn,Professional
++15551234576,Amanda,Thomas,amanda.t@example.com,DesignStudio,Energy Audit,February 4 at 11am,$1750.00,Instagram,Creative industry
++15551234577,Christopher,Jackson,chris.j@example.com,MediaGroup,Solar Panels,February 5 at 9am,$4100.00,Podcast,Media professional
++15551234578,Ashley,White,ashley.w@example.com,FoodServices,Home Security,February 6 at 2pm,$1200.00,Google Search,Restaurant owner
++15551234579,Matthew,Harris,matt.h@example.com,AutoDealers,Smart Thermostat,February 7 at 11am,$3500.00,Billboard,Fleet manager
++15551234580,Stephanie,Martin,steph.m@example.com,RealtyPro,Energy Audit,February 8 at 10am,$2100.00,Realtor Network,Property manager
++15551234581,Daniel,Thompson,dan.t@example.com,SportsFit,Insulation,February 9 at 3pm,$1800.00,Gym Promotion,Fitness focused
++15551234582,Nicole,Garcia,nicole.g@example.com,TravelCo,Window Replacement,February 10 at 1pm,$2600.00,Travel Blog,Frequent traveler
++15551234583,Andrew,Martinez,andrew.m@example.com,AgriTech,Solar Panels,February 11 at 9am,$6200.00,Trade Show,Farm owner
++15551234584,Lauren,Robinson,lauren.r@example.com,BeautySalon,Home Security,February 12 at 4pm,$900.00,Yelp Review,Small business
++15551234585,Joshua,Clark,josh.c@example.com,ConstructionCo,Smart Thermostat,February 13 at 10am,$4800.00,Contractor Network,Builder
++15551234586,Megan,Rodriguez,megan.r@example.com,PetCare,Energy Audit,February 14 at 2pm,$1400.00,Pet Store,Animal lover
+

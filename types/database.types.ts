@@ -2090,6 +2090,140 @@ export const vapiIntegrationConfigSchema = z.object({
 })
 
 // ============================================================================
+// WORKSPACE CUSTOM VARIABLES
+// ============================================================================
+
+/**
+ * Custom variable category for UI grouping
+ */
+export type CustomVariableCategory = "standard" | "contact" | "business" | "custom"
+
+/**
+ * Definition of a custom variable for campaigns/agents
+ * Stored in workspace.settings.custom_variables
+ */
+export interface CustomVariableDefinition {
+  /** Unique identifier for the variable */
+  id: string
+  /** Variable name (snake_case, e.g., "product_interest") */
+  name: string
+  /** Human-readable description */
+  description: string
+  /** Default fallback value when not provided */
+  default_value: string
+  /** Whether this variable must be provided in campaigns */
+  is_required: boolean
+  /** Category for UI grouping */
+  category: CustomVariableCategory
+  /** Whether this is a system standard variable (locked) */
+  is_standard?: boolean
+  /** Creation timestamp */
+  created_at: string
+}
+
+/**
+ * Workspace settings stored in workspace.settings JSONB
+ */
+export interface WorkspaceSettings {
+  /** Default timezone for the workspace */
+  timezone?: string
+  /** Custom variables defined for campaigns/agents */
+  custom_variables?: CustomVariableDefinition[]
+}
+
+/**
+ * Standard variables that are always available in campaigns
+ * These are built-in and cannot be deleted
+ */
+export const STANDARD_CAMPAIGN_VARIABLES: Omit<CustomVariableDefinition, 'id' | 'created_at'>[] = [
+  {
+    name: "first_name",
+    description: "Recipient's first name",
+    default_value: "",
+    is_required: false,
+    category: "standard",
+    is_standard: true,
+  },
+  {
+    name: "last_name",
+    description: "Recipient's last name",
+    default_value: "",
+    is_required: false,
+    category: "standard",
+    is_standard: true,
+  },
+  {
+    name: "email",
+    description: "Recipient's email address",
+    default_value: "",
+    is_required: false,
+    category: "standard",
+    is_standard: true,
+  },
+  {
+    name: "company",
+    description: "Recipient's company name",
+    default_value: "",
+    is_required: false,
+    category: "standard",
+    is_standard: true,
+  },
+  {
+    name: "phone_number",
+    description: "Recipient's phone number",
+    default_value: "",
+    is_required: true,
+    category: "standard",
+    is_standard: true,
+  },
+]
+
+/**
+ * Zod schema for validating custom variable definitions
+ */
+export const customVariableDefinitionSchema = z.object({
+  id: z.string().uuid(),
+  name: z
+    .string()
+    .min(1, "Variable name is required")
+    .max(50, "Variable name must be 50 characters or less")
+    .regex(
+      /^[a-z][a-z0-9_]*$/,
+      "Variable name must start with a letter and contain only lowercase letters, numbers, and underscores"
+    ),
+  description: z.string().max(200, "Description must be 200 characters or less").default(""),
+  default_value: z.string().max(500, "Default value must be 500 characters or less").default(""),
+  is_required: z.boolean().default(false),
+  category: z.enum(["standard", "contact", "business", "custom"]).default("custom"),
+  is_standard: z.boolean().optional(),
+  created_at: z.string(),
+})
+
+/**
+ * Schema for creating a new custom variable (without id and created_at)
+ */
+export const createCustomVariableSchema = customVariableDefinitionSchema.omit({
+  id: true,
+  created_at: true,
+  is_standard: true,
+})
+
+/**
+ * Schema for updating a custom variable
+ */
+export const updateCustomVariableSchema = customVariableDefinitionSchema
+  .omit({ id: true, created_at: true, is_standard: true })
+  .partial()
+
+/**
+ * Schema for workspace settings
+ */
+export const workspaceSettingsSchema = z.object({
+  timezone: z.string().optional(),
+  custom_variables: z.array(customVariableDefinitionSchema).optional(),
+})
+
+// ============================================================================
 // TELEPHONY TYPES
 // ============================================================================
 

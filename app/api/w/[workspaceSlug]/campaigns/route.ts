@@ -87,6 +87,7 @@ async function getCLIForAgent(
  * Returns stats by campaign_id for batch processing
  * 
  * OPTIMIZED: Uses SQL aggregation function instead of fetching all recipients
+ * Falls back to direct query if RPC function doesn't exist
  */
 async function calculateCampaignStatsForIds(
   campaignIds: string[],
@@ -104,14 +105,14 @@ async function calculateCampaignStatsForIds(
   }
 
   try {
-    // Use optimized SQL function for batch stats calculation
+    // Try optimized SQL function first
     const { data: batchStats, error } = await adminClient
       .rpc("get_campaign_stats_batch", { campaign_ids: campaignIds })
 
     if (error) {
-      console.error("[CampaignsAPI] Error calling get_campaign_stats_batch:", error)
-      // Fallback to legacy approach if RPC fails
-      return await calculateCampaignStatsLegacy(campaignIds, adminClient)
+      // RPC function might not exist - fall back to direct query
+      console.log("[CampaignsAPI] RPC not available, using direct query:", error.message)
+      return await calculateCampaignStatsDirectQuery(campaignIds, adminClient)
     }
 
     // Map RPC results to our stats format
@@ -130,52 +131,76 @@ async function calculateCampaignStatsForIds(
     return statsMap
   } catch (err) {
     console.error("[CampaignsAPI] Exception in calculateCampaignStatsForIds:", err)
-    return await calculateCampaignStatsLegacy(campaignIds, adminClient)
+    return await calculateCampaignStatsDirectQuery(campaignIds, adminClient)
   }
 }
 
 /**
- * Legacy stats calculation (fallback if RPC is not available)
- * Fetches all recipients and aggregates in JS - less efficient for large datasets
+ * Direct query stats calculation (fallback if RPC function doesn't exist)
+ * Fetches recipients and aggregates in JS - works without SQL function
+ * 
+ * IMPORTANT: Stats logic must match get_campaign_stats_batch SQL function:
+ * - pending = pending + queued + calling
+ * - completed = completed + failed
+ * - successful = completed with outcome 'answered'
+ * - failed = failed status
  */
-async function calculateCampaignStatsLegacy(
+async function calculateCampaignStatsDirectQuery(
   campaignIds: string[],
   adminClient: ReturnType<typeof getSupabaseAdmin>
 ): Promise<Map<string, { pending: number; completed: number; successful: number; failed: number; total: number }>> {
   const statsMap = new Map<string, { pending: number; completed: number; successful: number; failed: number; total: number }>()
   
+  // Initialize all campaigns with empty stats
   for (const id of campaignIds) {
     statsMap.set(id, { pending: 0, completed: 0, successful: 0, failed: 0, total: 0 })
   }
 
-  // Fetch stats using a grouped query (more efficient than fetching all rows)
-  const { data: stats, error } = await adminClient
+  if (campaignIds.length === 0) {
+    return statsMap
+  }
+
+  // Fetch recipients status for all campaigns
+  const { data: recipients, error } = await adminClient
     .from("call_recipients")
     .select("campaign_id, call_status, call_outcome")
     .in("campaign_id", campaignIds)
 
-  if (error || !stats) {
-    console.error("[CampaignsAPI] Error in legacy stats calculation:", error)
+  if (error) {
+    console.error("[CampaignsAPI] Error in direct query stats:", error)
     return statsMap
   }
 
-  for (const r of stats) {
+  if (!recipients || recipients.length === 0) {
+    console.log("[CampaignsAPI] No recipients found for campaigns:", campaignIds)
+    return statsMap
+  }
+
+  // Aggregate stats by campaign
+  for (const r of recipients) {
     const stat = statsMap.get(r.campaign_id)
     if (!stat) continue
 
     stat.total++
+    
+    // Count by status - must match SQL function logic
     if (r.call_status === "pending" || r.call_status === "queued" || r.call_status === "calling") {
       stat.pending++
     } else if (r.call_status === "completed") {
       stat.completed++
+      // Only count as successful if outcome is 'answered'
       if (r.call_outcome === "answered") {
         stat.successful++
       }
     } else if (r.call_status === "failed") {
-      stat.completed++
+      stat.completed++ // Failed calls are "done" for progress calculation
       stat.failed++
     }
   }
+
+  console.log("[CampaignsAPI] Calculated stats for campaigns:", 
+    Array.from(statsMap.entries()).map(([id, s]) => ({ id: id.slice(0, 8), ...s }))
+  )
 
   return statsMap
 }
