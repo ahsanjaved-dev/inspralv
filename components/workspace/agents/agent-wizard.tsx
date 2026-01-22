@@ -60,6 +60,7 @@ import type {
 } from "@/types/database.types"
 import { STANDARD_CAMPAIGN_VARIABLES } from "@/types/database.types"
 import { FunctionToolEditor } from "./function-tool-editor"
+import { SystemPromptEditor } from "./system-prompt-editor"
 import { useActiveKnowledgeDocuments } from "@/lib/hooks/use-workspace-knowledge-base"
 import { useAvailablePhoneNumbers } from "@/lib/hooks/use-workspace-agents"
 import { useWorkspaceSettings, useWorkspaceCustomVariables } from "@/lib/hooks/use-workspace-settings"
@@ -1274,55 +1275,17 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               <CardDescription>Define how your agent should behave and respond</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* System Prompt */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>
-                    System Prompt <span className="text-destructive">*</span>
-                  </Label>
-                  <span className="text-xs text-muted-foreground">
-                    {formData.systemPrompt.length} characters
-                  </span>
-                </div>
-                <textarea
-                  value={formData.systemPrompt}
-                  onChange={(e) => updateFormData("systemPrompt", e.target.value)}
-                  placeholder="You are a helpful customer support agent for [Company Name]..."
-                  className={cn(
-                    "w-full min-h-[320px] px-3 py-2 text-sm rounded-md border bg-background resize-y font-mono",
-                    errors.systemPrompt ? "border-destructive" : "border-input"
-                  )}
-                />
-                {errors.systemPrompt && (
-                  <p className="text-sm text-destructive">{errors.systemPrompt}</p>
-                )}
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => applyTemplate("support")}
-                  >
-                    Support Template
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => applyTemplate("sales")}
-                  >
-                    Sales Template
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => applyTemplate("booking")}
-                  >
-                    Booking Template
-                  </Button>
-                </div>
-              </div>
+              {/* System Prompt with Fullscreen & Autocomplete */}
+              <SystemPromptEditor
+                value={formData.systemPrompt}
+                onChange={(value) => updateFormData("systemPrompt", value)}
+                placeholder="You are a helpful customer support agent for [Company Name]..."
+                error={errors.systemPrompt}
+                required
+                customVariables={workspaceCustomVariables}
+                showTemplates
+                onApplyTemplate={applyTemplate}
+              />
 
               {/* Initial Greeting - Only show for INBOUND agents */}
               {/* For OUTBOUND agents, the agent waits for the recipient to speak first */}
