@@ -295,13 +295,24 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
     metadata: {
       internal_agent_id: agent.id,
       workspace_id: agent.workspace_id,
+      agent_direction: agent.agent_direction || "inbound",
     },
   }
 
   // First message / greeting
-  if (config.first_message) {
+  // IMPORTANT: For OUTBOUND agents, we DON'T set firstMessage so the agent waits
+  // for the user (recipient) to speak first after answering the call.
+  // This is the expected behavior for outbound campaigns where the recipient says "Hello?"
+  // and then the agent responds based on the system prompt instructions.
+  const isOutbound = agent.agent_direction === "outbound"
+  
+  if (config.first_message && !isOutbound) {
+    // Only set firstMessage for INBOUND agents
     payload.firstMessage = config.first_message
   }
+  
+  // Log the decision for debugging
+  console.log("[VapiMapper] Agent direction:", agent.agent_direction, "| firstMessage:", isOutbound ? "SKIPPED (outbound)" : (config.first_message ? "SET" : "NOT SET"))
 
   // Voice configuration - Using ElevenLabs (11labs) provider
   // NOTE: VAPI built-in voices are ALL deprecated as of Jan 2026

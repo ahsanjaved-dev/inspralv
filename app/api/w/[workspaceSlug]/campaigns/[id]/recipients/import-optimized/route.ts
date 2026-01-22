@@ -72,6 +72,8 @@ export async function POST(
       state: recipient.state || null,
       post_code: recipient.post_code || null,
       country: recipient.country || null,
+      // IMPORTANT: Include custom_variables from CSV for dynamic variable substitution
+      custom_variables: recipient.custom_variables || {},
       call_status: "pending",
       attempts: 0,
     }))

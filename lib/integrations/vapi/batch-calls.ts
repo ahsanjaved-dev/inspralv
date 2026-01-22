@@ -12,7 +12,7 @@
  * - Cancel support via status callback
  */
 
-import { createOutboundCall, type VapiCallResponse } from "./calls"
+import { createOutboundCall, type VapiCallResponse, type AssistantOverrides } from "./calls"
 import type { BusinessHoursConfig, DayOfWeek } from "@/types/database.types"
 
 // ============================================================================
@@ -36,6 +36,12 @@ export interface VapiBatchConfig {
   timezone?: string
   skipBusinessHoursCheck?: boolean
   shouldContinue?: () => Promise<{ continue: boolean; reason?: string }>
+  /** System prompt template for variable substitution */
+  systemPromptTemplate?: string
+  /** Model provider (e.g., "openai") */
+  modelProvider?: string
+  /** Model name (e.g., "gpt-4") */
+  modelName?: string
 }
 
 export interface VapiBatchCallResult {
@@ -221,6 +227,40 @@ interface CallAttemptResult {
 }
 
 /**
+ * Substitute dynamic variables in a system prompt template.
+ * 
+ * Variables are in the format {{variable_name}} and are replaced with values
+ * from the recipient's variables object.
+ * 
+ * @param template - The system prompt template with {{variable}} placeholders
+ * @param variables - Key-value pairs of variable values
+ * @returns The substituted system prompt
+ */
+function substituteVariables(template: string, variables: Record<string, string>): string {
+  if (!template) return template
+  
+  // Build a normalized map of variables (lowercase keys)
+  const normalizedVars: Record<string, string> = {}
+  for (const [key, value] of Object.entries(variables)) {
+    normalizedVars[key.toLowerCase()] = value || ""
+  }
+  
+  // Add convenience variables
+  const firstName = normalizedVars.first_name || ""
+  const lastName = normalizedVars.last_name || ""
+  normalizedVars.full_name = [firstName, lastName].filter(Boolean).join(" ")
+  
+  // Replace all {{variable_name}} patterns (case-insensitive)
+  let result = template
+  for (const [key, value] of Object.entries(normalizedVars)) {
+    const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi")
+    result = result.replace(pattern, value)
+  }
+  
+  return result
+}
+
+/**
  * Create a single call with smart error handling
  * Returns whether we hit concurrency limit so caller can back off
  */
@@ -228,7 +268,24 @@ async function createSingleCallSmart(
   config: VapiBatchConfig,
   item: VapiBatchCallItem
 ): Promise<CallAttemptResult> {
-  const { apiKey, assistantId, phoneNumberId } = config
+  const { apiKey, assistantId, phoneNumberId, systemPromptTemplate, modelProvider, modelName } = config
+  
+  // Build assistant overrides if we have a system prompt template
+  let assistantOverrides: AssistantOverrides | undefined
+  
+  if (systemPromptTemplate) {
+    const substitutedPrompt = substituteVariables(systemPromptTemplate, item.variables)
+    
+    if (substitutedPrompt) {
+      assistantOverrides = {
+        model: {
+          systemPrompt: substitutedPrompt,
+          ...(modelProvider && { provider: modelProvider }),
+          ...(modelName && { model: modelName }),
+        },
+      }
+    }
+  }
   
   for (let attempt = 1; attempt <= CONFIG.MAX_RETRIES + 1; attempt++) {
     try {
@@ -238,6 +295,7 @@ async function createSingleCallSmart(
         phoneNumberId,
         customerNumber: item.phone,
         customerName: `${item.variables.FIRST_NAME || ""} ${item.variables.LAST_NAME || ""}`.trim() || undefined,
+        assistantOverrides,
       })
       
       if (result.success && result.data) {

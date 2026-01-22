@@ -2974,6 +2974,9 @@ export const createRecipientSchema = z.object({
   state: z.string().max(100).optional().nullable(),
   post_code: z.string().max(20).optional().nullable(),
   country: z.string().max(100).optional().nullable(),
+  // Custom variables from CSV columns that don't match standard fields
+  // These are substituted into the system prompt at call time (e.g., {{product_interest}})
+  custom_variables: z.record(z.string(), z.unknown()).optional().default({}),
 })
 
 // Create Campaign Schema (legacy - still works)

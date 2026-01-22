@@ -94,7 +94,7 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
   // Get workspace custom variables for mapping dropdown
   const { customVariables: workspaceVariables } = useWorkspaceCustomVariables()
 
-  // Combine standard fields with workspace custom variables
+  // Combine standard fields with workspace custom variables AND CSV column headers
   const allMappingFields = useMemo(() => {
     const fields: Array<{ key: string; label: string; required: boolean; isCustom: boolean }> = [
       ...STANDARD_FIELDS.map(f => ({ ...f, isCustom: false })),
@@ -113,8 +113,26 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
       }
     })
     
+    // Add CSV column headers as custom variable options
+    // This allows any CSV column to be mapped as a custom variable for {{variable}} substitution
+    if (csvData.length > 0) {
+      const headers = csvData[0] || []
+      headers.forEach(header => {
+        const normalizedKey = header.toLowerCase().replace(/[\s-]/g, "_")
+        // Don't add if already exists
+        if (!fields.some(f => f.key === normalizedKey || f.key === header)) {
+          fields.push({
+            key: normalizedKey,
+            label: `${header} (Custom)`,
+            required: false,
+            isCustom: true,
+          })
+        }
+      })
+    }
+    
     return fields
-  }, [workspaceVariables])
+  }, [workspaceVariables, csvData])
 
   // Analyze data quality
   const dataQualityReport = useMemo((): DataQualityReport | null => {
@@ -255,6 +273,12 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
         )
         if (matchingCustomVar) {
           mappedTo = matchingCustomVar.name
+        } else {
+          // Auto-map unrecognized columns as custom variables using their column name
+          // This allows CSV columns like "product_interest" to be automatically captured
+          // even if not defined in workspace custom variables
+          // The key is normalized to snake_case (e.g., "Product Interest" -> "product_interest")
+          mappedTo = exactHeader as FieldKey
         }
       }
 
@@ -348,6 +372,7 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
         state: null,
         post_code: null,
         country: null,
+        custom_variables: {},
       }
 
       columnMappings.forEach((mapping, colIndex) => {
@@ -386,6 +411,17 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
             break
           case "country":
             recipient.country = value
+            break
+          case "phone_number":
+          case "skip":
+            // Already handled or skip
+            break
+          default:
+            // Handle custom variables (workspace-defined variables like product_interest)
+            // These are stored in custom_variables for substitution in system prompts
+            if (mapping.mappedTo && value) {
+              recipient.custom_variables[mapping.mappedTo] = value
+            }
             break
         }
       })

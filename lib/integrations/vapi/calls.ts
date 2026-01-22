@@ -159,14 +159,45 @@ export interface VapiCallResponse {
 // CREATE OUTBOUND CALL
 // ============================================================================
 
+/**
+ * Assistant overrides for dynamic variable substitution in outbound calls.
+ * These override the assistant's default configuration for this specific call.
+ * 
+ * IMPORTANT: For outbound calls with dynamic variables (like campaigns),
+ * we pass the substituted system prompt via assistantOverrides.model.systemPrompt
+ * so each recipient gets personalized content.
+ */
+export interface AssistantOverrides {
+  /** Override the first message (greeting) for this call */
+  firstMessage?: string
+  /** Override model configuration including system prompt */
+  model?: {
+    /** Substituted system prompt with variables replaced */
+    systemPrompt?: string
+    /** Model provider (e.g., "openai") */
+    provider?: string
+    /** Model name (e.g., "gpt-4") */
+    model?: string
+    /** Temperature setting */
+    temperature?: number
+  }
+  /** Additional metadata for this call */
+  metadata?: Record<string, unknown>
+}
+
 export async function createOutboundCall(params: {
   apiKey: string
   assistantId: string
   phoneNumberId: string
   customerNumber: string
   customerName?: string
+  /** 
+   * Optional assistant overrides for this specific call.
+   * Use this to pass substituted system prompts with dynamic variables.
+   */
+  assistantOverrides?: AssistantOverrides
 }): Promise<VapiCallResponse> {
-  const { apiKey, assistantId, phoneNumberId, customerNumber, customerName } = params
+  const { apiKey, assistantId, phoneNumberId, customerNumber, customerName, assistantOverrides } = params
 
   // Normalize phone number to E.164 format (VAPI requirement)
   const normalizedNumber = normalizeToE164(customerNumber)
@@ -179,6 +210,18 @@ export async function createOutboundCall(params: {
         number: normalizedNumber,
         ...(customerName && { name: customerName }),
       },
+    }
+    
+    // Add assistant overrides if provided (for dynamic variable substitution)
+    // This allows us to pass a customized system prompt with variables replaced
+    // for each recipient in a campaign
+    if (assistantOverrides) {
+      payload.assistantOverrides = assistantOverrides
+      console.log("[VapiCalls] Using assistantOverrides for call:", {
+        hasFirstMessage: !!assistantOverrides.firstMessage,
+        hasSystemPrompt: !!assistantOverrides.model?.systemPrompt,
+        systemPromptLength: assistantOverrides.model?.systemPrompt?.length || 0,
+      })
     }
 
     const response = await fetch(`${VAPI_BASE_URL}/call`, {

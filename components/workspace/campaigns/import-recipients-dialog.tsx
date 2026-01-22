@@ -31,7 +31,7 @@ interface ImportRecipientsDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-interface ParsedRecipient extends CreateRecipientInput {
+interface ParsedRecipient extends Omit<CreateRecipientInput, 'custom_variables'> {
   custom_variables?: Record<string, string>
   _row?: number
   _error?: string
@@ -255,7 +255,11 @@ export function ImportRecipientsDialog({
     setStep("importing")
 
     try {
-      const recipients = parsedData.map(({ _row, _error, ...rest }) => rest)
+      // Map parsed data to CreateRecipientInput, ensuring custom_variables is always set
+      const recipients = parsedData.map(({ _row, _error, custom_variables, ...rest }) => ({
+        ...rest,
+        custom_variables: custom_variables || {},
+      }))
 
       // Use optimized import for large datasets
       const isLargeImport = recipients.length > LARGE_IMPORT_THRESHOLD

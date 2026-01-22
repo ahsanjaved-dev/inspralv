@@ -339,7 +339,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       if (!formData.systemPrompt.trim()) {
         newErrors.systemPrompt = "System prompt is required"
       }
-      if (!formData.greeting.trim()) {
+      // Initial greeting is only required for INBOUND agents
+      // For OUTBOUND agents, the agent waits for the recipient to speak first
+      if (formData.agentDirection !== "outbound" && !formData.greeting.trim()) {
         newErrors.greeting = "Initial greeting is required"
       }
     }
@@ -423,7 +425,8 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       assigned_phone_number_id: formData.enablePhoneNumber ? formData.phoneNumberId : undefined,
       config: {
         system_prompt: formData.systemPrompt,
-        first_message: formData.greeting,
+        // For OUTBOUND agents, don't send first_message so the agent waits for recipient to speak first
+        first_message: formData.agentDirection === "outbound" ? undefined : formData.greeting,
         voice_id: formData.voice,
         voice_settings: {
           speed: formData.voiceSpeed,
@@ -1321,54 +1324,45 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 </div>
               </div>
 
-              {/* Initial Greeting */}
-              <div className="space-y-2">
-                <Label>
-                  Initial Greeting <span className="text-destructive">*</span>
-                </Label>
-                <textarea
-                  value={formData.greeting}
-                  onChange={(e) => updateFormData("greeting", e.target.value)}
-                  placeholder="Hello! Thank you for calling. How can I help you today?"
-                  className={cn(
-                    "w-full min-h-[60px] px-3 py-2 text-sm rounded-md border bg-background resize-y",
-                    errors.greeting ? "border-destructive" : "border-input"
-                  )}
-                  rows={2}
-                />
-                {errors.greeting && <p className="text-sm text-destructive">{errors.greeting}</p>}
-              </div>
-
-              {/* Conversation Style */}
-              <div className="space-y-3">
-                <Label>Conversation Style</Label>
-                <div className="grid grid-cols-3 gap-4">
-                  {[
-                    { value: "formal", label: "Formal", icon: Briefcase },
-                    { value: "friendly", label: "Friendly", icon: Smile },
-                    { value: "casual", label: "Casual", icon: Coffee },
-                  ].map((style) => {
-                    const Icon = style.icon
-                    return (
-                      <div
-                        key={style.value}
-                        onClick={() =>
-                          updateFormData("style", style.value as WizardFormData["style"])
-                        }
-                        className={cn(
-                          "p-3 rounded-lg border cursor-pointer transition-all text-center",
-                          formData.style === style.value
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:border-primary/50"
-                        )}
-                      >
-                        <Icon className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
-                        <span className="text-sm font-medium">{style.label}</span>
-                      </div>
-                    )
-                  })}
+              {/* Initial Greeting - Only show for INBOUND agents */}
+              {/* For OUTBOUND agents, the agent waits for the recipient to speak first */}
+              {formData.agentDirection !== "outbound" && (
+                <div className="space-y-2">
+                  <Label>
+                    Initial Greeting <span className="text-destructive">*</span>
+                  </Label>
+                  <textarea
+                    value={formData.greeting}
+                    onChange={(e) => updateFormData("greeting", e.target.value)}
+                    placeholder="Hello! Thank you for calling. How can I help you today?"
+                    className={cn(
+                      "w-full min-h-[60px] px-3 py-2 text-sm rounded-md border bg-background resize-y",
+                      errors.greeting ? "border-destructive" : "border-input"
+                    )}
+                    rows={2}
+                  />
+                  {errors.greeting && <p className="text-sm text-destructive">{errors.greeting}</p>}
                 </div>
-              </div>
+              )}
+
+              {/* Outbound Agent Info Banner */}
+              {formData.agentDirection === "outbound" && (
+                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                  <div className="flex items-start gap-3">
+                    <Info className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                        Outbound Agent Behavior
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        For outbound calls, the agent will wait for the recipient to speak first 
+                        (e.g., "Hello?") before responding according to the system prompt instructions.
+                        No initial greeting is needed.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

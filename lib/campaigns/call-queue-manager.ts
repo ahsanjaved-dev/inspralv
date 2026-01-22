@@ -34,7 +34,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin"
-import { createOutboundCall } from "@/lib/integrations/vapi/calls"
+import { createOutboundCall, type AssistantOverrides } from "@/lib/integrations/vapi/calls"
 
 // ============================================================================
 // CONFIGURATION
@@ -108,12 +108,22 @@ export interface QueuedCall {
   phone: string
   firstName?: string
   lastName?: string
+  email?: string
+  company?: string
+  /** Custom variables from CSV import (key-value pairs) */
+  customVariables?: Record<string, unknown>
 }
 
 export interface VapiConfig {
   apiKey: string
   assistantId: string
   phoneNumberId: string
+  /** Agent's system prompt template (with {{variable}} placeholders) */
+  systemPromptTemplate?: string
+  /** Agent's model provider (e.g., "openai") */
+  modelProvider?: string
+  /** Agent's model name (e.g., "gpt-4") */
+  modelName?: string
 }
 
 export interface StartCallsResult {
@@ -193,7 +203,10 @@ export async function getNextPendingRecipients(
       workspace_id,
       phone_number,
       first_name,
-      last_name
+      last_name,
+      email,
+      company,
+      custom_variables
     `)
     .eq("campaign_id", campaignId)
     .eq("call_status", "pending")
@@ -212,6 +225,9 @@ export async function getNextPendingRecipients(
     phone: r.phone_number,
     firstName: r.first_name || undefined,
     lastName: r.last_name || undefined,
+    email: r.email || undefined,
+    company: r.company || undefined,
+    customVariables: (r.custom_variables as Record<string, unknown>) || undefined,
   }))
 }
 
@@ -286,7 +302,69 @@ function isConcurrencyLimitError(error: string | undefined): boolean {
 }
 
 /**
+ * Substitute dynamic variables in a system prompt template.
+ * 
+ * Variables are in the format {{variable_name}} and are replaced with values
+ * from the recipient's data (first_name, last_name, email, company, custom_variables).
+ * 
+ * @param template - The system prompt template with {{variable}} placeholders
+ * @param call - The recipient data containing variable values
+ * @returns The substituted system prompt
+ */
+function substituteVariables(template: string, call: QueuedCall): string {
+  if (!template) return template
+  
+  // Build a map of all available variables
+  const variables: Record<string, string> = {
+    // Standard variables
+    first_name: call.firstName || "",
+    last_name: call.lastName || "",
+    email: call.email || "",
+    company: call.company || "",
+    phone_number: call.phone || "",
+    // Full name convenience variable
+    full_name: [call.firstName, call.lastName].filter(Boolean).join(" ") || "",
+  }
+  
+  // Add custom variables from CSV import
+  if (call.customVariables) {
+    for (const [key, value] of Object.entries(call.customVariables)) {
+      // Convert value to string, handling various types
+      if (value !== null && value !== undefined) {
+        variables[key.toLowerCase()] = String(value)
+      }
+    }
+  }
+  
+  // Replace all {{variable_name}} patterns (case-insensitive)
+  let result = template
+  for (const [key, value] of Object.entries(variables)) {
+    // Match {{key}} with optional whitespace inside braces
+    const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi")
+    result = result.replace(pattern, value)
+  }
+  
+  // Log substitution for debugging
+  const substitutionCount = (template.match(/\{\{[^}]+\}\}/g) || []).length
+  const remainingPlaceholders = (result.match(/\{\{[^}]+\}\}/g) || []).length
+  
+  if (substitutionCount > 0) {
+    console.log(`[CallQueue] Variable substitution: ${substitutionCount} placeholders found, ${substitutionCount - remainingPlaceholders} replaced, ${remainingPlaceholders} remaining`)
+    if (remainingPlaceholders > 0) {
+      const remaining = result.match(/\{\{[^}]+\}\}/g) || []
+      console.log(`[CallQueue] Unsubstituted placeholders: ${remaining.join(", ")}`)
+    }
+  }
+  
+  return result
+}
+
+/**
  * Start a single call and update recipient status
+ * 
+ * IMPORTANT: This function uses atomic "claim" logic to prevent race conditions.
+ * When multiple webhook triggers happen simultaneously, only ONE process can
+ * successfully claim a recipient for calling.
  */
 async function startSingleCall(
   call: QueuedCall,
@@ -296,8 +374,49 @@ async function startSingleCall(
   const now = new Date().toISOString()
   
   try {
+    // ATOMIC CLAIM: First, try to claim this recipient by setting status to "processing"
+    // This prevents race conditions when multiple webhooks trigger simultaneously
+    // We use a conditional update that only succeeds if the recipient is still "pending"
+    const { data: claimed, error: claimError } = await adminClient
+      .from("call_recipients")
+      .update({
+        call_status: "processing",
+        updated_at: now,
+      })
+      .eq("id", call.recipientId)
+      .eq("call_status", "pending") // Only update if still pending!
+      .select("id")
+      .single()
+    
+    if (claimError || !claimed) {
+      // Another process already claimed this recipient - this is expected in race conditions
+      console.log(`[CallQueue] Recipient ${call.recipientId} already claimed by another process - skipping`)
+      return { success: false, error: "Already claimed", shouldRetry: false }
+    }
+    
     // Create the call via VAPI
     console.log(`[CallQueue] Starting call for ${call.phone} (recipient: ${call.recipientId})`)
+    
+    // Build assistant overrides if we have a system prompt template
+    // This allows dynamic variable substitution per recipient
+    let assistantOverrides: { model?: { systemPrompt?: string; provider?: string; model?: string } } | undefined
+    
+    if (vapiConfig.systemPromptTemplate) {
+      const substitutedPrompt = substituteVariables(vapiConfig.systemPromptTemplate, call)
+      
+      // Only include overrides if we actually have a prompt to send
+      if (substitutedPrompt) {
+        assistantOverrides = {
+          model: {
+            systemPrompt: substitutedPrompt,
+            // Include provider and model if available to ensure consistency
+            ...(vapiConfig.modelProvider && { provider: vapiConfig.modelProvider }),
+            ...(vapiConfig.modelName && { model: vapiConfig.modelName }),
+          },
+        }
+        console.log(`[CallQueue] Using assistantOverrides with substituted system prompt (${substitutedPrompt.length} chars)`)
+      }
+    }
     
     const result = await createOutboundCall({
       apiKey: vapiConfig.apiKey,
@@ -305,17 +424,26 @@ async function startSingleCall(
       phoneNumberId: vapiConfig.phoneNumberId,
       customerNumber: call.phone,
       customerName: [call.firstName, call.lastName].filter(Boolean).join(" ") || undefined,
+      assistantOverrides,
     })
     
     if (!result.success || !result.data) {
       const errorMsg = result.error || "Failed to create call"
       console.error(`[CallQueue] VAPI call creation FAILED for ${call.phone}: ${errorMsg}`)
       
-      // Check if this is a TRANSIENT error - DON'T mark as failed, keep pending for retry
+      // Check if this is a TRANSIENT error - revert to pending for retry
       // Transient errors include: concurrency limits, 5xx errors, timeouts, network issues
       if (isTransientError(errorMsg)) {
-        console.log(`[CallQueue] Transient error for ${call.phone} - keeping as pending for retry: ${errorMsg}`)
-        // Don't update status - leave as "pending" for retry
+        console.log(`[CallQueue] Transient error for ${call.phone} - reverting to pending for retry: ${errorMsg}`)
+        // Revert status back to "pending" for retry (was "processing")
+        await adminClient
+          .from("call_recipients")
+          .update({
+            call_status: "pending",
+            last_error: errorMsg,
+            updated_at: now,
+          })
+          .eq("id", call.recipientId)
         return { success: false, error: errorMsg, shouldRetry: true }
       }
       
@@ -354,7 +482,7 @@ async function startSingleCall(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
     
-    // Update recipient as failed
+    // Update recipient as failed (was "processing")
     await adminClient
       .from("call_recipients")
       .update({
@@ -619,14 +747,16 @@ export async function getVapiConfigForCampaign(
   
   console.log(`[CallQueue] Getting VAPI config for campaign: ${campaignId}`)
   
-  // Get campaign with agent
+  // Get campaign with agent (including config for system prompt)
   const { data: campaign, error: campaignError } = await adminClient
     .from("call_campaigns")
     .select(`
       workspace_id,
       agent:ai_agents!agent_id(
         external_agent_id,
-        assigned_phone_number_id
+        assigned_phone_number_id,
+        config,
+        model_provider
       )
     `)
     .eq("id", campaignId)
@@ -643,6 +773,7 @@ export async function getVapiConfigForCampaign(
   }
   
   const agent = campaign.agent as any
+  const agentConfig = agent.config as Record<string, unknown> | null
   
   // Get workspace's VAPI integration
   const { data: workspace } = await adminClient
@@ -703,12 +834,22 @@ export async function getVapiConfigForCampaign(
     return null
   }
   
-  console.log(`[CallQueue] VAPI config resolved: assistantId=${agent.external_agent_id}, phoneNumberId=${phoneNumberId}`)
+  // Extract system prompt and model settings from agent config
+  const systemPromptTemplate = agentConfig?.system_prompt as string | undefined
+  const modelSettings = agentConfig?.model_settings as { model?: string } | undefined
+  const modelProvider = agent.model_provider || "openai"
+  const modelName = modelSettings?.model || "gpt-4"
+  
+  console.log(`[CallQueue] VAPI config resolved: assistantId=${agent.external_agent_id}, phoneNumberId=${phoneNumberId}, hasSystemPrompt=${!!systemPromptTemplate}`)
   
   return {
     apiKey: apiKeys.default_secret_key,
     assistantId: agent.external_agent_id,
     phoneNumberId,
+    // Include system prompt template for variable substitution
+    systemPromptTemplate,
+    modelProvider,
+    modelName,
   }
 }
 

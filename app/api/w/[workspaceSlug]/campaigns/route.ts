@@ -517,6 +517,8 @@ export async function POST(
         state: r.state || null,
         post_code: r.post_code || null,
         country: r.country || null,
+        // CRITICAL: Include custom_variables for dynamic variable substitution (e.g., {{product_interest}})
+        custom_variables: r.custom_variables || {},
         call_status: "pending",
         attempts: 0,
       }))
