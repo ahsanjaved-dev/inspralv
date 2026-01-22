@@ -62,4 +62,12 @@ export const env = {
   // Set this to a partner slug to bypass hostname resolution in development
   // Example: DEV_PARTNER_SLUG=acme-corp will resolve to that partner regardless of hostname
   devPartnerSlug: getEnvVar("DEV_PARTNER_SLUG", false),
+
+  // MCP Server Configuration
+  // URL of the MCP server for custom tool execution
+  // In development: http://localhost:3001
+  // In production: https://mcp.yourdomain.com
+  mcpServerUrl: getEnvVar("MCP_SERVER_URL", false),
+  // API key for authenticating with the MCP server
+  mcpApiKey: getEnvVar("MCP_API_KEY", false),
 }

@@ -318,6 +318,7 @@ export const CATEGORY_DISPLAY_NAMES: Record<ToolCategory, string> = {
   google: 'Google',
   communication: 'Communication',
   ghl: 'GoHighLevel',
+  custom: 'Custom',
   other: 'Other',
 }
 
@@ -332,6 +333,7 @@ export const CATEGORY_ICONS: Record<ToolCategory, string> = {
   google: 'Chrome',
   communication: 'MessageSquare',
   ghl: 'Building',
+  custom: 'Code',
   other: 'MoreHorizontal',
 }
 

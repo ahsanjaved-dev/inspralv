@@ -29,6 +29,9 @@ import {
   Check,
   Edit2,
   Lock,
+  Sparkles,
+  Link,
+  Key,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { FunctionTool, FunctionToolParameters, FunctionToolType, FunctionToolParameterProperty } from "@/types/database.types"
@@ -37,6 +40,7 @@ import {
   type BuiltInToolDefinition,
 } from "@/lib/integrations/function_tools/vapi/registry"
 import { RETELL_TOOL_REGISTRY } from "@/lib/integrations/function_tools/retell/registry"
+import { SUGGESTED_PARAMETERS, getParameterCategories, type SuggestedParameter } from "@/lib/tools/registry"
 
 // ============================================================================
 // AVAILABLE TOOLS CONFIG
@@ -140,7 +144,7 @@ function toolNameFromRegistryKey(key: string) {
 }
 
 // ============================================================================
-// PARAMETER EDITOR (INLINE, NOT IN DIALOG)
+// PARAMETER EDITOR (INLINE, WITH SUGGESTIONS)
 // ============================================================================
 
 interface ParameterEditorProps {
@@ -153,6 +157,7 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
   const [newParamName, setNewParamName] = useState("")
   const [newParamDescription, setNewParamDescription] = useState("")
   const [newParamRequired, setNewParamRequired] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
   const propertyList = Object.entries(properties).map(([name, prop]) => ({
     name,
@@ -189,6 +194,23 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
     resetForm()
   }
 
+  const addSuggestedParam = (suggested: SuggestedParameter) => {
+    // Skip if already added
+    if (properties[suggested.name]) return
+
+    const newProperty: FunctionToolParameterProperty = {
+      type: suggested.type,
+      description: suggested.description,
+    }
+
+    const newProperties: Record<string, FunctionToolParameterProperty> = {
+      ...properties,
+      [suggested.name]: newProperty,
+    }
+
+    onChange(newProperties, required)
+  }
+
   const removeParameter = (paramName: string) => {
     const newProperties: Record<string, FunctionToolParameterProperty> = { ...properties }
     delete newProperties[paramName]
@@ -203,11 +225,66 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
     }
   }
 
+  // Get suggestions not already added
+  const availableSuggestions = useMemo(() => {
+    const existingNames = new Set(Object.keys(properties))
+    return SUGGESTED_PARAMETERS.filter(p => !existingNames.has(p.name))
+  }, [properties])
+
+  // Group by category
+  const suggestionsByCategory = useMemo(() => {
+    const categories = getParameterCategories()
+    return categories.map(cat => ({
+      ...cat,
+      params: availableSuggestions.filter(p => p.category === cat.key)
+    })).filter(cat => cat.params.length > 0)
+  }, [availableSuggestions])
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Label className="text-sm font-medium">Parameters</Label>
-          </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setShowSuggestions(!showSuggestions)}
+          className="h-7 text-xs gap-1"
+        >
+          <Sparkles className="h-3 w-3" />
+          {showSuggestions ? "Hide" : "Show"} Suggestions
+        </Button>
+      </div>
+
+      {/* Suggested Parameters */}
+      {showSuggestions && suggestionsByCategory.length > 0 && (
+        <div className="p-3 rounded-md border border-dashed bg-muted/20 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Click to add suggested parameters:
+          </p>
+          {suggestionsByCategory.map(({ key, label, params }) => (
+            <div key={key}>
+              <p className="text-xs font-medium text-muted-foreground uppercase mb-1.5">{label}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {params.map(param => (
+                  <Button
+                    key={param.name}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => addSuggestedParam(param)}
+                    className="h-6 text-xs px-2"
+                    title={param.description}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    {param.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Existing Parameters */}
       {propertyList.length > 0 && (
@@ -217,7 +294,7 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
               key={param.name}
               className="flex items-start gap-2 p-2 rounded-md border bg-muted/30 text-sm"
             >
-          <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <code className="font-mono text-xs font-medium text-primary">{param.name}</code>
                   {param.isRequired && (
@@ -225,9 +302,9 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
                       Required
                     </Badge>
                   )}
-            </div>
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">{param.description}</p>
-          </div>
+              </div>
               <div className="flex items-center gap-0.5 shrink-0">
                 <Button
                   type="button"
@@ -238,7 +315,7 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
                   title={param.isRequired ? "Mark optional" : "Mark required"}
                 >
                   <Check className="h-3 w-3" />
-            </Button>
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"
@@ -248,7 +325,7 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
-        </div>
+              </div>
             </div>
           ))}
         </div>
@@ -270,7 +347,7 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
             placeholder="Description"
             className="h-8 text-sm"
           />
-            </div>
+        </div>
         <div className="flex items-center justify-between">
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input
@@ -291,9 +368,9 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
           >
             <Plus className="h-3 w-3 mr-1" />
             Add
-              </Button>
-            </div>
-          </div>
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -309,9 +386,10 @@ interface ToolEditDialogProps {
   tool: FunctionTool | null
   existingNames: string[]
   isCustomFunction?: boolean
+  provider?: "vapi" | "retell"
 }
 
-function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCustomFunction }: ToolEditDialogProps) {
+function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCustomFunction, provider = "vapi" }: ToolEditDialogProps) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [properties, setProperties] = useState<Record<string, FunctionToolParameterProperty>>({})
@@ -319,6 +397,10 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
   const [url, setUrl] = useState("")
   const [method, setMethod] = useState<"GET" | "POST" | "PUT" | "PATCH" | "DELETE">("POST")
   const [transferNumber, setTransferNumber] = useState("")
+  // Retell-specific: API URL, Auth Token, and HTTP Method
+  const [apiUrl, setApiUrl] = useState("")
+  const [authToken, setAuthToken] = useState("")
+  const [apiMethod, setApiMethod] = useState<"GET" | "POST" | "PUT" | "PATCH" | "DELETE">("POST")
 
   useEffect(() => {
     if (open && tool) {
@@ -329,6 +411,12 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
       setUrl(tool.url || "")
       setMethod((tool.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE") || "POST")
       setTransferNumber(tool.transfer_destination?.number || "")
+      // Retell fields
+      setApiUrl(tool.server_url || "")
+      // Get metadata from 'extra' or treat tool as any to access metadata
+      const toolMeta = (tool as unknown as { metadata?: Record<string, string> }).metadata || {}
+      setAuthToken(toolMeta.authToken || "")
+      setApiMethod((toolMeta.apiMethod as "GET" | "POST" | "PUT" | "PATCH" | "DELETE") || "POST")
     } else if (open && !tool) {
       // New custom function
       setName("")
@@ -338,6 +426,9 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
       setUrl("")
       setMethod("POST")
       setTransferNumber("")
+      setApiUrl("")
+      setAuthToken("")
+      setApiMethod("POST")
     }
   }, [open, tool])
 
@@ -345,11 +436,13 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
   const isApiRequest = tool?.tool_type === "apiRequest"
   const isTransferCall = tool?.tool_type === "transfer_call" || tool?.tool_type === "transferCall"
   const isNameTaken = !isEditing && existingNames.includes(name)
+  const isRetellCustom = provider === "retell" && (isCustomFunction || !tool)
   
   // Validation: check required fields based on tool type
   const canSave = name.trim() && description.trim() && !isNameTaken && 
     (!isApiRequest || url.trim()) && 
-    (!isTransferCall || transferNumber.trim())
+    (!isTransferCall || transferNumber.trim()) &&
+    (!isRetellCustom || apiUrl.trim())
 
   const handleParametersChange = (
     newProperties: Record<string, FunctionToolParameterProperty>,
@@ -367,7 +460,7 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
       id: tool?.id || generateId(),
       name: name.trim(),
       description: description.trim(),
-      tool_type: tool?.tool_type || "function",
+      tool_type: isRetellCustom ? "custom_function" : (tool?.tool_type || "function"),
       parameters: {
         type: "object",
         properties: properties,
@@ -376,6 +469,14 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
       enabled: tool?.enabled ?? true,
       ...(isApiRequest ? { url: url.trim(), method } : {}),
       ...(isTransferCall ? { transfer_destination: { type: "predefined" as const, number: transferNumber.trim() } } : {}),
+      // Retell custom function fields
+      ...(isRetellCustom ? { 
+        server_url: apiUrl.trim(),
+        metadata: {
+          ...(authToken.trim() ? { authToken: authToken.trim() } : {}),
+          apiMethod: apiMethod,
+        },
+      } : {}),
     }
 
     onSave(updatedTool)
@@ -502,6 +603,59 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
               </div>
             )}
 
+            {/* Retell Custom Function specific fields */}
+            {isRetellCustom && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="api-url" className="text-sm flex items-center gap-2">
+                    <Link className="h-3.5 w-3.5" />
+                    API URL <span className="text-destructive">*</span>
+                  </Label>
+                  <div className="flex gap-2">
+                    <select
+                      id="api-method"
+                      aria-label="HTTP Method"
+                      value={apiMethod}
+                      onChange={(e) => setApiMethod(e.target.value as "GET" | "POST" | "PUT" | "PATCH" | "DELETE")}
+                      className="w-[100px] h-10 px-3 rounded-md border bg-background text-sm font-mono shrink-0"
+                    >
+                      <option value="GET">GET</option>
+                      <option value="POST">POST</option>
+                      <option value="PUT">PUT</option>
+                      <option value="PATCH">PATCH</option>
+                      <option value="DELETE">DELETE</option>
+                    </select>
+                    <Input
+                      id="api-url"
+                      value={apiUrl}
+                      onChange={(e) => setApiUrl(e.target.value)}
+                      placeholder="https://your-api.com/endpoint"
+                      className="font-mono flex-1"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    The HTTP method and endpoint for tool execution requests
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="auth-token" className="text-sm flex items-center gap-2">
+                    <Key className="h-3.5 w-3.5" />
+                    Authorization Token <span className="text-muted-foreground font-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    id="auth-token"
+                    type="password"
+                    value={authToken}
+                    onChange={(e) => setAuthToken(e.target.value)}
+                    placeholder="Bearer token or API key"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Will be sent as Authorization header
+                  </p>
+                </div>
+              </>
+            )}
+
             {/* Parameters - only for custom functions */}
             {(isCustomFunction || !tool) && (
               <div className="pt-3 border-t">
@@ -564,6 +718,12 @@ function SelectedToolItem({ tool, toolDef, onEdit, onRemove, disabled, isCustomF
           {tool.url && (
             <Badge variant="secondary" className="text-xs truncate max-w-[120px]" title={tool.url}>
               {tool.url}
+            </Badge>
+          )}
+          {tool.server_url && (
+            <Badge variant="secondary" className="text-xs truncate max-w-[140px]" title={tool.server_url}>
+              <Link className="h-3 w-3 mr-1" />
+              {(tool as unknown as { metadata?: Record<string, string> }).metadata?.apiMethod || "POST"}
             </Badge>
           )}
           {tool.transfer_destination?.number && (
@@ -844,28 +1004,18 @@ export function FunctionToolEditor({
         </div>
       )}
 
-      {/* Add Custom Function Button */}
-      {provider === "vapi" ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handleAddCustomFunction}
-          disabled={disabled}
-          className="gap-2"
-        >
-          <Plus className="h-4 w-4" />
-          Add Custom Function
-        </Button>
-      ) : (
-        <div className="flex items-center gap-3 p-4 rounded-lg border border-amber-200/50 bg-amber-50 dark:bg-amber-950/20">
-          <Zap className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-900 dark:text-amber-100">Custom Functions Coming Soon</p>
-            <p className="text-xs text-amber-800/70 dark:text-amber-200/70">Custom webhook functions will be available for Retell soon.</p>
-          </div>
-        </div>
-      )}
+      {/* Add Custom Function Button - Both VAPI and Retell */}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleAddCustomFunction}
+        disabled={disabled}
+        className="gap-2"
+      >
+        <Plus className="h-4 w-4" />
+        Add Custom Function
+      </Button>
 
       {/* Available Built-in Tools */}
       <div className="space-y-3">
@@ -946,6 +1096,7 @@ export function FunctionToolEditor({
         tool={editingTool || pendingTool}
         existingNames={existingNames.filter((n) => n !== editingTool?.name && n !== pendingTool?.name)}
         isCustomFunction={editingTool ? isCustomFunction(editingTool) : !pendingTool}
+        provider={provider}
       />
     </div>
   )

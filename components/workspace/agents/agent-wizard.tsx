@@ -47,6 +47,9 @@ import {
   Info,
   Lock,
   Copy,
+  Search,
+  Filter,
+  RotateCcw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { functionToolsArraySchema, type CreateWorkspaceAgentInput } from "@/types/api.types"
@@ -76,6 +79,12 @@ import type { RetellVoice } from "@/lib/integrations/retell/voices"
 // ============================================================================
 // TYPES
 // ============================================================================
+
+interface VoiceFilters {
+  search: string
+  gender: "all" | "Male" | "Female"
+  accent: string // "all" or specific accent
+}
 
 interface AgentWizardProps {
   onSubmit: (data: CreateWorkspaceAgentInput) => Promise<void>
@@ -274,6 +283,103 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isVoiceListOpen, setIsVoiceListOpen] = useState(false)
+
+  // Voice filter state
+  const [voiceFilters, setVoiceFilters] = useState<VoiceFilters>({
+    search: "",
+    gender: "all",
+    accent: "all",
+  })
+
+  // Reset voice filters
+  const resetVoiceFilters = () => {
+    setVoiceFilters({
+      search: "",
+      gender: "all",
+      accent: "all",
+    })
+  }
+
+  // Filter voices based on search and gender only (for accent dropdown)
+  const filterVoicesForAccentDropdown = (voices: (VoiceOption | RetellVoice)[]): (VoiceOption | RetellVoice)[] => {
+    return voices.filter((voice) => {
+      // Search filter - check name, accent, and characteristics
+      if (voiceFilters.search) {
+        const searchLower = voiceFilters.search.toLowerCase()
+        const nameMatch = voice.name.toLowerCase().includes(searchLower)
+        const accentMatch = voice.accent.toLowerCase().includes(searchLower)
+        const characteristicsMatch = 
+          "characteristics" in voice && 
+          voice.characteristics?.toLowerCase().includes(searchLower)
+        
+        if (!nameMatch && !accentMatch && !characteristicsMatch) {
+          return false
+        }
+      }
+
+      // Gender filter
+      if (voiceFilters.gender !== "all" && voice.gender !== voiceFilters.gender) {
+        return false
+      }
+
+      return true
+    })
+  }
+
+  // Filter voices based on all filters (for display)
+  const filterVoices = (voices: (VoiceOption | RetellVoice)[]): (VoiceOption | RetellVoice)[] => {
+    return voices.filter((voice) => {
+      // Search filter - check name, accent, and characteristics
+      if (voiceFilters.search) {
+        const searchLower = voiceFilters.search.toLowerCase()
+        const nameMatch = voice.name.toLowerCase().includes(searchLower)
+        const accentMatch = voice.accent.toLowerCase().includes(searchLower)
+        const characteristicsMatch = 
+          "characteristics" in voice && 
+          voice.characteristics?.toLowerCase().includes(searchLower)
+        
+        if (!nameMatch && !accentMatch && !characteristicsMatch) {
+          return false
+        }
+      }
+
+      // Gender filter
+      if (voiceFilters.gender !== "all" && voice.gender !== voiceFilters.gender) {
+        return false
+      }
+
+      // Accent filter
+      if (voiceFilters.accent !== "all" && voice.accent !== voiceFilters.accent) {
+        return false
+      }
+
+      return true
+    })
+  }
+
+  // Get unique accents from voices that match search and gender filters
+  const getAvailableAccents = (voices: (VoiceOption | RetellVoice)[]): string[] => {
+    const filteredForAccents = filterVoicesForAccentDropdown(voices)
+    const accents = new Set<string>()
+    filteredForAccents.forEach((voice) => {
+      if (voice.accent && voice.accent !== "Unknown") {
+        accents.add(voice.accent)
+      }
+    })
+    return Array.from(accents).sort()
+  }
+
+  // Get filtered voices and available accents
+  const filteredVoices = filterVoices(availableVoices)
+  const availableAccents = getAvailableAccents(availableVoices)
+  const hasActiveFilters = voiceFilters.search !== "" || 
+    voiceFilters.gender !== "all" || 
+    voiceFilters.accent !== "all"
+  
+  // Reset accent filter if the selected accent is no longer available
+  if (voiceFilters.accent !== "all" && !availableAccents.includes(voiceFilters.accent)) {
+    setVoiceFilters((prev) => ({ ...prev, accent: "all" }))
+  }
 
   // ============================================================================
   // AUDIO PREVIEW HANDLERS
@@ -896,12 +1002,95 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                             onClick={() => {
                               setIsVoiceListOpen(false)
                               stopVoicePreview()
+                              resetVoiceFilters()
                             }}
                           >
                             <X className="h-4 w-4 mr-1" />
                             Cancel
                           </Button>
                         )}
+                      </div>
+
+                      {/* Voice Filters */}
+                      <div className="space-y-3 p-3 rounded-lg bg-muted/30 border">
+                        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                          <Filter className="h-4 w-4" />
+                          <span>Filter Voices</span>
+                          {hasActiveFilters && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs ml-auto"
+                              onClick={resetVoiceFilters}
+                            >
+                              <RotateCcw className="h-3 w-3 mr-1" />
+                              Reset
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* Search Input */}
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            type="text"
+                            placeholder="Search by name, accent, or characteristics..."
+                            value={voiceFilters.search}
+                            onChange={(e) =>
+                              setVoiceFilters((prev) => ({ ...prev, search: e.target.value }))
+                            }
+                            className="pl-9 h-9"
+                          />
+                        </div>
+
+                        {/* Filter Row */}
+                        <div className="flex flex-wrap gap-2">
+                          {/* Gender Filter */}
+                          <Select
+                            value={voiceFilters.gender}
+                            onValueChange={(value: "all" | "Male" | "Female") =>
+                              setVoiceFilters((prev) => ({ ...prev, gender: value }))
+                            }
+                          >
+                            <SelectTrigger className="w-[130px] h-9">
+                              <SelectValue placeholder="Gender" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Genders</SelectItem>
+                              <SelectItem value="Male">Male</SelectItem>
+                              <SelectItem value="Female">Female</SelectItem>
+                            </SelectContent>
+                          </Select>
+
+                          {/* Accent Filter */}
+                          <Select
+                            value={voiceFilters.accent}
+                            onValueChange={(value: string) =>
+                              setVoiceFilters((prev) => ({ ...prev, accent: value }))
+                            }
+                          >
+                            <SelectTrigger className="w-[160px] h-9">
+                              <SelectValue placeholder="Accent" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Accents</SelectItem>
+                              {availableAccents.map((accent) => (
+                                <SelectItem key={accent} value={accent}>
+                                  {accent}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+
+                          {/* Filter Summary */}
+                          <div className="flex items-center gap-1.5 ml-auto text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground">
+                              {filteredVoices.length}
+                            </span>
+                            <span>of {availableVoices.length} voices</span>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Loading state for Retell voices */}
@@ -942,102 +1131,144 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                       {!(formData.provider === "retell" && isLoadingRetellVoices) && 
                        !(formData.provider === "retell" && retellVoicesError) && (
                         <>
-                          <ScrollArea
-                            className={cn(
-                              "rounded-lg border p-2",
-                              availableVoices.length <= 3 ? "h-auto" : "h-[320px]"
-                            )}
-                          >
-                            <div className="space-y-2">
-                              {availableVoices.map((voice: VoiceOption | RetellVoice) => {
-                                const colors = getVoiceCardColor(voice.gender)
-                                const isRetellVoice = formData.provider === "retell"
-                                const retellVoice = isRetellVoice ? (voice as RetellVoice) : null
-                                const vapiVoice = !isRetellVoice ? (voice as VoiceOption) : null
-                                const isPlaying = playingVoiceId === voice.id
+                          {/* No results state */}
+                          {filteredVoices.length === 0 && hasActiveFilters && (
+                            <div className="p-6 text-center rounded-lg border border-dashed">
+                              <Search className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                              <p className="text-sm font-medium text-muted-foreground">
+                                No voices match your filters
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1 mb-3">
+                                Try adjusting your search or filter criteria
+                              </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={resetVoiceFilters}
+                              >
+                                <RotateCcw className="h-3 w-3 mr-1" />
+                                Reset Filters
+                              </Button>
+                            </div>
+                          )}
 
-                                return (
-                                  <div
-                                    key={voice.id}
-                                    className="p-3 rounded-lg hover:bg-muted border border-transparent hover:border-border transition-all"
-                                  >
-                                    <div className="flex items-start gap-3">
-                                      <div
-                                        className={cn(
-                                          "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
-                                          colors.bg
-                                        )}
-                                      >
-                                        <span className={cn("font-semibold", colors.text)}>
-                                          {voice.name[0]}
-                                        </span>
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                          <p className="font-medium text-sm">{voice.name}</p>
-                                          <Badge variant="outline" className="text-xs">
-                                            {voice.gender}
-                                          </Badge>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground">
-                                          {voice.accent} • {isRetellVoice ? `Age: ${retellVoice?.age}` : `Age ${vapiVoice?.age}`}
-                                        </p>
-                                        {vapiVoice?.characteristics && (
-                                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                            {vapiVoice.characteristics}
-                                          </p>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        {/* Audio Preview Button */}
-                                        {(() => {
-                                          const previewUrl = isRetellVoice 
-                                            ? retellVoice?.previewAudioUrl 
-                                            : vapiVoice?.previewUrl
-                                          if (!previewUrl) return null
-                                          return (
-                                            <Button
-                                              type="button"
-                                              size="sm"
-                                              variant="outline"
-                                              onClick={() => playVoicePreview(voice.id, previewUrl)}
-                                              className={cn(
-                                                "w-8 h-8 p-0",
-                                                isPlaying && "bg-primary text-primary-foreground"
-                                              )}
-                                            >
-                                              {isPlaying ? (
-                                                <Volume2 className="h-4 w-4 animate-pulse" />
-                                              ) : (
-                                                <Play className="h-4 w-4" />
-                                              )}
-                                            </Button>
-                                          )
-                                        })()}
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          onClick={() => {
-                                            updateFormData("voice", voice.id)
-                                            setIsVoiceListOpen(false)
-                                            stopVoicePreview()
-                                          }}
+                          {/* Voice list */}
+                          {filteredVoices.length > 0 && (
+                            <ScrollArea
+                              className={cn(
+                                "rounded-lg border p-2",
+                                filteredVoices.length <= 3 ? "h-auto" : "h-[320px]"
+                              )}
+                            >
+                              <div className="space-y-2">
+                                {filteredVoices.map((voice: VoiceOption | RetellVoice) => {
+                                  const colors = getVoiceCardColor(voice.gender)
+                                  const isRetellVoice = formData.provider === "retell"
+                                  const retellVoice = isRetellVoice ? (voice as RetellVoice) : null
+                                  const vapiVoice = !isRetellVoice ? (voice as VoiceOption) : null
+                                  const isPlaying = playingVoiceId === voice.id
+
+                                  return (
+                                    <div
+                                      key={voice.id}
+                                      className="p-3 rounded-lg hover:bg-muted border border-transparent hover:border-border transition-all"
+                                    >
+                                      <div className="flex items-start gap-3">
+                                        <div
+                                          className={cn(
+                                            "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
+                                            colors.bg
+                                          )}
                                         >
-                                          <Plus className="h-4 w-4 mr-1" />
-                                          Select
-                                        </Button>
+                                          <span className={cn("font-semibold", colors.text)}>
+                                            {voice.name[0]}
+                                          </span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <p className="font-medium text-sm">{voice.name}</p>
+                                            <Badge variant="outline" className="text-xs">
+                                              {voice.gender}
+                                            </Badge>
+                                            <Badge variant="secondary" className="text-xs">
+                                              {voice.accent}
+                                            </Badge>
+                                          </div>
+                                          <p className="text-xs text-muted-foreground">
+                                            {isRetellVoice ? `Age: ${retellVoice?.age}` : `Age ${vapiVoice?.age}`}
+                                          </p>
+                                          {vapiVoice?.characteristics && (
+                                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                              {vapiVoice.characteristics}
+                                            </p>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {/* Audio Preview Button */}
+                                          {(() => {
+                                            const previewUrl = isRetellVoice 
+                                              ? retellVoice?.previewAudioUrl 
+                                              : vapiVoice?.previewUrl
+                                            if (!previewUrl) return null
+                                            return (
+                                              <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => playVoicePreview(voice.id, previewUrl)}
+                                                className={cn(
+                                                  "w-8 h-8 p-0",
+                                                  isPlaying && "bg-primary text-primary-foreground"
+                                                )}
+                                              >
+                                                {isPlaying ? (
+                                                  <Volume2 className="h-4 w-4 animate-pulse" />
+                                                ) : (
+                                                  <Play className="h-4 w-4" />
+                                                )}
+                                              </Button>
+                                            )
+                                          })()}
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={() => {
+                                              updateFormData("voice", voice.id)
+                                              setIsVoiceListOpen(false)
+                                              stopVoicePreview()
+                                              resetVoiceFilters()
+                                            }}
+                                          >
+                                            <Plus className="h-4 w-4 mr-1" />
+                                            Select
+                                          </Button>
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </ScrollArea>
-                          <p className="text-xs text-muted-foreground">
-                            {availableVoices.length} voice{availableVoices.length !== 1 ? "s" : ""}{" "}
-                            available for {formData.provider === "vapi" ? "Vapi" : "Retell"}
-                            {formData.provider === "retell" && " (ElevenLabs)"}
-                          </p>
+                                  )
+                                })}
+                              </div>
+                            </ScrollArea>
+                          )}
+
+                          {/* Summary text */}
+                          {filteredVoices.length > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              {hasActiveFilters ? (
+                                <>
+                                  Showing <span className="font-medium">{filteredVoices.length}</span> of{" "}
+                                  <span className="font-medium">{availableVoices.length}</span> voices
+                                </>
+                              ) : (
+                                <>
+                                  {availableVoices.length} voice{availableVoices.length !== 1 ? "s" : ""}{" "}
+                                  available for {formData.provider === "vapi" ? "Vapi" : "Retell"}
+                                  {formData.provider === "retell" && " (ElevenLabs)"}
+                                </>
+                              )}
+                            </p>
+                          )}
                         </>
                       )}
                     </div>

@@ -12,6 +12,29 @@ import { env } from "@/lib/env"
 export type { RetellGeneralTool }
 
 // ============================================================================
+// MCP CONFIGURATION TYPES
+// ============================================================================
+
+/**
+ * MCP (Model Context Protocol) server configuration for Retell LLM
+ * Reference: https://docs.retellai.com/api-references/create-retell-llm
+ */
+export interface RetellMCPConfig {
+  /** Unique identifier for the MCP server (required by Retell) */
+  id: string
+  /** Unique name for the MCP server */
+  name: string
+  /** MCP server URL */
+  url: string
+  /** Query parameters to include in all requests */
+  query_params?: Record<string, string>
+  /** Headers to include in all requests */
+  headers?: Record<string, string>
+  /** Request timeout in milliseconds */
+  timeout_ms?: number
+}
+
+// ============================================================================
 // RETELL LLM PAYLOAD TYPES
 // ============================================================================
 
@@ -25,6 +48,8 @@ export interface RetellLLMPayload {
   states?: Record<string, unknown>[]
   /** Webhook URL for function calls (used as default if not specified per-tool) */
   webhook_url?: string
+  /** MCP servers for custom tool execution */
+  mcps?: RetellMCPConfig[]
 }
 
 export interface RetellLLMResponse {
@@ -175,8 +200,68 @@ const MODEL_MAP: Record<string, string> = {
 }
 
 /**
+ * Check if agent has custom function tools that need MCP
+ */
+function hasCustomFunctionTools(tools: FunctionTool[]): boolean {
+  return tools.some(
+    t => t.enabled !== false && 
+    (t.tool_type === 'function' || t.tool_type === 'custom_function')
+  )
+}
+
+/**
+ * Get the MCP server URL from environment
+ */
+function getMCPServerUrl(): string | null {
+  return process.env.MCP_SERVER_URL || null
+}
+
+/**
+ * Get the MCP API key from environment
+ */
+function getMCPApiKey(): string | null {
+  return process.env.MCP_API_KEY || null
+}
+
+/**
+ * Generate MCP configuration for Retell LLM
+ * This tells Retell where to find custom tools
+ */
+function generateMCPConfig(agentId: string): RetellMCPConfig | null {
+  const mcpServerUrl = getMCPServerUrl()
+  
+  if (!mcpServerUrl) {
+    console.warn("[RetellMapper] MCP_SERVER_URL not configured, custom tools will not be available")
+    return null
+  }
+
+  const mcpApiKey = getMCPApiKey()
+
+  const config: RetellMCPConfig = {
+    id: `mcp-${agentId}`,
+    name: "genius365-mcp",
+    url: `${mcpServerUrl}/mcp`,
+    query_params: {
+      agent_id: agentId,
+    },
+    timeout_ms: 30000,
+  }
+
+  // Add authorization header if API key is configured
+  if (mcpApiKey) {
+    config.headers = {
+      "Authorization": `Bearer ${mcpApiKey}`,
+    }
+  }
+
+  return config
+}
+
+/**
  * Generate a function description block for the system prompt
+ * This is a FALLBACK when MCP is not configured
  * Custom functions are described in the prompt so the LLM knows to call them
+ * @deprecated Use MCP instead
  */
 function generateCustomFunctionPrompt(tools: FunctionTool[]): string {
   const customTools = tools.filter(
@@ -221,13 +306,27 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
     model: model as string,
   }
 
-  // System prompt with custom function descriptions appended
+  // System prompt
   let systemPrompt = config.system_prompt || ""
   
-  // Add custom function descriptions to the system prompt
-  // Custom functions in Retell are executed via webhook, not general_tools
-  if (config.tools && config.tools.length > 0) {
-    const customFunctionPrompt = generateCustomFunctionPrompt(config.tools)
+  // Check if agent has custom function tools
+  const hasCustomTools = config.tools && config.tools.length > 0 && hasCustomFunctionTools(config.tools)
+  const mcpServerUrl = getMCPServerUrl()
+  
+  // If MCP is configured and we have custom tools, use MCP
+  // Otherwise, fall back to prompt-based approach (deprecated)
+  if (hasCustomTools && mcpServerUrl) {
+    // Generate MCP configuration
+    const mcpConfig = generateMCPConfig(agent.id)
+    if (mcpConfig) {
+      payload.mcps = [mcpConfig]
+      console.log(`[RetellMapper] Added MCP config for agent ${agent.id}`)
+    }
+  } else if (hasCustomTools) {
+    // FALLBACK: Add custom function descriptions to the system prompt
+    // This is used when MCP is not configured
+    console.warn(`[RetellMapper] MCP not configured, using prompt-based custom tools (deprecated)`)
+    const customFunctionPrompt = generateCustomFunctionPrompt(config.tools!)
     if (customFunctionPrompt) {
       systemPrompt += customFunctionPrompt
     }
@@ -244,7 +343,7 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
 
   // Add native tools to LLM configuration using the function_tools mapper
   // Only native Retell tools (end_call, transfer_call, etc.) go in general_tools
-  // Custom functions are handled via webhook and described in the prompt
+  // Custom functions are handled via MCP or webhook
   if (config.tools && config.tools.length > 0) {
     const retellTools = mapFunctionToolsToRetell(config.tools)
     if (retellTools.length > 0) {
@@ -252,7 +351,7 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
     }
   }
 
-  // Set webhook URL for tool calls
+  // Set webhook URL for tool calls (fallback when MCP is not used)
   // NEW: Use workspace-level webhook URL so we can route by workspace
   // Format: {APP_URL}/api/webhooks/w/{workspaceId}/retell
   let baseUrl = (env.appUrl || "https://genius365.vercel.app").replace(/\/$/, "")

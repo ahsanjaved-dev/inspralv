@@ -92,6 +92,7 @@ export type ToolCategory =
   | 'google'
   | 'communication'
   | 'ghl'
+  | 'custom'
   | 'other'
 
 /**

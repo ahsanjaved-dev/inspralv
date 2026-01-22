@@ -2,14 +2,31 @@
  * Retell Tool Registry
  * Registry of Retell-supported tools (general_tools) with metadata for UI.
  * Reference: https://docs.retellai.com/api-references/create-retell-llm
+ * 
+ * Native tools go into general_tools array.
+ * Custom functions are handled via MCP (Model Context Protocol).
  */
 
 import type { BuiltInToolDefinition } from "@/lib/integrations/function_tools/types"
 
 /**
- * Tools Retell supports natively via `general_tools`.
+ * Tools Retell supports natively via `general_tools` + custom functions via MCP.
  */
 export const RETELL_TOOL_REGISTRY: Record<string, BuiltInToolDefinition> = {
+  // ========================================
+  // CUSTOM FUNCTION (via MCP)
+  // ========================================
+  custom_function: {
+    key: "custom_function",
+    displayName: "Custom Function",
+    type: "function",
+    category: "custom",
+    providers: { vapi: true, retell: true },
+    isNative: false,
+    description: "Create a custom function that calls your webhook. Executed via MCP server.",
+    icon: "Code",
+  },
+
   // ========================================
   // CALL CONTROL
   // ========================================
@@ -124,6 +141,12 @@ export function getSupportedRetellToolTypes(): string[] {
  * Retell tool categories for UI organization
  */
 export const RETELL_TOOL_CATEGORIES = {
+  custom: {
+    key: "custom",
+    displayName: "Custom Functions",
+    description: "Create custom functions that call your webhooks",
+    icon: "Code",
+  },
   call_control: {
     key: "call_control",
     displayName: "Call Control",
