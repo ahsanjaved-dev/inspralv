@@ -5,9 +5,11 @@ import {
   agentApiKeyConfigSchema,
   additionalApiKeySchema,
   functionToolsArraySchema,
+  agentCustomVariablesArraySchema,
   type AgentApiKeyConfig,
   type AdditionalApiKey,
   type FunctionTool,
+  type AgentCustomVariableDefinition,
 } from "./database.types"
 
 // Re-export for convenience
@@ -17,8 +19,9 @@ export {
   agentApiKeyConfigSchema,
   additionalApiKeySchema,
   functionToolsArraySchema,
+  agentCustomVariablesArraySchema,
 }
-export type { AgentApiKeyConfig, AdditionalApiKey, FunctionTool }
+export type { AgentApiKeyConfig, AdditionalApiKey, FunctionTool, AgentCustomVariableDefinition }
 
 // ============================================================================
 // WORKSPACE AGENT SCHEMAS
@@ -81,6 +84,8 @@ export const createWorkspaceAgentSchema = z.object({
       tools_server_url: z.string().url().optional(),
       // Knowledge base configuration
       knowledge_base: agentKnowledgeBaseConfigSchema.optional(),
+      // Agent-level custom variables (specific to this agent)
+      custom_variables: agentCustomVariablesArraySchema.optional(),
     })
     .optional(),
   agent_secret_api_key: z.array(agentSecretApiKeySchema).optional().default([]),

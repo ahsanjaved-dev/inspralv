@@ -2224,6 +2224,72 @@ export const workspaceSettingsSchema = z.object({
 })
 
 // ============================================================================
+// AGENT-LEVEL CUSTOM VARIABLES
+// ============================================================================
+
+/**
+ * Agent-level custom variable definition
+ * These are specific to an individual agent and override/extend workspace variables
+ * Stored in ai_agents.config.custom_variables
+ */
+export interface AgentCustomVariableDefinition {
+  /** Unique identifier for the variable */
+  id: string
+  /** Variable name (snake_case, e.g., "appointment_time") */
+  name: string
+  /** Human-readable description */
+  description: string
+  /** Default fallback value when not provided */
+  default_value: string
+  /** Whether this variable must be provided in campaigns */
+  is_required: boolean
+  /** Category for UI grouping */
+  category: "agent" | "contact" | "business" | "custom"
+  /** Creation timestamp */
+  created_at: string
+}
+
+/**
+ * Zod schema for agent-level custom variable definitions
+ */
+export const agentCustomVariableDefinitionSchema = z.object({
+  id: z.string().uuid(),
+  name: z
+    .string()
+    .min(1, "Variable name is required")
+    .max(50, "Variable name must be 50 characters or less")
+    .regex(
+      /^[a-z][a-z0-9_]*$/,
+      "Variable name must start with a letter and contain only lowercase letters, numbers, and underscores"
+    ),
+  description: z.string().max(200, "Description must be 200 characters or less").default(""),
+  default_value: z.string().max(500, "Default value must be 500 characters or less").default(""),
+  is_required: z.boolean().default(false),
+  category: z.enum(["agent", "contact", "business", "custom"]).default("agent"),
+  created_at: z.string(),
+})
+
+/**
+ * Schema for creating a new agent-level custom variable (without id and created_at)
+ */
+export const createAgentCustomVariableSchema = agentCustomVariableDefinitionSchema.omit({
+  id: true,
+  created_at: true,
+})
+
+/**
+ * Schema for updating an agent-level custom variable
+ */
+export const updateAgentCustomVariableSchema = agentCustomVariableDefinitionSchema
+  .omit({ id: true, created_at: true })
+  .partial()
+
+/**
+ * Agent custom variables array schema for config validation
+ */
+export const agentCustomVariablesArraySchema = z.array(agentCustomVariableDefinitionSchema).optional().default([])
+
+// ============================================================================
 // TELEPHONY TYPES
 // ============================================================================
 

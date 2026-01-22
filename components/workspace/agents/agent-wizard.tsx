@@ -57,10 +57,12 @@ import type {
   AgentDirection,
   WorkspaceSettings,
   CustomVariableDefinition,
+  AgentCustomVariableDefinition,
 } from "@/types/database.types"
 import { STANDARD_CAMPAIGN_VARIABLES } from "@/types/database.types"
 import { FunctionToolEditor } from "./function-tool-editor"
 import { SystemPromptEditor } from "./system-prompt-editor"
+import { AgentCustomVariablesSection } from "./agent-custom-variables-section"
 import { useActiveKnowledgeDocuments } from "@/lib/hooks/use-workspace-knowledge-base"
 import { useAvailablePhoneNumbers } from "@/lib/hooks/use-workspace-agents"
 import { useWorkspaceSettings, useWorkspaceCustomVariables } from "@/lib/hooks/use-workspace-settings"
@@ -108,6 +110,8 @@ interface WizardFormData {
   greeting: string
   style: "formal" | "friendly" | "casual"
   tools: FunctionTool[]
+  // Agent-level custom variables
+  agentCustomVariables: AgentCustomVariableDefinition[]
 }
 
 // Knowledge document type icons
@@ -229,6 +233,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     greeting: "Hello! Thank you for calling. How can I help you today?",
     style: "friendly",
     tools: [],
+    agentCustomVariables: [],
   })
 
   // Fetch Retell voices dynamically
@@ -441,6 +446,10 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               document_ids: formData.knowledgeDocumentIds,
               injection_mode: "system_prompt",
             }
+          : undefined,
+        // Include agent-level custom variables
+        custom_variables: formData.agentCustomVariables.length > 0 
+          ? formData.agentCustomVariables 
           : undefined,
       },
       agent_secret_api_key: [],
@@ -1283,6 +1292,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 error={errors.systemPrompt}
                 required
                 customVariables={workspaceCustomVariables}
+                agentCustomVariables={formData.agentCustomVariables}
                 showTemplates
                 onApplyTemplate={applyTemplate}
               />
@@ -1486,14 +1496,60 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                   <div className="pt-3 border-t">
                     <div className="text-center p-4 rounded-lg bg-muted/50">
                       <Variable className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                      <p className="text-sm text-muted-foreground">No custom variables defined</p>
+                      <p className="text-sm text-muted-foreground">No workspace custom variables defined</p>
                       <p className="text-xs text-muted-foreground mt-1">
                         Add custom variables in Workspace Settings → Custom Variables
                       </p>
                     </div>
                   </div>
                 )}
+
+                {/* Agent-Specific Variables */}
+                {formData.agentCustomVariables.length > 0 && (
+                  <div className="pt-3 border-t">
+                    <Label className="text-xs text-muted-foreground mb-2 block">Agent-Specific Variables</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {formData.agentCustomVariables.map((variable) => (
+                        <Button
+                          key={variable.id}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="font-mono text-xs border-amber-500/50 text-amber-600 dark:text-amber-400"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`{{${variable.name}}}`)
+                            toast.success(`Copied {{${variable.name}}} to clipboard`)
+                          }}
+                          title={variable.description}
+                        >
+                          {`{{${variable.name}}}`}
+                          <Copy className="h-3 w-3 ml-1 text-muted-foreground" />
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Agent Custom Variables Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Variable className="w-5 h-5" />
+                Agent-Specific Variables
+              </CardTitle>
+              <CardDescription>
+                Define custom variables unique to this agent. These are separate from workspace-level variables.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AgentCustomVariablesSection
+                variables={formData.agentCustomVariables}
+                onChange={(variables) => updateFormData("agentCustomVariables", variables)}
+                compact
+              />
             </CardContent>
           </Card>
 
@@ -1562,9 +1618,17 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                   </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Variables</p>
+                  <p className="text-muted-foreground">Workspace Variables</p>
                   <p className="font-medium">
                     {allAvailableVariables.length} available
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Agent Variables</p>
+                  <p className="font-medium">
+                    {formData.agentCustomVariables.length === 0
+                      ? "None defined"
+                      : `${formData.agentCustomVariables.length} defined`}
                   </p>
                 </div>
               </div>

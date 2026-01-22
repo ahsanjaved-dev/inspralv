@@ -13,7 +13,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Maximize2, Minimize2, Variable, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { STANDARD_CAMPAIGN_VARIABLES, type CustomVariableDefinition } from "@/types/database.types"
+import { STANDARD_CAMPAIGN_VARIABLES, type CustomVariableDefinition, type AgentCustomVariableDefinition } from "@/types/database.types"
 
 // ============================================================================
 // TYPES
@@ -28,6 +28,8 @@ interface SystemPromptEditorProps {
   required?: boolean
   /** Custom variables from workspace settings */
   customVariables?: CustomVariableDefinition[]
+  /** Agent-specific custom variables */
+  agentCustomVariables?: AgentCustomVariableDefinition[]
   /** Min height for the textarea */
   minHeight?: string
   /** Show template buttons */
@@ -40,6 +42,7 @@ interface VariableSuggestion {
   name: string
   description: string
   isCustom: boolean
+  isAgentLevel?: boolean
   insertText: string
 }
 
@@ -55,6 +58,7 @@ export function SystemPromptEditor({
   label = "System Prompt",
   required = false,
   customVariables = [],
+  agentCustomVariables = [],
   minHeight = "320px",
   showTemplates = true,
   onApplyTemplate,
@@ -127,8 +131,22 @@ export function SystemPromptEditor({
       }
     })
     
+    // Add agent-level custom variables
+    agentCustomVariables.forEach(v => {
+      // Don't add if already exists (standard or workspace)
+      if (!vars.some(sv => sv.name === v.name)) {
+        vars.push({
+          name: v.name,
+          description: v.description || `Agent variable: ${v.name}`,
+          isCustom: true,
+          isAgentLevel: true,
+          insertText: `{{${v.name}}}`,
+        })
+      }
+    })
+    
     return vars
-  }, [customVariables])
+  }, [customVariables, agentCustomVariables])
 
   // Filter suggestions based on search query
   const filterSuggestions = useCallback((query: string) => {

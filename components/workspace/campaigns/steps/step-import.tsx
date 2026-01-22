@@ -30,10 +30,13 @@ import {
   Info,
   AlertTriangle,
   Sparkles,
+  Bot,
+  Building2,
 } from "lucide-react"
 import type { CreateRecipientInput } from "@/types/database.types"
 import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
 import { useWorkspaceCustomVariables } from "@/lib/hooks/use-workspace-settings"
+import { getAgentCustomVariables } from "@/lib/hooks/use-agent-custom-variables"
 
 interface StepImportProps {
   formData: WizardFormData
@@ -41,20 +44,14 @@ interface StepImportProps {
   errors: Record<string, string>
 }
 
-// Standard field mappings - aligned with Inspra Outbound API variables
+// Standard field mappings - Core fields for voice AI campaigns
+// These are the essential contact fields that map to database columns
 const STANDARD_FIELDS = [
   { key: "phone_number", label: "Phone Number", required: true, isCustom: false },
   { key: "first_name", label: "First Name", required: false, isCustom: false },
   { key: "last_name", label: "Last Name", required: false, isCustom: false },
   { key: "email", label: "Email", required: false, isCustom: false },
   { key: "company", label: "Company", required: false, isCustom: false },
-  { key: "reason_for_call", label: "Reason for Call", required: false, isCustom: false },
-  { key: "address_line_1", label: "Address Line 1", required: false, isCustom: false },
-  { key: "address_line_2", label: "Address Line 2", required: false, isCustom: false },
-  { key: "suburb", label: "Suburb/City", required: false, isCustom: false },
-  { key: "state", label: "State", required: false, isCustom: false },
-  { key: "post_code", label: "Post Code", required: false, isCustom: false },
-  { key: "country", label: "Country", required: false, isCustom: false },
   { key: "skip", label: "Skip Column", required: false, isCustom: false },
 ] as const
 
@@ -94,21 +91,40 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
   // Get workspace custom variables for mapping dropdown
   const { customVariables: workspaceVariables } = useWorkspaceCustomVariables()
 
-  // Combine standard fields with workspace custom variables AND CSV column headers
+  // Get agent-specific custom variables from the selected agent
+  const agentCustomVariables = useMemo(() => {
+    return getAgentCustomVariables(formData.selectedAgent)
+  }, [formData.selectedAgent])
+
+  // Combine standard fields with agent variables and workspace custom variables
   const allMappingFields = useMemo(() => {
-    const fields: Array<{ key: string; label: string; required: boolean; isCustom: boolean }> = [
-      ...STANDARD_FIELDS.map(f => ({ ...f, isCustom: false })),
+    const fields: Array<{ key: string; label: string; required: boolean; isCustom: boolean; source: "standard" | "agent" | "workspace" | "csv" }> = [
+      ...STANDARD_FIELDS.map(f => ({ ...f, isCustom: false, source: "standard" as const })),
     ]
+    
+    // Add agent-specific custom variables (highest priority after standard)
+    agentCustomVariables.forEach(v => {
+      if (!STANDARD_FIELDS.some(sf => sf.key === v.name)) {
+        fields.push({
+          key: v.name,
+          label: v.description || v.name,
+          required: v.is_required || false,
+          isCustom: true,
+          source: "agent",
+        })
+      }
+    })
     
     // Add workspace custom variables
     workspaceVariables.forEach(v => {
-      // Don't add if already exists in standard fields
-      if (!STANDARD_FIELDS.some(sf => sf.key === v.name)) {
+      // Don't add if already exists in standard fields or agent variables
+      if (!fields.some(f => f.key === v.name)) {
         fields.push({
           key: v.name,
           label: v.description || v.name,
           required: false,
           isCustom: true,
+          source: "workspace",
         })
       }
     })
@@ -126,30 +142,26 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
             label: `${header} (Custom)`,
             required: false,
             isCustom: true,
+            source: "csv",
           })
         }
       })
     }
     
     return fields
-  }, [workspaceVariables, csvData])
+  }, [agentCustomVariables, workspaceVariables, csvData])
 
   // Analyze data quality
   const dataQualityReport = useMemo((): DataQualityReport | null => {
     if (formData.recipients.length === 0) return null
 
+    // Core contact fields for voice AI campaigns
     const fields = [
       { fieldName: "phone_number", displayName: "Phone" },
       { fieldName: "first_name", displayName: "First Name" },
       { fieldName: "last_name", displayName: "Last Name" },
       { fieldName: "email", displayName: "Email" },
       { fieldName: "company", displayName: "Company" },
-      { fieldName: "reason_for_call", displayName: "Reason" },
-      { fieldName: "address_line_1", displayName: "Address" },
-      { fieldName: "suburb", displayName: "Suburb/City" },
-      { fieldName: "state", displayName: "State" },
-      { fieldName: "post_code", displayName: "Post Code" },
-      { fieldName: "country", displayName: "Country" },
     ]
 
     const fieldStats: FieldStats[] = fields.map((field) => {
@@ -238,47 +250,27 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
         ["company", "organization", "org", "business", "companyname"].includes(lowerHeader)
       ) {
         mappedTo = "company"
-      } else if (
-        ["reasonforcall", "reason", "callreason", "purpose"].includes(lowerHeader)
-      ) {
-        mappedTo = "reason_for_call"
-      } else if (
-        ["addressline1", "address1", "address", "streetaddress", "street"].includes(lowerHeader)
-      ) {
-        mappedTo = "address_line_1"
-      } else if (
-        ["addressline2", "address2", "apt", "apartment", "suite", "unit"].includes(lowerHeader)
-      ) {
-        mappedTo = "address_line_2"
-      } else if (
-        ["suburb", "city", "town", "locality"].includes(lowerHeader)
-      ) {
-        mappedTo = "suburb"
-      } else if (
-        ["state", "province", "region"].includes(lowerHeader)
-      ) {
-        mappedTo = "state"
-      } else if (
-        ["postcode", "postalcode", "zipcode", "zip", "postzip"].includes(lowerHeader)
-      ) {
-        mappedTo = "post_code"
-      } else if (
-        ["country", "countryname", "countrycode"].includes(lowerHeader)
-      ) {
-        mappedTo = "country"
       } else {
-        // Check if it matches a workspace custom variable
-        const matchingCustomVar = workspaceVariables.find(
+        // Check if it matches an agent-specific custom variable (priority)
+        const matchingAgentVar = agentCustomVariables.find(
           v => v.name.toLowerCase() === exactHeader || v.name.toLowerCase() === lowerHeader
         )
-        if (matchingCustomVar) {
-          mappedTo = matchingCustomVar.name
+        if (matchingAgentVar) {
+          mappedTo = matchingAgentVar.name
         } else {
-          // Auto-map unrecognized columns as custom variables using their column name
-          // This allows CSV columns like "product_interest" to be automatically captured
-          // even if not defined in workspace custom variables
-          // The key is normalized to snake_case (e.g., "Product Interest" -> "product_interest")
-          mappedTo = exactHeader as FieldKey
+          // Check if it matches a workspace custom variable
+          const matchingCustomVar = workspaceVariables.find(
+            v => v.name.toLowerCase() === exactHeader || v.name.toLowerCase() === lowerHeader
+          )
+          if (matchingCustomVar) {
+            mappedTo = matchingCustomVar.name
+          } else {
+            // Auto-map unrecognized columns as custom variables using their column name
+            // This allows CSV columns like "product_interest" to be automatically captured
+            // even if not defined in workspace custom variables
+            // The key is normalized to snake_case (e.g., "Product Interest" -> "product_interest")
+            mappedTo = exactHeader as FieldKey
+          }
         }
       }
 
@@ -287,7 +279,7 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
         mappedTo,
       }
     })
-  }, [workspaceVariables])
+  }, [agentCustomVariables, workspaceVariables])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -365,13 +357,6 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
         last_name: null,
         email: null,
         company: null,
-        reason_for_call: null,
-        address_line_1: null,
-        address_line_2: null,
-        suburb: null,
-        state: null,
-        post_code: null,
-        country: null,
         custom_variables: {},
       }
 
@@ -391,33 +376,12 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
           case "company":
             recipient.company = value
             break
-          case "reason_for_call":
-            recipient.reason_for_call = value
-            break
-          case "address_line_1":
-            recipient.address_line_1 = value
-            break
-          case "address_line_2":
-            recipient.address_line_2 = value
-            break
-          case "suburb":
-            recipient.suburb = value
-            break
-          case "state":
-            recipient.state = value
-            break
-          case "post_code":
-            recipient.post_code = value
-            break
-          case "country":
-            recipient.country = value
-            break
           case "phone_number":
           case "skip":
             // Already handled or skip
             break
           default:
-            // Handle custom variables (workspace-defined variables like product_interest)
+            // Handle custom variables (agent-specific or workspace-defined variables)
             // These are stored in custom_variables for substitution in system prompts
             if (mapping.mappedTo && value) {
               recipient.custom_variables[mapping.mappedTo] = value
@@ -445,8 +409,11 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
   }, [csvData, columnMappings, file, updateMultipleFields])
 
   const downloadTemplate = () => {
-    const template =
-      "phone_number,first_name,last_name,email,company,reason_for_call,address_line_1,address_line_2,suburb,state,post_code,country\n+14155551234,John,Doe,john@example.com,Acme Inc,Follow up on inquiry,123 Main St,Suite 100,Melbourne,VIC,3000,Australia\n+14155555678,Jane,Smith,jane@example.com,Tech Corp,Product demo,456 Oak Ave,,Sydney,NSW,2000,Australia"
+    // Template with standard fields + example custom variables for personalization
+    const template = `phone_number,first_name,last_name,email,company,product_interest,appointment_date,account_balance
++14155551234,John,Doe,john@example.com,Acme Inc,Solar Panels,January 25 2026,$1250.00
++14155555678,Jane,Smith,jane@example.com,Tech Corp,Home Security,January 26 2026,$850.00
++14155559012,Mike,Johnson,mike@example.com,Global LLC,Smart Thermostat,January 27 2026,$2100.00`
     const blob = new Blob([template], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -505,7 +472,7 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
           <p className="text-sm font-medium mb-3">CSV Format Guide:</p>
           <div className="grid md:grid-cols-2 gap-4 text-sm text-muted-foreground">
             <div>
-              <p className="font-medium text-foreground mb-1">Contact Information</p>
+              <p className="font-medium text-foreground mb-1">Standard Fields</p>
               <ul className="space-y-0.5">
                 <li>
                   • <code className="bg-muted px-1 rounded">phone_number</code> (required)
@@ -521,19 +488,17 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
               </ul>
             </div>
             <div>
-              <p className="font-medium text-foreground mb-1">Additional Fields</p>
+              <p className="font-medium text-foreground mb-1">Custom Variables</p>
               <ul className="space-y-0.5">
                 <li>
-                  • <code className="bg-muted px-1 rounded">reason_for_call</code>
+                  • Add any custom columns for personalization
                 </li>
                 <li>
-                  • <code className="bg-muted px-1 rounded">address_line_1</code>,{" "}
-                  <code className="bg-muted px-1 rounded">suburb</code>
+                  • Map to agent or workspace variables
                 </li>
                 <li>
-                  • <code className="bg-muted px-1 rounded">state</code>,{" "}
-                  <code className="bg-muted px-1 rounded">post_code</code>,{" "}
-                  <code className="bg-muted px-1 rounded">country</code>
+                  • Use in prompts as{" "}
+                  <code className="bg-muted px-1 rounded">{`{{variable_name}}`}</code>
                 </li>
               </ul>
             </div>
@@ -599,11 +564,14 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
                         value={mapping.mappedTo}
                         onValueChange={(value) => updateColumnMapping(index, value as FieldKey)}
                       >
-                        <SelectTrigger className="w-[200px]">
+                        <SelectTrigger className="w-[250px]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {/* Standard Fields */}
+                          {/* Standard Contact Fields */}
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                            Standard Fields
+                          </div>
                           {STANDARD_FIELDS.map((field) => (
                             <SelectItem key={field.key} value={field.key}>
                               {field.label}
@@ -611,19 +579,45 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
                             </SelectItem>
                           ))}
                           
+                          {/* Agent-Specific Custom Variables */}
+                          {agentCustomVariables.length > 0 && (
+                            <>
+                              <SelectSeparator />
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                                <Bot className="h-3 w-3" />
+                                Agent Variables
+                                {formData.selectedAgent && (
+                                  <span className="text-xs text-muted-foreground/70">
+                                    ({formData.selectedAgent.name})
+                                  </span>
+                                )}
+                              </div>
+                              {agentCustomVariables.map((variable) => (
+                                <SelectItem key={variable.id} value={variable.name}>
+                                  {variable.name}
+                                  {variable.description && (
+                                    <span className="text-muted-foreground ml-1 text-xs">
+                                      ({variable.description})
+                                    </span>
+                                  )}
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
+                          
                           {/* Workspace Custom Variables */}
                           {workspaceVariables.length > 0 && (
                             <>
                               <SelectSeparator />
                               <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-1">
-                                <Sparkles className="h-3 w-3" />
-                                Custom Variables
+                                <Building2 className="h-3 w-3" />
+                                Workspace Variables
                               </div>
                               {workspaceVariables.map((variable) => (
                                 <SelectItem key={variable.id} value={variable.name}>
                                   {variable.name}
                                   {variable.description && (
-                                    <span className="text-muted-foreground ml-1">
+                                    <span className="text-muted-foreground ml-1 text-xs">
                                       ({variable.description})
                                     </span>
                                   )}
@@ -669,7 +663,7 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
   return (
     <div className="space-y-6">
       {/* Success Header */}
-      <div className="flex items-center justify-between p-5 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/50 dark:to-emerald-950/50 rounded-xl border border-green-200 dark:border-green-800">
+      <div className="flex items-center justify-between p-5 bg-linear-to-r from-green-50 to-emerald-50 dark:from-green-950/50 dark:to-emerald-950/50 rounded-xl border border-green-200 dark:border-green-800">
         <div className="flex items-center gap-4">
           <div className="p-3 bg-green-100 dark:bg-green-900 rounded-full">
             <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
@@ -744,27 +738,6 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
               </div>
             </div>
 
-            {/* Address Fields */}
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">Address & Additional Fields</p>
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                {dataQualityReport.fieldStats
-                  .filter((f) => ["reason_for_call", "address_line_1", "suburb", "state", "post_code", "country"].includes(f.fieldName))
-                  .map((field) => (
-                    <div
-                      key={field.fieldName}
-                      className="p-2 rounded-lg border bg-background text-center"
-                    >
-                      <span className={`text-lg font-bold ${getCompletenessColor(field.completeness)}`}>
-                        {Math.round(field.completeness)}%
-                      </span>
-                      <p className="text-xs text-muted-foreground truncate" title={field.displayName}>
-                        {field.displayName}
-                      </p>
-                    </div>
-                  ))}
-              </div>
-            </div>
 
             {/* Warning for low completeness */}
             {dataQualityReport.overallCompleteness < 70 && (
@@ -793,9 +766,9 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
         </div>
         <div className="p-4 rounded-lg border bg-card text-center">
           <p className="text-3xl font-bold text-green-600">
-            {dataQualityReport?.fieldStats.find(f => f.fieldName === "email")?.filled || 0}
+            {dataQualityReport?.fieldStats.find(f => f.fieldName === "first_name")?.filled || 0}
           </p>
-          <p className="text-sm text-muted-foreground">With Email</p>
+          <p className="text-sm text-muted-foreground">With Name</p>
         </div>
         <div className="p-4 rounded-lg border bg-card text-center">
           <p className="text-3xl font-bold text-blue-600">
@@ -805,9 +778,9 @@ export const StepImport = memo(function StepImport({ formData, updateMultipleFie
         </div>
         <div className="p-4 rounded-lg border bg-card text-center">
           <p className="text-3xl font-bold text-purple-600">
-            {dataQualityReport?.fieldStats.find(f => f.fieldName === "address_line_1")?.filled || 0}
+            {dataQualityReport?.fieldStats.find(f => f.fieldName === "email")?.filled || 0}
           </p>
-          <p className="text-sm text-muted-foreground">With Address</p>
+          <p className="text-sm text-muted-foreground">With Email</p>
         </div>
       </div>
     </div>
