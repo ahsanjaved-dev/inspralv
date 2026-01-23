@@ -295,6 +295,80 @@ export async function deleteRetellAgentWithKey(
 }
 
 // ============================================================================
+// GET MCP TOOLS FROM RETELL
+// ============================================================================
+
+/**
+ * MCP Tool returned by Retell's get-mcp-tools API
+ */
+export interface RetellMCPTool {
+  name: string
+  description?: string
+  inputSchema?: {
+    type: string
+    properties?: Record<string, unknown>
+    required?: string[]
+  }
+}
+
+export interface GetMCPToolsResponse {
+  success: boolean
+  tools?: RetellMCPTool[]
+  error?: string
+}
+
+/**
+ * Fetch available tools from an MCP server via Retell's API
+ * This tells us what tools Retell can see from our MCP server
+ * 
+ * @param agentId - The Retell agent ID (external_agent_id)
+ * @param mcpId - The MCP server ID (e.g., "genius365-mcp")
+ * @param apiKey - Retell secret API key
+ */
+export async function getMCPToolsWithKey(
+  agentId: string,
+  mcpId: string,
+  apiKey: string
+): Promise<GetMCPToolsResponse> {
+  try {
+    console.log(`[RetellConfig] Fetching MCP tools for agent ${agentId}, mcp ${mcpId}`)
+
+    const response = await fetch(
+      `${RETELL_BASE_URL}/get-mcp-tools/${agentId}?mcp_id=${encodeURIComponent(mcpId)}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error("[RetellConfig] Get MCP tools error:", response.status, errorData)
+      return {
+        success: false,
+        error: errorData.message || errorData.error || `Retell API error: ${response.status}`,
+      }
+    }
+
+    const data = await response.json()
+    console.log("[RetellConfig] MCP tools fetched:", data)
+    
+    // Retell returns { tools: [...] } or array directly
+    const tools = Array.isArray(data) ? data : data.tools || []
+    
+    return { success: true, tools }
+  } catch (error) {
+    console.error("[RetellConfig] Get MCP tools exception:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
+  }
+}
+
+// ============================================================================
 // LEGACY FUNCTIONS (backward compatibility)
 // ============================================================================
 

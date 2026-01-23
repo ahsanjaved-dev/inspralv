@@ -139,6 +139,20 @@ export interface RetellCustomFunctionTool {
 }
 
 /**
+ * MCP Tool Reference - references a tool from an MCP server
+ * This allows explicitly adding MCP tools to general_tools
+ */
+export interface RetellMCPToolReference {
+  type: 'mcp'
+  /** The MCP server ID (matches mcps[].id) */
+  mcp_id: string
+  /** The tool name from the MCP server */
+  name: string
+  /** Tool description (optional, MCP server provides this) */
+  description?: string
+}
+
+/**
  * Retell General Tool - union of all supported `general_tools`.
  */
 export type RetellGeneralTool =
@@ -148,6 +162,7 @@ export type RetellGeneralTool =
   | RetellCheckAvailabilityCalTool
   | RetellBookAppointmentCalTool
   | RetellSendSmsTool
+  | RetellMCPToolReference
 
 /**
  * Retell Tool Type - string literal types for native tools

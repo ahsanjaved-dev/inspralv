@@ -200,15 +200,20 @@ router.post('/', requireAgentId, async (req: Request, res: Response) => {
           console.log(`[MCP] ✅ Returning ${tools.length} tools to Retell:`);
           tools.forEach((tool, i) => {
             console.log(`[MCP]   ${i + 1}. ${tool.name}: ${tool.description?.substring(0, 50)}...`);
+            console.log(`[MCP]      inputSchema:`, JSON.stringify(tool.inputSchema, null, 2));
           });
           
-          res.json({
+          const response = {
             jsonrpc: '2.0',
             id,
             result: {
               tools: tools,
             },
-          });
+          };
+          
+          console.log(`[MCP] 📤 FULL RESPONSE TO RETELL:`, JSON.stringify(response, null, 2));
+          
+          res.json(response);
           return;
         }
 

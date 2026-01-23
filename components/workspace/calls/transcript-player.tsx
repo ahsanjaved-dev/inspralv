@@ -134,6 +134,7 @@ export function TranscriptPlayer({
 }: TranscriptPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const transcriptContainerRef = useRef<HTMLDivElement>(null)
   const messageRefs = useRef<(HTMLDivElement | null)[]>([])
 
   const [isPlaying, setIsPlaying] = useState(false)
@@ -148,6 +149,14 @@ export function TranscriptPlayer({
   // Use ref to track auto-scroll state for immediate effect in callbacks
   const isAutoScrollEnabledRef = useRef(isAutoScrollEnabled)
   isAutoScrollEnabledRef.current = isAutoScrollEnabled
+  
+  // Helper to get the scroll viewport element from ScrollArea
+  const getScrollViewport = useCallback(() => {
+    if (scrollAreaRef.current) {
+      return scrollAreaRef.current.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null
+    }
+    return null
+  }, [])
 
   // Parse messages
   const messages: TranscriptMessage[] = transcriptMessages?.length
@@ -204,30 +213,43 @@ export function TranscriptPlayer({
         if (newActiveIndex !== activeMessageIndex) {
           setActiveMessageIndex(newActiveIndex)
 
-          // Auto-scroll to active message with debouncing based on playback rate
-          // Use ref for immediate response when toggling auto-scroll off
-          if (isAutoScrollEnabledRef.current && newActiveIndex >= 0 && messageRefs.current[newActiveIndex]) {
-            const now = Date.now()
-            // Adjust scroll frequency based on playback rate - faster playback = more responsive scrolling
-            const minScrollInterval = Math.max(100, 300 / playbackRate)
-            
-            if (now - lastScrollTimeRef.current >= minScrollInterval) {
-              lastScrollTimeRef.current = now
-              
-              // Clear any pending scroll
-              if (scrollTimeoutRef.current) {
-                clearTimeout(scrollTimeoutRef.current)
-              }
-              
-              // Use instant scroll for faster playback rates
-              const scrollBehavior = playbackRate >= 1.5 ? "auto" : "smooth"
-              
-              messageRefs.current[newActiveIndex]?.scrollIntoView({
-                behavior: scrollBehavior,
-                block: "center",
-              })
-            }
-          }
+                          // Auto-scroll to active message with debouncing based on playback rate
+                          // Use ref for immediate response when toggling auto-scroll off
+                          // IMPORTANT: Scroll only within the chat container, not the entire page
+                          if (isAutoScrollEnabledRef.current && newActiveIndex >= 0 && messageRefs.current[newActiveIndex]) {
+                            const now = Date.now()
+                            // Adjust scroll frequency based on playback rate - faster playback = more responsive scrolling
+                            const minScrollInterval = Math.max(100, 300 / playbackRate)
+                            
+                            if (now - lastScrollTimeRef.current >= minScrollInterval) {
+                              lastScrollTimeRef.current = now
+                              
+                              // Clear any pending scroll
+                              if (scrollTimeoutRef.current) {
+                                clearTimeout(scrollTimeoutRef.current)
+                              }
+                              
+                              // Scroll within the ScrollArea viewport only (not affecting page scroll)
+                              const messageElement = messageRefs.current[newActiveIndex]
+                              const scrollViewport = getScrollViewport()
+                              const transcriptContainer = transcriptContainerRef.current
+                              
+                              if (messageElement && scrollViewport && transcriptContainer) {
+                                // Calculate the scroll position to center the message in the viewport
+                                // We need to get the message position relative to the transcript container
+                                const messageOffsetTop = messageElement.offsetTop - transcriptContainer.offsetTop
+                                const viewportHeight = scrollViewport.clientHeight
+                                const messageHeight = messageElement.clientHeight
+                                const scrollTarget = messageOffsetTop - (viewportHeight / 2) + (messageHeight / 2)
+                                
+                                // Use smooth scroll for normal speed, instant for fast playback
+                                scrollViewport.scrollTo({
+                                  top: Math.max(0, scrollTarget),
+                                  behavior: playbackRate >= 1.5 ? "auto" : "smooth"
+                                })
+                              }
+                            }
+                          }
         }
       }
     }
@@ -525,7 +547,10 @@ export function TranscriptPlayer({
         {/* Chat-style Transcript Messages */}
         {messages.length > 0 ? (
           <ScrollArea className="h-[400px]" ref={scrollAreaRef}>
-            <div className="flex flex-col gap-6 p-6 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div 
+              ref={transcriptContainerRef}
+              className="flex flex-col gap-6 p-6 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800"
+            >
               {messages.map((msg, index) => {
                 const rawContent = msg.message || msg.content || ""
                 // Detect actual role from content (handles "Customer:" prefix in agent messages)

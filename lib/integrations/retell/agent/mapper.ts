@@ -32,6 +32,12 @@ export interface RetellMCPConfig {
   headers?: Record<string, string>
   /** Request timeout in milliseconds */
   timeout_ms?: number
+  /** 
+   * Specific tools to use from this MCP server
+   * If not specified, Retell may not use any tools from the MCP server
+   * Must be explicitly set after fetching available tools via get-mcp-tools API
+   */
+  tools?: string[]
 }
 
 // ============================================================================

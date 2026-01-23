@@ -231,11 +231,11 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     language: "en-US",
     agentDirection: "inbound",
     allowOutbound: false,
-    enablePhoneNumber: false,
+    enablePhoneNumber: true, // Phone numbers shown directly now
     phoneNumberId: null,
     enableKnowledgeBase: false,
     knowledgeDocumentIds: [],
-    enableVoice: false, // Voice is required, user must enable and select
+    enableVoice: true, // Voice is always enabled - shown directly
     voice: "", // Empty until user selects
     voiceSpeed: 1,
     systemPrompt: "",
@@ -850,32 +850,20 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
             {/* Voice Configuration - MOVED TO FIRST (before phone number & knowledge base) */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center">
-                    <Volume2 className="w-5 h-5 text-violet-600" />
-                  </div>
-                  <div>
-                    <Label className="mb-0">
-                      Voice Configuration <span className="text-destructive">*</span>
-                    </Label>
-                    <p className="text-xs text-muted-foreground">Choose the voice for your agent</p>
-                  </div>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                  <Volume2 className="w-5 h-5 text-violet-600" />
                 </div>
-                <Switch
-                  checked={formData.enableVoice}
-                  onCheckedChange={(checked) => {
-                    updateFormData("enableVoice", checked)
-                    if (!checked) {
-                      setIsVoiceListOpen(false)
-                    }
-                  }}
-                />
+                <div>
+                  <Label className="mb-0">
+                    Voice Configuration <span className="text-destructive">*</span>
+                  </Label>
+                  <p className="text-xs text-muted-foreground">Choose the voice for your agent</p>
+                </div>
               </div>
 
-              {/* Voice Selection */}
-              {formData.enableVoice && (
-                <div className="ml-13 pl-4 border-l-2 border-violet-500/20 space-y-4">
+              {/* Voice Selection - Always visible */}
+              <div className="space-y-4">
                   {errors.voice && (
                     <div className="flex items-center gap-2 p-2 rounded-lg bg-destructive/10 text-destructive text-sm">
                       <AlertCircle className="h-4 w-4" />
@@ -1286,17 +1274,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                       )}
                     </div>
                   )}
-                </div>
-              )}
-
-              {!formData.enableVoice && (
-                <div className="ml-13 pl-4 border-l-2 border-violet-500/20">
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm">
-                    <AlertCircle className="h-4 w-4" />
-                    Voice configuration is required. Please enable and select a voice.
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
 
             <Separator />
@@ -1419,83 +1397,132 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
             {/* Phone Number Assignment - For all agent directions */}
             {(formData.agentDirection === "inbound" || formData.agentDirection === "outbound") && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                      <Phone className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div>
-                      <Label className="mb-0">Phone Number</Label>
-                      <p className="text-xs text-muted-foreground">
-                        {formData.agentDirection === "outbound"
-                          ? "Select caller ID for outbound calls"
-                          : "Assign a phone number for inbound calls"}
-                      </p>
-                    </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                    <Phone className="w-5 h-5 text-green-600" />
                   </div>
-                  <Switch
-                    checked={formData.enablePhoneNumber}
-                    onCheckedChange={(checked) => {
-                      updateFormData("enablePhoneNumber", checked)
-                      if (!checked) {
-                        updateFormData("phoneNumberId", null)
-                      }
-                    }}
-                  />
+                  <div>
+                    <Label className="mb-0">Phone Number</Label>
+                    <p className="text-xs text-muted-foreground">
+                      {formData.agentDirection === "outbound"
+                        ? "Select caller ID for outbound calls (optional)"
+                        : "Assign a phone number for inbound calls (optional)"}
+                    </p>
+                  </div>
                 </div>
 
-                {/* Phone Number Selection */}
-                {formData.enablePhoneNumber && (
-                  <div className="ml-13 pl-4 border-l-2 border-green-500/20">
-                    {isLoadingPhoneNumbers ? (
-                      <Skeleton className="h-10 w-full" />
-                    ) : availablePhoneNumbers && availablePhoneNumbers.length > 0 ? (
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">
-                          {formData.agentDirection === "outbound"
-                            ? "Select Caller ID"
-                            : "Select Phone Number"}
-                        </Label>
-                        <Select
-                          value={formData.phoneNumberId || ""}
-                          onValueChange={(value) => updateFormData("phoneNumberId", value || null)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Choose a phone number..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availablePhoneNumbers.map((number) => (
-                              <SelectItem key={number.id} value={number.id}>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono">
-                                    {number.friendly_name || number.phone_number}
-                                  </span>
-                                  {number.country_code && (
-                                    <Badge variant="outline" className="text-xs">
-                                      {number.country_code}
-                                    </Badge>
+                {/* Phone Number Selection - Always visible */}
+                <div className="space-y-2">
+                  {isLoadingPhoneNumbers ? (
+                    <div className="space-y-2">
+                      {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-14 w-full" />
+                      ))}
+                    </div>
+                  ) : availablePhoneNumbers && availablePhoneNumbers.length > 0 ? (
+                    <>
+                      <Label className="text-sm font-medium">
+                        {formData.agentDirection === "outbound"
+                          ? "Select Caller ID"
+                          : "Select Phone Number"}
+                      </Label>
+                      <ScrollArea className={cn(
+                        "rounded-lg border p-2",
+                        availablePhoneNumbers.length <= 3 ? "h-auto" : "h-[200px]"
+                      )}>
+                        <div className="space-y-2">
+                          {/* None option */}
+                          <div
+                            onClick={() => updateFormData("phoneNumberId", null)}
+                            className={cn(
+                              "p-3 rounded-lg cursor-pointer transition-all border",
+                              !formData.phoneNumberId
+                                ? "border-primary bg-primary/5"
+                                : "border-transparent hover:bg-muted hover:border-border"
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                                <Phone className="h-4 w-4 text-muted-foreground" />
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-medium text-sm">No phone number</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Skip phone number assignment
+                                </p>
+                              </div>
+                              {!formData.phoneNumberId && (
+                                <Check className="h-4 w-4 text-primary" />
+                              )}
+                            </div>
+                          </div>
+                          
+                          {availablePhoneNumbers.map((number) => {
+                            const isSelected = formData.phoneNumberId === number.id
+                            return (
+                              <div
+                                key={number.id}
+                                onClick={() => updateFormData("phoneNumberId", number.id)}
+                                className={cn(
+                                  "p-3 rounded-lg cursor-pointer transition-all border",
+                                  isSelected
+                                    ? "border-primary bg-primary/5"
+                                    : "border-transparent hover:bg-muted hover:border-border"
+                                )}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className={cn(
+                                    "w-10 h-10 rounded-full flex items-center justify-center",
+                                    isSelected 
+                                      ? "bg-green-500/20" 
+                                      : "bg-green-500/10"
+                                  )}>
+                                    <Phone className={cn(
+                                      "h-4 w-4",
+                                      isSelected ? "text-green-600" : "text-green-500"
+                                    )} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-mono font-medium text-sm">
+                                        {number.phone_number}
+                                      </p>
+                                      {number.country_code && (
+                                        <Badge variant="outline" className="text-xs">
+                                          {number.country_code}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {number.friendly_name && (
+                                      <p className="text-xs text-muted-foreground truncate">
+                                        {number.friendly_name}
+                                      </p>
+                                    )}
+                                  </div>
+                                  {isSelected && (
+                                    <Check className="h-4 w-4 text-primary shrink-0" />
                                   )}
                                 </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          {availablePhoneNumbers.length} number
-                          {availablePhoneNumbers.length !== 1 ? "s" : ""} available
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="text-center p-4 rounded-lg bg-muted/50">
-                        <Phone className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground">No phone numbers available</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Add phone numbers in Organization → Telephony
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </ScrollArea>
+                      <p className="text-xs text-muted-foreground">
+                        {availablePhoneNumbers.length} number
+                        {availablePhoneNumbers.length !== 1 ? "s" : ""} available
+                      </p>
+                    </>
+                  ) : (
+                    <div className="text-center p-4 rounded-lg bg-muted/50">
+                      <Phone className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">No phone numbers available</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Add phone numbers in Organization → Telephony
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </CardContent>

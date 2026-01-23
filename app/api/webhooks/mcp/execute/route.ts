@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { logger } from "@/lib/logger"
 
 const log = logger.child({ module: "MCPExecute" })
@@ -104,7 +104,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Look up the agent's tool configuration from database
-    const supabase = await createClient()
+    // Use admin client to bypass RLS (this is a server-to-server webhook)
+    const supabase = createAdminClient()
     const { data: agent, error: agentError } = await supabase
       .from("ai_agents")
       .select("config")

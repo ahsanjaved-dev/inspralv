@@ -104,6 +104,17 @@ export function WorkspaceAgentForm({
 
   // Function tools state
   const [tools, setTools] = useState<FunctionTool[]>((initialData?.config as any)?.tools || [])
+  
+  // DEBUG: Wrapper to log tools changes
+  const handleToolsChange = (newTools: FunctionTool[]) => {
+    console.log("[WorkspaceAgentForm] handleToolsChange called")
+    console.log("[WorkspaceAgentForm] New tools:", JSON.stringify(newTools.map(t => ({
+      name: t.name,
+      parameters: t.parameters,
+      paramCount: Object.keys(t.parameters?.properties || {}).length
+    })), null, 2))
+    setTools(newTools)
+  }
 
   // Agent direction state
   const [agentDirection, setAgentDirection] = useState<AgentDirection>(
@@ -297,6 +308,14 @@ export function WorkspaceAgentForm({
   const isSyncError = syncStatus === "error"
 
   const handleFormSubmit = async (data: FormData) => {
+    // DEBUG: Log tools state at form submission
+    console.log("[WorkspaceAgentForm] handleFormSubmit called")
+    console.log("[WorkspaceAgentForm] Tools state at submission:", JSON.stringify(tools.map(t => ({
+      name: t.name,
+      parameters: t.parameters,
+      paramCount: Object.keys(t.parameters?.properties || {}).length
+    })), null, 2))
+    
     const currentConfig = data.config || {}
 
     const completeConfig = {
@@ -307,6 +326,13 @@ export function WorkspaceAgentForm({
       // Include function tools
       tools: tools.length > 0 ? tools : undefined,
     }
+    
+    // DEBUG: Log completeConfig.tools
+    console.log("[WorkspaceAgentForm] completeConfig.tools:", JSON.stringify(completeConfig.tools?.map(t => ({
+      name: t.name,
+      parameters: t.parameters,
+      paramCount: Object.keys(t.parameters?.properties || {}).length
+    })), null, 2))
 
     const submitData = {
       ...data,
@@ -1316,7 +1342,7 @@ export function WorkspaceAgentForm({
         <CardContent>
           <FunctionToolEditor
             tools={tools}
-            onChange={setTools}
+            onChange={handleToolsChange}
             disabled={isSubmitting}
             provider={selectedProvider}
           />

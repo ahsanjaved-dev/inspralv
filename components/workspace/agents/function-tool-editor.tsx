@@ -190,6 +190,12 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
       ? [...required, paramName]
       : required
 
+    // DEBUG: Log parameter addition
+    console.log("[ParameterEditor] addParameter called")
+    console.log("[ParameterEditor] Adding parameter:", paramName)
+    console.log("[ParameterEditor] New properties:", JSON.stringify(newProperties, null, 2))
+    console.log("[ParameterEditor] New required:", newRequired)
+
     onChange(newProperties, newRequired)
     resetForm()
   }
@@ -338,12 +344,28 @@ function ParameterEditor({ properties, required, onChange }: ParameterEditorProp
           <Input
             value={newParamName}
             onChange={(e) => setNewParamName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                if (newParamName.trim() && newParamDescription.trim()) {
+                  addParameter()
+                }
+              }
+            }}
             placeholder="Variable name"
             className="h-8 text-sm font-mono"
           />
           <Input
             value={newParamDescription}
             onChange={(e) => setNewParamDescription(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                if (newParamName.trim() && newParamDescription.trim()) {
+                  addParameter()
+                }
+              }
+            }}
             placeholder="Description"
             className="h-8 text-sm"
           />
@@ -402,35 +424,45 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
   const [authToken, setAuthToken] = useState("")
   const [apiMethod, setApiMethod] = useState<"GET" | "POST" | "PUT" | "PATCH" | "DELETE">("POST")
 
+  // Track if we've initialized for this open session
+  const [initialized, setInitialized] = useState(false)
+  
   useEffect(() => {
-    if (open && tool) {
-      setName(tool.name || "")
-      setDescription(tool.description || "")
-      setProperties(tool.parameters?.properties || {})
-      setRequired(tool.parameters?.required || [])
-      setUrl(tool.url || "")
-      setMethod((tool.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE") || "POST")
-      setTransferNumber(tool.transfer_destination?.number || "")
-      // Retell fields
-      setApiUrl(tool.server_url || "")
-      // Get metadata from 'extra' or treat tool as any to access metadata
-      const toolMeta = (tool as unknown as { metadata?: Record<string, string> }).metadata || {}
-      setAuthToken(toolMeta.authToken || "")
-      setApiMethod((toolMeta.apiMethod as "GET" | "POST" | "PUT" | "PATCH" | "DELETE") || "POST")
-    } else if (open && !tool) {
-      // New custom function
-      setName("")
-      setDescription("")
-      setProperties({})
-      setRequired([])
-      setUrl("")
-      setMethod("POST")
-      setTransferNumber("")
-      setApiUrl("")
-      setAuthToken("")
-      setApiMethod("POST")
+    if (open && !initialized) {
+      // Only initialize once when dialog opens
+      if (tool) {
+        setName(tool.name || "")
+        setDescription(tool.description || "")
+        setProperties(tool.parameters?.properties || {})
+        setRequired(tool.parameters?.required || [])
+        setUrl(tool.url || "")
+        setMethod((tool.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE") || "POST")
+        setTransferNumber(tool.transfer_destination?.number || "")
+        // Retell fields
+        setApiUrl(tool.server_url || "")
+        // Get metadata from 'extra' or treat tool as any to access metadata
+        const toolMeta = (tool as unknown as { metadata?: Record<string, string> }).metadata || {}
+        setAuthToken(toolMeta.authToken || "")
+        setApiMethod((toolMeta.apiMethod as "GET" | "POST" | "PUT" | "PATCH" | "DELETE") || "POST")
+      } else {
+        // New custom function
+        setName("")
+        setDescription("")
+        setProperties({})
+        setRequired([])
+        setUrl("")
+        setMethod("POST")
+        setTransferNumber("")
+        setApiUrl("")
+        setAuthToken("")
+        setApiMethod("POST")
+      }
+      setInitialized(true)
+    } else if (!open) {
+      // Reset initialized flag when dialog closes
+      setInitialized(false)
     }
-  }, [open, tool])
+  }, [open, tool, initialized])
 
   const isEditing = !!tool
   const isApiRequest = tool?.tool_type === "apiRequest"
@@ -448,12 +480,23 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
     newProperties: Record<string, FunctionToolParameterProperty>,
     newRequired: string[]
   ) => {
+    // DEBUG: Log parameter changes
+    console.log("[ToolEditDialog] handleParametersChange called")
+    console.log("[ToolEditDialog] Received properties:", JSON.stringify(newProperties, null, 2))
+    console.log("[ToolEditDialog] Received required:", newRequired)
+    
     setProperties(newProperties)
     setRequired(newRequired)
   }
 
   const handleSave = () => {
     if (!canSave) return
+
+    // DEBUG: Log what's being saved
+    console.log("[ToolEditDialog] handleSave called")
+    console.log("[ToolEditDialog] Current properties state:", JSON.stringify(properties, null, 2))
+    console.log("[ToolEditDialog] Current required state:", required)
+    console.log("[ToolEditDialog] Property count:", Object.keys(properties).length)
 
     const updatedTool: FunctionTool = {
       ...tool,
@@ -929,15 +972,24 @@ export function FunctionToolEditor({
 
   // Save tool (add or update)
   const handleSaveTool = (tool: FunctionTool) => {
+    // DEBUG: Log what's being received and saved
+    console.log("[FunctionToolEditor] handleSaveTool called")
+    console.log("[FunctionToolEditor] Received tool:", JSON.stringify(tool, null, 2))
+    console.log("[FunctionToolEditor] Tool parameters:", JSON.stringify(tool.parameters, null, 2))
+    console.log("[FunctionToolEditor] Properties count:", Object.keys(tool.parameters?.properties || {}).length)
+    
     const existingIndex = tools.findIndex((t) => t.id === tool.id)
     if (existingIndex >= 0) {
       // Update existing tool
       const updated = [...tools]
       updated[existingIndex] = tool
+      console.log("[FunctionToolEditor] Updating existing tool at index:", existingIndex)
       onChange(updated)
     } else {
       // Add new tool (either custom function or pending API request)
-      onChange([...tools, tool])
+      const newTools = [...tools, tool]
+      console.log("[FunctionToolEditor] Adding new tool, new tools array:", JSON.stringify(newTools.map(t => ({ name: t.name, paramCount: Object.keys(t.parameters?.properties || {}).length }))))
+      onChange(newTools)
     }
     setEditingTool(null)
     setPendingTool(null)

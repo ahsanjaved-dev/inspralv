@@ -195,6 +195,18 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (knowledgeDocumentIds.length > 0) {
       console.log(`[AgentCreate] Linking ${knowledgeDocumentIds.length} knowledge documents`)
     }
+    
+    // DEBUG: Log incoming tools
+    const incomingTools = inputConfig.tools || []
+    console.log(`[AgentCreate] DEBUG - Incoming tools count: ${incomingTools.length}`)
+    if (incomingTools.length > 0) {
+      console.log(`[AgentCreate] DEBUG - Incoming tools:`, JSON.stringify(incomingTools.map((t: any) => ({
+        name: t.name,
+        parameters: t.parameters,
+        hasProperties: !!t.parameters?.properties,
+        propertyCount: t.parameters?.properties ? Object.keys(t.parameters.properties).length : 0,
+      })), null, 2))
+    }
 
     // Create agent with pending sync status if integration is assigned
     const { data: agent, error } = await ctx.adminClient

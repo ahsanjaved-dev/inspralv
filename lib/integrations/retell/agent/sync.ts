@@ -25,6 +25,7 @@ import {
   createRetellAgentWithKey,
   updateRetellAgentWithKey,
   deleteRetellAgentWithKey,
+  getMCPToolsWithKey,
 } from "./config"
 import { processRetellResponse, processRetellDeleteResponse } from "./response"
 import { logger } from "@/lib/logger"
@@ -186,12 +187,32 @@ async function registerToolsWithMCP(
   const defaultWebhookUrl = agent.config?.tools_server_url
   const mcpTools: MCPToolInput[] = []
 
+  // DEBUG: Log the tools being converted
+  log.info("DEBUG: Converting custom tools to MCP format", {
+    toolCount: customTools.length,
+    tools: customTools.map(t => ({
+      name: t.name,
+      parameters: t.parameters,
+      hasProperties: !!t.parameters?.properties,
+      propertyCount: t.parameters?.properties ? Object.keys(t.parameters.properties).length : 0,
+    }))
+  })
+
   for (const tool of customTools) {
     const mcpTool = convertToMCPTool(tool, defaultWebhookUrl)
     if (mcpTool) {
       mcpTools.push(mcpTool)
     }
   }
+
+  // DEBUG: Log the converted MCP tools
+  log.info("DEBUG: Converted MCP tools", {
+    toolCount: mcpTools.length,
+    tools: mcpTools.map(t => ({
+      name: t.name,
+      parameters: t.parameters,
+    }))
+  })
 
   if (mcpTools.length === 0) {
     log.warn("No valid custom tools to register (missing webhook URLs?)")
@@ -240,6 +261,124 @@ async function deleteToolsFromMCP(agentId: string): Promise<void> {
   } catch (error) {
     // Log but don't fail - MCP cleanup is best effort
     log.warn("Failed to delete tools from MCP", { agentId, error })
+  }
+}
+
+/**
+ * Fetch MCP tools from Retell and add them to the LLM configuration
+ * This is the key step that "activates" MCP tools for the agent
+ * 
+ * Flow:
+ * 1. Call Retell's get-mcp-tools API to fetch available tools from our MCP server
+ * 2. Extract tool info from the response
+ * 3. Add MCP tool references to general_tools array
+ */
+async function addMCPToolsToLLM(
+  retellAgentId: string,
+  llmId: string,
+  agent: AIAgent,
+  apiKey: string
+): Promise<void> {
+  const mcpId = `mcp-${agent.id}`
+  
+  log.info("Fetching MCP tools from Retell", { 
+    retellAgentId, 
+    llmId, 
+    mcpId,
+    internalAgentId: agent.id 
+  })
+
+  // Step 1: Fetch available tools from Retell
+  const mcpToolsResult = await getMCPToolsWithKey(retellAgentId, mcpId, apiKey)
+  
+  if (!mcpToolsResult.success || !mcpToolsResult.tools?.length) {
+    log.warn("No MCP tools returned from Retell", { 
+      error: mcpToolsResult.error,
+      toolCount: mcpToolsResult.tools?.length || 0
+    })
+    return
+  }
+
+  const mcpTools = mcpToolsResult.tools
+  log.info("Discovered MCP tools", { 
+    toolNames: mcpTools.map(t => t.name),
+    toolCount: mcpTools.length 
+  })
+
+  // Step 2: Create MCP tool references for general_tools
+  // This explicitly tells Retell to include these MCP tools in the LLM's tool set
+  const mcpToolReferences = mcpTools.map(tool => ({
+    type: 'mcp' as const,
+    mcp_id: mcpId,
+    name: tool.name,
+    description: tool.description,
+  }))
+
+  // Step 3: Get existing native tools from agent config and combine with MCP tools
+  const existingTools = agent.config?.tools || []
+  const nativeTools = existingTools
+    .filter(t => t.enabled !== false && t.tool_type !== 'function' && t.tool_type !== 'custom_function')
+    .map(t => {
+      // Map native tools (end_call, transfer_call, etc.)
+      if (t.tool_type === 'end_call') {
+        return { type: 'end_call' as const, name: t.name, description: t.description || 'End the call' }
+      }
+      return null
+    })
+    .filter(Boolean)
+
+  // Combine native tools with MCP tool references
+  const allTools = [...nativeTools, ...mcpToolReferences]
+
+  log.info("Updating LLM with general_tools including MCP references", { 
+    llmId, 
+    nativeToolCount: nativeTools.length,
+    mcpToolCount: mcpToolReferences.length,
+    totalTools: allTools.length,
+    tools: allTools.map(t => ({ type: t?.type, name: t?.name }))
+  })
+
+  const updateResult = await updateRetellLLMWithKey(
+    llmId,
+    { general_tools: allTools as any },
+    apiKey
+  )
+
+  if (!updateResult.success) {
+    log.error("Failed to update LLM with MCP tools", { error: updateResult.error })
+    
+    // Fallback: Try adding tools field to mcps config instead
+    log.info("Trying fallback: adding tools to mcps config")
+    const mcpServerUrl = process.env.MCP_SERVER_URL
+    const mcpApiKey = process.env.MCP_API_KEY
+    
+    if (mcpServerUrl) {
+      const mcpConfig = {
+        id: mcpId,
+        name: "genius365-mcp",
+        url: `${mcpServerUrl}/mcp`,
+        query_params: { agent_id: agent.id },
+        timeout_ms: 30000,
+        tools: mcpTools.map(t => t.name),
+        ...(mcpApiKey ? { headers: { Authorization: `Bearer ${mcpApiKey}` } } : {}),
+      }
+      
+      const fallbackResult = await updateRetellLLMWithKey(
+        llmId,
+        { mcps: [mcpConfig] },
+        apiKey
+      )
+      
+      if (fallbackResult.success) {
+        log.info("Fallback succeeded: added tools to mcps config")
+      } else {
+        log.error("Fallback also failed", { error: fallbackResult.error })
+      }
+    }
+  } else {
+    log.info("Successfully added MCP tools to LLM general_tools", { 
+      toolNames: mcpTools.map(t => t.name) 
+    })
   }
 }
 
@@ -343,6 +482,16 @@ export async function safeRetellSync(
 
         log.info("Agent created successfully", { agentId: agentResponse.data.agent_id })
 
+        // Step 3: Fetch and add MCP tools (if MCP is configured)
+        if (hasCustomFunctionTools(agent)) {
+          await addMCPToolsToLLM(
+            agentResponse.data.agent_id,
+            llmId,
+            agent,
+            secretKey
+          )
+        }
+
         // Process response with both LLM and Agent data
         const processResult = await processRetellResponse(
           { ...agentResponse, llmData: llmResponse.data },
@@ -402,6 +551,16 @@ export async function safeRetellSync(
         if (!agentResponse.success || llmUpdateFailed) {
           log.info("Update failed, creating new agent on Retell instead")
           return await safeRetellSync(agent, "create")
+        }
+
+        // Step 3: Update MCP tools (if agent has custom function tools)
+        if (hasCustomFunctionTools(agent) && config.retell_llm_id) {
+          await addMCPToolsToLLM(
+            agent.external_agent_id,
+            config.retell_llm_id,
+            agent,
+            secretKey
+          )
         }
 
         return await processRetellResponse(agentResponse, agent.id)
@@ -476,6 +635,16 @@ export async function safeRetellSync(
           log.error("LLM tools update failed", { error: llmUpdateResponse.error })
           // If LLM update fails, try full sync (might need to recreate)
           return await safeRetellSync(agent, "update")
+        }
+
+        // Step 3: Update MCP tools if agent has external_agent_id
+        if (hasCustomFunctionTools(agent) && agent.external_agent_id) {
+          await addMCPToolsToLLM(
+            agent.external_agent_id,
+            toolsConfig.retell_llm_id,
+            agent,
+            secretKey
+          )
         }
 
         log.info("LLM tools updated successfully")
