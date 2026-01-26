@@ -28,6 +28,7 @@ import { WizardDraftCard } from "@/components/workspace/campaigns/wizard-draft-c
 import { CampaignActionOverlay } from "@/components/workspace/campaigns/campaign-action-overlay"
 import { CampaignHeroStats } from "@/components/workspace/campaigns/campaign-hero-stats"
 import { CampaignEmptyState } from "@/components/workspace/campaigns/campaign-empty-state"
+import { DataPagination } from "@/components/shared/data-pagination"
 import { 
   useCampaigns, 
   useDeleteCampaign,
@@ -65,6 +66,7 @@ export default function CampaignsPage() {
 
   const [statusFilter, setStatusFilter] = useState<CampaignStatus | "all">("all")
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [deleteTarget, setDeleteTarget] = useState<CallCampaignWithAgent | null>(null)
   const [isCreatingCampaign, setIsCreatingCampaign] = useState(false)
   const [startingCampaignId, setStartingCampaignId] = useState<string | null>(null)
@@ -85,6 +87,7 @@ export default function CampaignsPage() {
   const { data, isLoading, refetch, hasActiveCampaigns, workspaceId } = useCampaigns({ 
     status: statusFilter, 
     page,
+    pageSize,
     // Enable auto-polling every 5 seconds when there are active campaigns
     enablePolling: true,
     pollingInterval: 5000,
@@ -111,6 +114,7 @@ export default function CampaignsPage() {
 
   const campaigns = data?.data || []
   const totalCampaigns = data?.total || 0
+  const totalPages = data?.totalPages || 1
 
   // Calculate stats
   const activeCampaigns = campaigns.filter(c => c.status === "active").length
@@ -257,9 +261,9 @@ export default function CampaignsPage() {
         isLoading={isLoading}
       />
 
-      {/* Filters */}
+      {/* Filters and Pagination */}
       <Card className="border-border/50">
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 pb-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             {/* Search */}
             <div className="relative flex-1 w-full sm:max-w-xs">
@@ -298,15 +302,37 @@ export default function CampaignsPage() {
             {/* Quick stats badge */}
             {!isLoading && campaigns.length > 0 && (
               <div className="hidden sm:flex items-center gap-3 text-sm text-muted-foreground ml-auto">
-                <span>{filteredCampaigns.length} campaign{filteredCampaigns.length !== 1 ? 's' : ''}</span>
-                {searchQuery && (
-                  <Button variant="ghost" size="sm" onClick={() => setSearchQuery("")}>
-                    Clear search
-                  </Button>
+                {searchQuery ? (
+                  <>
+                    <span>
+                      {filteredCampaigns.length} match{filteredCampaigns.length !== 1 ? 'es' : ''} on this page
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => setSearchQuery("")}>
+                      Clear search
+                    </Button>
+                  </>
+                ) : (
+                  <span>{totalCampaigns} campaign{totalCampaigns !== 1 ? 's' : ''} total</span>
                 )}
               </div>
             )}
           </div>
+
+          {/* Pagination - at top for better UX */}
+          {totalCampaigns > 0 && !isLoading && (
+            <div className="border-t border-border/50 mt-4 pt-2">
+              <DataPagination
+                page={page}
+                totalPages={totalPages}
+                totalItems={totalCampaigns}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+                pageSizeOptions={[10, 20, 50, 100]}
+                isLoading={isLoading}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 

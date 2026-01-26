@@ -69,6 +69,8 @@ export function WorkspaceHeader({
 }: Props) {
   // Check if user is a partner admin/owner
   const isPartnerAdmin = partnerRole === "owner" || partnerRole === "admin"
+  // Check if user is a workspace admin/owner (can manage settings and billing)
+  const isWorkspaceAdmin = currentWorkspace.role === "owner" || currentWorkspace.role === "admin"
   const { logout } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
@@ -248,14 +250,19 @@ export function WorkspaceHeader({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push(`/w/${currentWorkspace.slug}/settings`)}>
-              <Settings className="w-4 h-4 mr-2" />
-              Workspace Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push(`/w/${currentWorkspace.slug}/billing`)}>
-              <CreditCard className="w-4 h-4 mr-2" />
-              Billing
-            </DropdownMenuItem>
+            {/* Only show Settings and Billing for workspace admin/owner */}
+            {isWorkspaceAdmin && (
+              <>
+                <DropdownMenuItem onClick={() => router.push(`/w/${currentWorkspace.slug}/settings`)}>
+                  <Settings className="w-4 h-4 mr-2" />
+                  Workspace Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push(`/w/${currentWorkspace.slug}/billing`)}>
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  Billing
+                </DropdownMenuItem>
+              </>
+            )}
             {isPartnerAdmin && (
               <DropdownMenuItem onClick={() => router.push("/select-workspace")}>
                 <Building2 className="w-4 h-4 mr-2" />
