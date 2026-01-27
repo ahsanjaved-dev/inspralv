@@ -23,7 +23,10 @@
 # production
 /build
 
-/scripts
+/scripts/
+
+/docs/
+
 
 # misc
 .DS_Store
