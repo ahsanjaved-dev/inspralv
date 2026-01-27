@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -468,6 +468,18 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   // NAVIGATION
   // ============================================================================
 
+  // Ref for scrolling to top of wizard
+  const wizardTopRef = useRef<HTMLDivElement>(null)
+
+  // Scroll to top when step changes
+  useEffect(() => {
+    // Small delay to ensure DOM is updated before scrolling
+    const timer = setTimeout(() => {
+      wizardTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+    return () => clearTimeout(timer)
+  }, [currentStep])
+
   const nextStep = () => {
     if (!validateStep(currentStep)) return
     if (currentStep < totalSteps) {
@@ -577,6 +589,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
   return (
     <div className="space-y-6">
+      {/* Scroll anchor for navigation */}
+      <div ref={wizardTopRef} />
+      
       {/* Progress Steps */}
       <Card>
         <CardContent className="p-4">
@@ -799,11 +814,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                       key={direction.value}
                       onClick={() => {
                         updateFormData("agentDirection", direction.value)
-                        // Reset phone number if switching to outbound-only
-                        if (direction.value === "outbound") {
-                          updateFormData("enablePhoneNumber", false)
-                          updateFormData("phoneNumberId", null)
-                        }
                       }}
                       className={cn(
                         "relative p-4 rounded-lg border-2 cursor-pointer transition-all",
@@ -1868,7 +1878,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 <div>
                   <p className="text-muted-foreground">Phone Number</p>
                   <p className="font-medium">
-                    {formData.enablePhoneNumber && formData.phoneNumberId
+                    {formData.phoneNumberId
                       ? availablePhoneNumbers?.find((p) => p.id === formData.phoneNumberId)
                           ?.phone_number || "Selected"
                       : formData.agentDirection === "outbound"
