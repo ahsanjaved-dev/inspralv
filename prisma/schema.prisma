@@ -235,18 +235,19 @@ model Partner {
   updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  domains            PartnerDomain[]
-  members            PartnerMember[]
-  workspaces         Workspace[]
-  invitations        PartnerInvitation[]
-  partnerRequest     PartnerRequest?     @relation("ProvisionedPartner")
-  originatingRequest PartnerRequest?     @relation("OriginatingRequest", fields: [requestId], references: [id])
-  billingCredits     BillingCredits?
-  subscriptionPlans  WorkspaceSubscriptionPlan[]
-  whiteLabelVariant  WhiteLabelVariant?  @relation(fields: [whiteLabelVariantId], references: [id])
-  integrations       PartnerIntegration[]
-  sipTrunks          SipTrunk[]
-  phoneNumbers       PhoneNumber[]
+  domains                  PartnerDomain[]
+  members                  PartnerMember[]
+  workspaces               Workspace[]
+  invitations              PartnerInvitation[]
+  partnerRequest           PartnerRequest?     @relation("ProvisionedPartner")
+  originatingRequest       PartnerRequest?     @relation("OriginatingRequest", fields: [requestId], references: [id])
+  billingCredits           BillingCredits?
+  subscriptionPlans        WorkspaceSubscriptionPlan[]
+  whiteLabelVariant        WhiteLabelVariant?  @relation(fields: [whiteLabelVariantId], references: [id])
+  integrations             PartnerIntegration[]
+  sipTrunks                SipTrunk[]
+  phoneNumbers             PhoneNumber[]
+  googleCalendarCredential GoogleCalendarCredential?
 
   @@map("partners")
   @@schema("public")
@@ -598,6 +599,8 @@ model AiAgent {
   leads                Lead[]
   knowledgeDocuments   AgentKnowledgeDocument[]
   assignedPhoneNumbers PhoneNumber[]            @relation("PhoneNumberAgent")
+  calendarConfig       AgentCalendarConfig?
+  appointments         Appointment[]
 
   @@index([assignedPhoneNumberId])
   @@map("ai_agents")
@@ -644,6 +647,7 @@ model Conversation {
   agent         AiAgent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
   followUpUser  User?           @relation(fields: [followedUpBy], references: [id], onDelete: SetNull)
   usageTracking UsageTracking[]
+  appointments  Appointment[]
 
   @@map("conversations")
   @@schema("public")
@@ -1006,6 +1010,187 @@ model PhoneNumber {
   @@index([assignedWorkspaceId])
   @@unique([partnerId, phoneNumber])
   @@map("phone_numbers")
+  @@schema("public")
+}
+
+// =============================================================================
+// GOOGLE CALENDAR CREDENTIALS (Partner/Organization Level)
+// =============================================================================
+
+model GoogleCalendarCredential {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId       String    @map("partner_id") @db.Uuid
+  
+  // OAuth Credentials
+  clientId        String    @map("client_id") @db.VarChar(255)
+  clientSecret    String    @map("client_secret") // Encrypted
+  refreshToken    String?   @map("refresh_token") // Encrypted
+  accessToken     String?   @map("access_token") // Encrypted
+  tokenExpiry     DateTime? @map("token_expiry") @db.Timestamptz
+  
+  // Scopes granted
+  scopes          String[]  @default([])
+  
+  // Status
+  isActive        Boolean   @default(true) @map("is_active")
+  lastUsedAt      DateTime? @map("last_used_at") @db.Timestamptz
+  lastError       String?   @map("last_error")
+  
+  // Audit
+  createdBy       String?   @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  partner         Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  agentCalendars  AgentCalendarConfig[]
+
+  @@unique([partnerId])
+  @@index([partnerId])
+  @@map("google_calendar_credentials")
+  @@schema("public")
+}
+
+// =============================================================================
+// AGENT CALENDAR CONFIGURATION
+// =============================================================================
+
+model AgentCalendarConfig {
+  id                          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId                     String    @unique @map("agent_id") @db.Uuid
+  workspaceId                 String    @map("workspace_id") @db.Uuid
+  
+  // Google Calendar Settings
+  googleCredentialId          String    @map("google_credential_id") @db.Uuid
+  calendarId                  String    @map("calendar_id") @db.VarChar(255) // Google Calendar ID
+  
+  // Timezone (REQUIRED)
+  timezone                    String    @db.VarChar(100) // IANA timezone (e.g., "America/New_York")
+  
+  // Slot Configuration
+  slotDurationMinutes         Int       @default(30) @map("slot_duration_minutes")
+  bufferBetweenSlotsMinutes   Int       @default(0) @map("buffer_between_slots_minutes")
+  
+  // Availability Windows (JSON: { days: string[], hours: { start: string, end: string } })
+  preferredDays               String[]  @default(["monday", "tuesday", "wednesday", "thursday", "friday"]) @map("preferred_days")
+  preferredHoursStart         String    @default("09:00") @map("preferred_hours_start") @db.VarChar(5)
+  preferredHoursEnd           String    @default("17:00") @map("preferred_hours_end") @db.VarChar(5)
+  
+  // Booking Rules
+  minNoticeHours              Int       @default(24) @map("min_notice_hours")
+  maxAdvanceDays              Int       @default(30) @map("max_advance_days")
+  
+  // Reminder Settings
+  send24hReminder             Boolean   @default(true) @map("send_24h_reminder")
+  send1hReminder              Boolean   @default(true) @map("send_1h_reminder")
+  reminderEmailTemplate       String?   @map("reminder_email_template")
+  
+  // Status
+  isActive                    Boolean   @default(true) @map("is_active")
+  
+  // Audit
+  createdAt                   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  agent                       AiAgent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  googleCredential            GoogleCalendarCredential @relation(fields: [googleCredentialId], references: [id], onDelete: Cascade)
+  appointments                Appointment[]
+
+  @@index([agentId])
+  @@index([workspaceId])
+  @@map("agent_calendar_configs")
+  @@schema("public")
+}
+
+// =============================================================================
+// APPOINTMENTS
+// =============================================================================
+
+enum AppointmentStatus {
+  scheduled
+  cancelled
+  rescheduled
+  completed
+  no_show
+
+  @@map("appointment_status")
+  @@schema("public")
+}
+
+enum AppointmentType {
+  book
+  reschedule
+  cancel
+
+  @@map("appointment_type")
+  @@schema("public")
+}
+
+model Appointment {
+  id                      String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId                 String            @map("agent_id") @db.Uuid
+  workspaceId             String            @map("workspace_id") @db.Uuid
+  calendarConfigId        String            @map("calendar_config_id") @db.Uuid
+  conversationId          String?           @map("conversation_id") @db.Uuid
+  
+  // Google Calendar Reference
+  googleEventId           String?           @map("google_event_id") @db.VarChar(255)
+  calendarId              String            @map("calendar_id") @db.VarChar(255)
+  
+  // Attendee Information
+  attendeeName            String            @map("attendee_name") @db.VarChar(255)
+  attendeeEmail           String            @map("attendee_email") @db.VarChar(255)
+  attendeePhone           String?           @map("attendee_phone") @db.VarChar(50)
+  
+  // Appointment Details
+  appointmentType         AppointmentType   @map("appointment_type")
+  status                  AppointmentStatus @default(scheduled)
+  
+  // Timing
+  scheduledStart          DateTime          @map("scheduled_start") @db.Timestamptz
+  scheduledEnd            DateTime          @map("scheduled_end") @db.Timestamptz
+  timezone                String            @db.VarChar(100)
+  durationMinutes         Int               @map("duration_minutes")
+  
+  // Rescheduling History
+  originalAppointmentId   String?           @map("original_appointment_id") @db.Uuid
+  rescheduledFrom         DateTime?         @map("rescheduled_from") @db.Timestamptz
+  rescheduledTo           DateTime?         @map("rescheduled_to") @db.Timestamptz
+  
+  // Cancellation Info
+  cancelledAt             DateTime?         @map("cancelled_at") @db.Timestamptz
+  cancellationReason      String?           @map("cancellation_reason")
+  
+  // Reminder Tracking
+  reminder24hSent         Boolean           @default(false) @map("reminder_24h_sent")
+  reminder24hSentAt       DateTime?         @map("reminder_24h_sent_at") @db.Timestamptz
+  reminder1hSent          Boolean           @default(false) @map("reminder_1h_sent")
+  reminder1hSentAt        DateTime?         @map("reminder_1h_sent_at") @db.Timestamptz
+  
+  // Metadata
+  notes                   String?
+  customFields            Json              @default("{}") @map("custom_fields")
+  extractedFromTranscript Boolean           @default(false) @map("extracted_from_transcript")
+  
+  // Audit
+  createdAt               DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  agent                   AiAgent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  calendarConfig          AgentCalendarConfig @relation(fields: [calendarConfigId], references: [id], onDelete: Cascade)
+  conversation            Conversation?     @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  originalAppointment     Appointment?      @relation("RescheduledAppointments", fields: [originalAppointmentId], references: [id], onDelete: SetNull)
+  rescheduledAppointments Appointment[]     @relation("RescheduledAppointments")
+
+  @@index([agentId])
+  @@index([workspaceId])
+  @@index([attendeeEmail])
+  @@index([status])
+  @@index([scheduledStart])
+  @@index([googleEventId])
+  @@map("appointments")
   @@schema("public")
 }
 

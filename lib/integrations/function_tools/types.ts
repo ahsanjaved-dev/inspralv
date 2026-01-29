@@ -26,9 +26,11 @@ export type VapiToolType =
   | 'textEditor'
   // Data
   | 'query'
-  // Google
-  | 'googleCalendarCreateEvent'
-  | 'googleCalendarCheckAvailability'
+  // Calendar (Custom Implementation)
+  | 'book_appointment'
+  | 'cancel_appointment'
+  | 'reschedule_appointment'
+  // Google (Other)
   | 'googleSheetsRowAppend'
   // Communication
   | 'slackSendMessage'
@@ -89,6 +91,7 @@ export type ToolCategory =
   | 'api_integration'
   | 'code_execution'
   | 'data'
+  | 'calendar'
   | 'google'
   | 'communication'
   | 'ghl'
@@ -114,9 +117,11 @@ export const TOOL_CATEGORY_MAP: Record<VapiToolType, ToolCategory> = {
   textEditor: 'code_execution',
   // Data
   query: 'data',
-  // Google
-  googleCalendarCreateEvent: 'google',
-  googleCalendarCheckAvailability: 'google',
+  // Calendar
+  book_appointment: 'calendar',
+  cancel_appointment: 'calendar',
+  reschedule_appointment: 'calendar',
+  // Google (Other)
   googleSheetsRowAppend: 'google',
   // Communication
   slackSendMessage: 'communication',

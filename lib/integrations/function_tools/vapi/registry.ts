@@ -143,28 +143,44 @@ export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
   },
 
   // ========================================
-  // GOOGLE INTEGRATION
+  // CALENDAR (Custom Implementation)
+  // Calendar tools use our custom Google Calendar integration
+  // Configured via CalendarToolsSelector component
   // ========================================
-  googleCalendarCreateEvent: {
-    key: 'googleCalendarCreateEvent',
-    displayName: 'Google Calendar - Create Event',
-    type: 'googleCalendarCreateEvent',
-    category: 'google',
+  book_appointment: {
+    key: 'book_appointment',
+    displayName: 'Book Appointment',
+    type: 'book_appointment',
+    category: 'calendar',
     providers: { vapi: true, retell: false },
     isNative: false,
-    description: 'Create events on Google Calendar.',
-    icon: 'Calendar',
+    description: 'Book a new appointment on Google Calendar.',
+    icon: 'CalendarPlus',
   },
-  googleCalendarCheckAvailability: {
-    key: 'googleCalendarCheckAvailability',
-    displayName: 'Google Calendar - Check Availability',
-    type: 'googleCalendarCheckAvailability',
-    category: 'google',
+  cancel_appointment: {
+    key: 'cancel_appointment',
+    displayName: 'Cancel Appointment',
+    type: 'cancel_appointment',
+    category: 'calendar',
     providers: { vapi: true, retell: false },
     isNative: false,
-    description: 'Check available time slots on Google Calendar.',
-    icon: 'CalendarSearch',
+    description: 'Cancel an existing appointment.',
+    icon: 'CalendarX',
   },
+  reschedule_appointment: {
+    key: 'reschedule_appointment',
+    displayName: 'Reschedule Appointment',
+    type: 'reschedule_appointment',
+    category: 'calendar',
+    providers: { vapi: true, retell: false },
+    isNative: false,
+    description: 'Reschedule an appointment to a new time.',
+    icon: 'CalendarClock',
+  },
+
+  // ========================================
+  // GOOGLE INTEGRATION (Other)
+  // ========================================
   googleSheetsRowAppend: {
     key: 'googleSheetsRowAppend',
     displayName: 'Google Sheets - Append Row',
@@ -315,6 +331,7 @@ export const CATEGORY_DISPLAY_NAMES: Record<ToolCategory, string> = {
   api_integration: 'API Integration',
   code_execution: 'Code Execution',
   data: 'Data & Knowledge',
+  calendar: 'Calendar',
   google: 'Google',
   communication: 'Communication',
   ghl: 'GoHighLevel',
@@ -330,6 +347,7 @@ export const CATEGORY_ICONS: Record<ToolCategory, string> = {
   api_integration: 'Globe',
   code_execution: 'Terminal',
   data: 'Database',
+  calendar: 'Calendar',
   google: 'Chrome',
   communication: 'MessageSquare',
   ghl: 'Building',

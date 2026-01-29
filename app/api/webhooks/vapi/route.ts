@@ -18,6 +18,7 @@ import { createClient } from "@supabase/supabase-js"
 import { prisma } from "@/lib/prisma"
 import { processCallCompletion } from "@/lib/billing/usage"
 import { indexCallLogToAlgolia, configureCallLogsIndex } from "@/lib/algolia"
+import { isCalendarTool, handleCalendarToolCall } from "@/lib/integrations/calendar"
 import type { AgentProvider, Conversation } from "@/types/database.types"
 
 export const dynamic = "force-dynamic"
@@ -1158,6 +1159,37 @@ async function handleFunctionCall(payload: VapiFunctionCall): Promise<Record<str
     return { success: false, error: "Agent not found" }
   }
 
+  // Check if this is a calendar tool - handle internally
+  if (isCalendarTool(functionName)) {
+    console.log(`[VAPI Webhook] Handling calendar tool: ${functionName} for agent ${agent.id}`)
+    
+    // Get conversation ID for linking appointment
+    let conversationId: string | undefined
+    if (callId) {
+      const conversation = await prisma.conversation.findFirst({
+        where: { externalId: callId },
+        select: { id: true },
+      })
+      conversationId = conversation?.id
+    }
+
+    const result = await handleCalendarToolCall(
+      { name: functionName, arguments: parameters },
+      { agentId: agent.id, conversationId, callId }
+    )
+
+    // Return result in VAPI expected format
+    return {
+      results: [
+        {
+          toolCallId: payload.toolCall?.id,
+          result: result.success ? result.result : result.error,
+        },
+      ],
+    }
+  }
+
+  // For other tools, forward to user's webhook
   const config = agent.config as Record<string, unknown> | null
   const webhookUrl = config?.tools_server_url as string | undefined
 

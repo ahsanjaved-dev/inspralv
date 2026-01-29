@@ -1,0 +1,654 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useForm, Controller } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Loader2,
+  Calendar,
+  Clock,
+  Settings,
+  Check,
+  AlertCircle,
+  Globe,
+  Trash2,
+  Save,
+} from "lucide-react"
+import { toast } from "sonner"
+import { cn } from "@/lib/utils"
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
+// Common timezones organized by region
+const TIMEZONES = [
+  // US
+  { value: "America/New_York", label: "Eastern Time (ET)", region: "US" },
+  { value: "America/Chicago", label: "Central Time (CT)", region: "US" },
+  { value: "America/Denver", label: "Mountain Time (MT)", region: "US" },
+  { value: "America/Los_Angeles", label: "Pacific Time (PT)", region: "US" },
+  { value: "America/Anchorage", label: "Alaska Time", region: "US" },
+  { value: "Pacific/Honolulu", label: "Hawaii Time", region: "US" },
+  // Europe
+  { value: "Europe/London", label: "London (GMT/BST)", region: "Europe" },
+  { value: "Europe/Paris", label: "Paris (CET)", region: "Europe" },
+  { value: "Europe/Berlin", label: "Berlin (CET)", region: "Europe" },
+  { value: "Europe/Madrid", label: "Madrid (CET)", region: "Europe" },
+  { value: "Europe/Rome", label: "Rome (CET)", region: "Europe" },
+  { value: "Europe/Amsterdam", label: "Amsterdam (CET)", region: "Europe" },
+  { value: "Europe/Moscow", label: "Moscow (MSK)", region: "Europe" },
+  // Asia/Pacific
+  { value: "Asia/Dubai", label: "Dubai (GST)", region: "Asia" },
+  { value: "Asia/Kolkata", label: "India (IST)", region: "Asia" },
+  { value: "Asia/Singapore", label: "Singapore (SGT)", region: "Asia" },
+  { value: "Asia/Hong_Kong", label: "Hong Kong (HKT)", region: "Asia" },
+  { value: "Asia/Tokyo", label: "Tokyo (JST)", region: "Asia" },
+  { value: "Asia/Seoul", label: "Seoul (KST)", region: "Asia" },
+  { value: "Australia/Sydney", label: "Sydney (AEST)", region: "Pacific" },
+  { value: "Australia/Melbourne", label: "Melbourne (AEST)", region: "Pacific" },
+  { value: "Pacific/Auckland", label: "Auckland (NZST)", region: "Pacific" },
+  // Other
+  { value: "UTC", label: "UTC", region: "Other" },
+]
+
+const DAYS_OF_WEEK = [
+  { value: "MONDAY", label: "Monday" },
+  { value: "TUESDAY", label: "Tuesday" },
+  { value: "WEDNESDAY", label: "Wednesday" },
+  { value: "THURSDAY", label: "Thursday" },
+  { value: "FRIDAY", label: "Friday" },
+  { value: "SATURDAY", label: "Saturday" },
+  { value: "SUNDAY", label: "Sunday" },
+]
+
+const SLOT_DURATIONS = [
+  { value: 15, label: "15 minutes" },
+  { value: 30, label: "30 minutes" },
+  { value: 45, label: "45 minutes" },
+  { value: 60, label: "1 hour" },
+  { value: 90, label: "1.5 hours" },
+  { value: 120, label: "2 hours" },
+]
+
+// =============================================================================
+// TYPES
+// =============================================================================
+
+interface CalendarConfigProps {
+  workspaceSlug: string
+  agentId: string
+}
+
+interface GoogleCredential {
+  id: string
+  client_id: string
+  is_active: boolean
+  calendars?: Array<{
+    id: string
+    summary: string
+    primary?: boolean
+  }>
+}
+
+interface CalendarConfig {
+  id: string
+  google_credential_id: string
+  calendar_id: string
+  timezone: string
+  slot_duration_minutes: number
+  buffer_between_slots_minutes: number
+  preferred_days: string[]
+  preferred_hours_start: string
+  preferred_hours_end: string
+  min_notice_hours: number
+  max_advance_days: number
+  is_active: boolean
+  google_credentials?: {
+    id: string
+    is_active: boolean
+  }
+}
+
+// =============================================================================
+// FORM SCHEMA
+// =============================================================================
+
+const calendarConfigSchema = z.object({
+  google_credential_id: z.string().optional(), // Optional - set during initial setup only
+  calendar_id: z.string().optional(), // Optional - set during initial setup only
+  timezone: z.string().min(1, "Please select a timezone"),
+  slot_duration_minutes: z.number().min(15).max(240),
+  buffer_between_slots_minutes: z.number().min(0).max(60),
+  preferred_days: z.array(z.string()).min(1, "Select at least one day"),
+  preferred_hours_start: z.string().regex(/^\d{2}:\d{2}$/, "Invalid time format"),
+  preferred_hours_end: z.string().regex(/^\d{2}:\d{2}$/, "Invalid time format"),
+  min_notice_hours: z.number().min(0).max(168),
+  max_advance_days: z.number().min(1).max(365),
+})
+
+type CalendarConfigFormData = z.infer<typeof calendarConfigSchema>
+
+// =============================================================================
+// COMPONENT
+// =============================================================================
+
+export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) {
+  const queryClient = useQueryClient()
+  const [isCreatingCalendar, setIsCreatingCalendar] = useState(false)
+
+  // Fetch existing config
+  const { data: configData, isLoading: configLoading } = useQuery({
+    queryKey: ["agent-calendar-config", agentId],
+    queryFn: async () => {
+      const res = await fetch(`/api/w/${workspaceSlug}/agents/${agentId}/calendar`)
+      if (!res.ok) throw new Error("Failed to fetch calendar config")
+      return res.json()
+    },
+  })
+
+  // Fetch available Google credentials (only needed to check if any exist)
+  const { data: credentialsData, isLoading: credentialsLoading } = useQuery({
+    queryKey: ["google-credentials"],
+    queryFn: async () => {
+      const res = await fetch("/api/partner/google-credentials")
+      if (!res.ok) throw new Error("Failed to fetch credentials")
+      return res.json()
+    },
+  })
+
+  const existingConfig = configData?.data as CalendarConfig | null
+  const credentials = (credentialsData?.data || []) as GoogleCredential[]
+
+  // Form setup
+  const form = useForm<CalendarConfigFormData>({
+    resolver: zodResolver(calendarConfigSchema),
+    defaultValues: {
+      google_credential_id: "",
+      calendar_id: "",
+      timezone: "America/New_York",
+      slot_duration_minutes: 30,
+      buffer_between_slots_minutes: 0,
+      preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+      preferred_hours_start: "09:00",
+      preferred_hours_end: "17:00",
+      min_notice_hours: 1,
+      max_advance_days: 60,
+    },
+  })
+
+  // Update form when existing config loads
+  useEffect(() => {
+    if (existingConfig) {
+      form.reset({
+        google_credential_id: existingConfig.google_credential_id,
+        calendar_id: existingConfig.calendar_id,
+        timezone: existingConfig.timezone,
+        slot_duration_minutes: existingConfig.slot_duration_minutes,
+        buffer_between_slots_minutes: existingConfig.buffer_between_slots_minutes,
+        preferred_days: existingConfig.preferred_days,
+        preferred_hours_start: existingConfig.preferred_hours_start,
+        preferred_hours_end: existingConfig.preferred_hours_end,
+        min_notice_hours: existingConfig.min_notice_hours,
+        max_advance_days: existingConfig.max_advance_days,
+      })
+    }
+  }, [existingConfig, form])
+
+  // Save mutation
+  const saveMutation = useMutation({
+    mutationFn: async (data: CalendarConfigFormData) => {
+      // When editing, use existing credential and calendar IDs
+      const payload = existingConfig
+        ? {
+            ...data,
+            google_credential_id: existingConfig.google_credential_id,
+            calendar_id: existingConfig.calendar_id,
+          }
+        : data
+
+      const res = await fetch(`/api/w/${workspaceSlug}/agents/${agentId}/calendar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Failed to save config")
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("Calendar configuration saved")
+      queryClient.invalidateQueries({ queryKey: ["agent-calendar-config", agentId] })
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/w/${workspaceSlug}/agents/${agentId}/calendar`, {
+        method: "DELETE",
+      })
+      if (!res.ok) throw new Error("Failed to remove calendar")
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("Calendar configuration removed")
+      queryClient.invalidateQueries({ queryKey: ["agent-calendar-config", agentId] })
+      form.reset()
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+
+  // Quick Setup - creates a new calendar automatically
+  const handleQuickSetup = async () => {
+    const timezone = form.getValues("timezone")
+    const preferredDays = form.getValues("preferred_days")
+    const preferredHoursStart = form.getValues("preferred_hours_start")
+    const preferredHoursEnd = form.getValues("preferred_hours_end")
+    const slotDuration = form.getValues("slot_duration_minutes")
+
+    if (!timezone) {
+      toast.error("Please select a timezone first")
+      return
+    }
+
+    setIsCreatingCalendar(true)
+    try {
+      const res = await fetch(`/api/w/${workspaceSlug}/agents/${agentId}/calendar/setup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          timezone,
+          slot_duration_minutes: slotDuration,
+          preferred_days: preferredDays,
+          preferred_hours_start: preferredHoursStart,
+          preferred_hours_end: preferredHoursEnd,
+        }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Failed to create calendar")
+      }
+
+      const result = await res.json()
+      toast.success(`Calendar "${result.data?.calendar_name}" created successfully!`)
+      
+      // Refresh the config
+      queryClient.invalidateQueries({ queryKey: ["agent-calendar-config", agentId] })
+      queryClient.invalidateQueries({ queryKey: ["google-credential-calendars"] })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create calendar")
+    } finally {
+      setIsCreatingCalendar(false)
+    }
+  }
+
+  const onSubmit = form.handleSubmit((data) => {
+    saveMutation.mutate(data)
+  })
+
+  if (configLoading || credentialsLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-4 w-64" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // No credentials configured
+  if (credentials.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Calendar Integration
+          </CardTitle>
+          <CardDescription>
+            Enable appointment booking for this agent
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <AlertCircle className="h-10 w-10 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground mb-4">
+              No Google Calendar credentials configured. Contact your organization administrator to set up Google Calendar integration.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Calendar Integration
+            </CardTitle>
+            <CardDescription>
+              Enable appointment booking, cancellation, and rescheduling
+            </CardDescription>
+          </div>
+          {existingConfig && (
+            <Badge variant={existingConfig.is_active ? "default" : "secondary"}>
+              {existingConfig.is_active ? "Active" : "Inactive"}
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        {/* Quick Setup Banner - show only when no config exists */}
+        {!existingConfig && credentials.length > 0 && (
+          <div className="mb-6 p-4 rounded-lg bg-primary/5 border border-primary/20">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h4 className="font-medium text-sm mb-1">Quick Setup</h4>
+                <p className="text-sm text-muted-foreground">
+                  Automatically create a dedicated calendar for this agent. Configure the settings below, then click "Create Calendar".
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={handleQuickSetup}
+                disabled={isCreatingCalendar || !form.getValues("timezone")}
+                className="shrink-0"
+              >
+                {isCreatingCalendar ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Calendar className="mr-2 h-4 w-4" />
+                    Create Calendar
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={onSubmit} className="space-y-6">
+          {/* Timezone Selection */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              Timezone
+            </Label>
+            <Controller
+              name="timezone"
+              control={form.control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select timezone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <ScrollArea className="h-[300px]">
+                      {["US", "Europe", "Asia", "Pacific", "Other"].map((region) => (
+                        <div key={region}>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
+                            {region}
+                          </div>
+                          {TIMEZONES.filter((tz) => tz.region === region).map((tz) => (
+                            <SelectItem key={tz.value} value={tz.value}>
+                              {tz.label}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
+                    </ScrollArea>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+
+          {/* Slot Configuration */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Slot Duration
+              </Label>
+              <Controller
+                name="slot_duration_minutes"
+                control={form.control}
+                render={({ field }) => (
+                  <Select
+                    value={String(field.value)}
+                    onValueChange={(v) => field.onChange(Number(v))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SLOT_DURATIONS.map((dur) => (
+                        <SelectItem key={dur.value} value={String(dur.value)}>
+                          {dur.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Buffer Between Slots</Label>
+              <Controller
+                name="buffer_between_slots_minutes"
+                control={form.control}
+                render={({ field }) => (
+                  <Select
+                    value={String(field.value)}
+                    onValueChange={(v) => field.onChange(Number(v))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">No buffer</SelectItem>
+                      <SelectItem value="5">5 minutes</SelectItem>
+                      <SelectItem value="10">10 minutes</SelectItem>
+                      <SelectItem value="15">15 minutes</SelectItem>
+                      <SelectItem value="30">30 minutes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Preferred Days */}
+          <div className="space-y-2">
+            <Label>Available Days</Label>
+            <div className="flex flex-wrap gap-2">
+              <Controller
+                name="preferred_days"
+                control={form.control}
+                render={({ field }) => (
+                  <>
+                    {DAYS_OF_WEEK.map((day) => (
+                      <Button
+                        key={day.value}
+                        type="button"
+                        variant={field.value.includes(day.value) ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          const newDays = field.value.includes(day.value)
+                            ? field.value.filter((d) => d !== day.value)
+                            : [...field.value, day.value]
+                          field.onChange(newDays)
+                        }}
+                      >
+                        {day.label.slice(0, 3)}
+                      </Button>
+                    ))}
+                  </>
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Business Hours */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Start Time</Label>
+              <Controller
+                name="preferred_hours_start"
+                control={form.control}
+                render={({ field }) => (
+                  <Input
+                    type="time"
+                    {...field}
+                  />
+                )}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>End Time</Label>
+              <Controller
+                name="preferred_hours_end"
+                control={form.control}
+                render={({ field }) => (
+                  <Input
+                    type="time"
+                    {...field}
+                  />
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Booking Constraints */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Minimum Notice (hours)</Label>
+              <Controller
+                name="min_notice_hours"
+                control={form.control}
+                render={({ field }) => (
+                  <Input
+                    type="number"
+                    min={0}
+                    max={168}
+                    {...field}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                How far in advance appointments must be booked
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Maximum Advance (days)</Label>
+              <Controller
+                name="max_advance_days"
+                control={form.control}
+                render={({ field }) => (
+                  <Input
+                    type="number"
+                    min={1}
+                    max={365}
+                    {...field}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                How far in advance appointments can be booked
+              </p>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-4">
+            <Button
+              type="submit"
+              disabled={saveMutation.isPending}
+              className="flex-1"
+            >
+              {saveMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Configuration
+                </>
+              )}
+            </Button>
+
+            {existingConfig && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+              </Button>
+            )}
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+

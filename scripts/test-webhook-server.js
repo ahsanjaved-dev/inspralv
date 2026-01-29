@@ -11,9 +11,9 @@
  * 
  * Test Functions Available:
  *   - get_weather: Get weather for a city
+ *   - create_ticket: Create a support ticket
  *   - book_appointment: Book an appointment
  *   - check_inventory: Check product inventory
- *   - create_ticket: Create a support ticket
  */
 
 const http = require("http")
@@ -58,29 +58,6 @@ const functionHandlers = {
         condition: weather.condition,
         humidity: `${weather.humidity}%`,
         description: `The weather in ${city} is currently ${weather.condition} with a temperature of ${tempDisplay} and ${weather.humidity}% humidity.`
-      }
-    }
-  },
-
-  // Book appointment function
-  book_appointment: (args) => {
-    const name = args.name || "Customer"
-    const date = args.date || "tomorrow"
-    const time = args.time || "10:00 AM"
-    const service = args.service || "consultation"
-    
-    // Generate a fake confirmation number
-    const confirmationNumber = `APT-${Date.now().toString(36).toUpperCase()}`
-    
-    return {
-      success: true,
-      result: {
-        confirmation_number: confirmationNumber,
-        customer_name: name,
-        appointment_date: date,
-        appointment_time: time,
-        service: service,
-        message: `Great! I've booked your ${service} appointment for ${name} on ${date} at ${time}. Your confirmation number is ${confirmationNumber}.`
       }
     }
   },

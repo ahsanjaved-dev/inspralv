@@ -16,6 +16,7 @@ import {
   Building2,
   AlertCircle,
   MoreVertical,
+  ExternalLink,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -64,6 +65,12 @@ const PROVIDERS = {
     icon: "🔍",
     category: "Search",
   },
+  google_calendar: {
+    name: "Google Calendar",
+    description: "Enable appointment booking, cancellation, and rescheduling via Google Calendar",
+    icon: "📅",
+    category: "Calendar",
+  },
 }
 
 export default function OrgIntegrationsPage() {
@@ -73,7 +80,7 @@ export default function OrgIntegrationsPage() {
 
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [addDialogProvider, setAddDialogProvider] = useState<"vapi" | "retell" | "algolia" | null>(null)
+  const [addDialogProvider, setAddDialogProvider] = useState<"vapi" | "retell" | "algolia" | "google_calendar" | null>(null)
   const [manageDialogOpen, setManageDialogOpen] = useState(false)
   const [selectedIntegration, setSelectedIntegration] = useState<PartnerIntegration | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -89,7 +96,7 @@ export default function OrgIntegrationsPage() {
     return acc
   }, {} as Record<string, PartnerIntegration[]>) || {}
 
-  const handleAddIntegration = (provider: "vapi" | "retell" | "algolia") => {
+  const handleAddIntegration = (provider: "vapi" | "retell" | "algolia" | "google_calendar") => {
     setAddDialogProvider(provider)
     setAddDialogOpen(true)
   }
@@ -263,6 +270,17 @@ export default function OrgIntegrationsPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
+                            {/* Google Calendar: Show Connect button */}
+                            {provider === "google_calendar" && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => window.location.href = '/api/auth/google-calendar/authorize'}
+                              >
+                                <ExternalLink className="h-4 w-4 mr-1" />
+                                Connect Google
+                              </Button>
+                            )}
                             <Button
                               variant="outline"
                               size="sm"
