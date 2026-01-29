@@ -82,4 +82,9 @@ export const env = {
   mcpServerUrl: getEnvVar("MCP_SERVER_URL", false),
   // API key for authenticating with the MCP server
   mcpApiKey: getEnvVar("MCP_API_KEY", false),
+
+  // Redis/Upstash Configuration (for distributed caching and rate limiting)
+  // Get these from your Upstash dashboard: https://console.upstash.com/
+  upstashRedisRestUrl: getEnvVar("UPSTASH_REDIS_REST_URL", false),
+  upstashRedisRestToken: getEnvVar("UPSTASH_REDIS_REST_TOKEN", false),
 }

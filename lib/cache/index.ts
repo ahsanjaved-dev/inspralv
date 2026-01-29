@@ -3,9 +3,19 @@
  * Phase 1.1.2: Implement caching for performance optimization
  *
  * This module provides a flexible caching interface that supports:
- * - In-memory caching (default, for development)
- * - Redis/Upstash caching (for production)
+ * - Redis/Upstash caching (for production - distributed across serverless instances)
+ * - In-memory caching (fallback for development when Redis is not configured)
  */
+
+import {
+  isRedisConfigured,
+  redisGet,
+  redisSet,
+  redisDel,
+  redisDeletePattern,
+  redisFlush,
+} from "@/lib/redis"
+import { logger } from "@/lib/logger"
 
 // ============================================================================
 // TYPES
@@ -42,36 +52,71 @@ if (typeof setInterval !== "undefined") {
 }
 
 // ============================================================================
+// CACHE BACKEND DETECTION
+// ============================================================================
+
+/**
+ * Check if we're using Redis or in-memory cache
+ */
+export function getCacheBackend(): "redis" | "memory" {
+  return isRedisConfigured() ? "redis" : "memory"
+}
+
+// ============================================================================
 // CACHE FUNCTIONS
 // ============================================================================
 
 /**
- * Get a value from cache
+ * Get a value from cache (Redis or memory)
  */
 export async function cacheGet<T>(key: string): Promise<T | null> {
+  const useRedis = isRedisConfigured()
+
+  if (useRedis) {
+    const value = await redisGet<T>(key)
+    if (value !== null) {
+      trackCacheHit()
+    } else {
+      trackCacheMiss()
+    }
+    return value
+  }
+
+  // In-memory fallback
   const entry = memoryCache.get(key) as CacheEntry<T> | undefined
 
   if (!entry) {
+    trackCacheMiss()
     return null
   }
 
   // Check if expired
   if (entry.expiresAt < Date.now()) {
     memoryCache.delete(key)
+    trackCacheMiss()
     return null
   }
 
+  trackCacheHit()
   return entry.value
 }
 
 /**
- * Set a value in cache
+ * Set a value in cache (Redis or memory)
  */
 export async function cacheSet<T>(
   key: string,
   value: T,
   ttlSeconds: number = 300 // Default 5 minutes
 ): Promise<void> {
+  const useRedis = isRedisConfigured()
+
+  if (useRedis) {
+    await redisSet(key, value, ttlSeconds)
+    return
+  }
+
+  // In-memory fallback
   const entry: CacheEntry<T> = {
     value,
     expiresAt: Date.now() + ttlSeconds * 1000,
@@ -84,6 +129,14 @@ export async function cacheSet<T>(
  * Delete a specific key from cache
  */
 export async function cacheDelete(key: string): Promise<void> {
+  const useRedis = isRedisConfigured()
+
+  if (useRedis) {
+    await redisDel(key)
+    return
+  }
+
+  // In-memory fallback
   memoryCache.delete(key)
 }
 
@@ -91,6 +144,15 @@ export async function cacheDelete(key: string): Promise<void> {
  * Delete all keys matching a pattern (prefix-based)
  */
 export async function cacheDeletePattern(pattern: string): Promise<void> {
+  const useRedis = isRedisConfigured()
+
+  if (useRedis) {
+    // Redis uses glob-style patterns
+    await redisDeletePattern(`${pattern}*`)
+    return
+  }
+
+  // In-memory fallback
   for (const key of memoryCache.keys()) {
     if (key.startsWith(pattern)) {
       memoryCache.delete(key)
@@ -102,6 +164,14 @@ export async function cacheDeletePattern(pattern: string): Promise<void> {
  * Clear all cache entries
  */
 export async function cacheClear(): Promise<void> {
+  const useRedis = isRedisConfigured()
+
+  if (useRedis) {
+    await redisFlush()
+    return
+  }
+
+  // In-memory fallback
   memoryCache.clear()
 }
 
@@ -127,6 +197,12 @@ export const CacheKeys = {
 
   /** Auth context for user+partner combination */
   authContext: (userId: string, partnerId: string) => `auth:context:${userId}:${partnerId}`,
+
+  /** Voice list by provider */
+  voices: (provider: string) => `voices:${provider}`,
+
+  /** Subscription plans */
+  subscriptionPlans: () => `subscription:plans`,
 } as const
 
 // ============================================================================
@@ -154,6 +230,12 @@ export const CacheTTL = {
 
   /** Short-lived data - 1 minute */
   SHORT: 60,
+
+  /** Voice list - 30 minutes (rarely changes) */
+  VOICES: 30 * 60,
+
+  /** Subscription plans - 1 hour (rarely changes) */
+  PLANS: 60 * 60,
 } as const
 
 // ============================================================================
@@ -179,7 +261,12 @@ export async function cacheGetOrFetch<T>(
   const data = await fetchFn()
 
   // Cache the result (don't await, fire and forget)
-  cacheSet(key, data, ttlSeconds).catch(console.error)
+  cacheSet(key, data, ttlSeconds).catch((error) => {
+    logger.warn("Failed to cache data", {
+      key,
+      error: error instanceof Error ? error.message : "Unknown error",
+    })
+  })
 
   return data
 }
@@ -252,9 +339,12 @@ export async function warmCache<T>(
   try {
     const data = await fetchFn()
     await cacheSet(key, data, ttlSeconds)
-    console.log(`[Cache] Warmed cache for key: ${key}`)
+    logger.debug("Cache warmed", { key })
   } catch (error) {
-    console.error(`[Cache] Failed to warm cache for key: ${key}`, error)
+    logger.error("Failed to warm cache", {
+      key,
+      error: error instanceof Error ? error.message : "Unknown error",
+    })
   }
 }
 
@@ -263,9 +353,11 @@ export async function warmCache<T>(
 // ============================================================================
 
 interface CacheStats {
-  size: number
-  keys: string[]
+  backend: "redis" | "memory"
+  memorySize: number
   hitRate?: number
+  hits: number
+  misses: number
 }
 
 let cacheHits = 0
@@ -277,9 +369,11 @@ let cacheMisses = 0
 export function getCacheStats(): CacheStats {
   const totalRequests = cacheHits + cacheMisses
   return {
-    size: memoryCache.size,
-    keys: Array.from(memoryCache.keys()),
+    backend: getCacheBackend(),
+    memorySize: memoryCache.size,
     hitRate: totalRequests > 0 ? cacheHits / totalRequests : undefined,
+    hits: cacheHits,
+    misses: cacheMisses,
   }
 }
 
@@ -312,7 +406,7 @@ export function resetCacheStats(): void {
 /**
  * Cache object wrapper for convenient usage with object-style API
  * This provides a simpler interface: cache.get(), cache.set(), cache.delete()
- * 
+ *
  * Note: TTL can be provided in milliseconds or seconds.
  * Values >= 1000 are treated as milliseconds and auto-converted.
  */
@@ -356,5 +450,19 @@ export const cache = {
    */
   async clear(): Promise<void> {
     return cacheClear()
+  },
+
+  /**
+   * Get cache statistics
+   */
+  getStats(): CacheStats {
+    return getCacheStats()
+  },
+
+  /**
+   * Get current cache backend
+   */
+  getBackend(): "redis" | "memory" {
+    return getCacheBackend()
   },
 }

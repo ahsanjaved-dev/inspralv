@@ -3,8 +3,13 @@
  * Phase 2.1.2: Add brute force protection
  *
  * Implements sliding window rate limiting for API endpoints.
- * Uses in-memory storage by default, can be extended for Redis.
+ * Uses Redis/Upstash for distributed rate limiting in production.
+ * Falls back to in-memory storage for development.
  */
+
+import { Ratelimit } from "@upstash/ratelimit"
+import { getRedisClient, isRedisConfigured, redisIncr, redisExpire, redisTtl } from "@/lib/redis"
+import { logger } from "@/lib/logger"
 
 // ============================================================================
 // TYPES
@@ -33,7 +38,7 @@ interface RateLimitOptions {
 }
 
 // ============================================================================
-// IN-MEMORY STORE
+// IN-MEMORY STORE (Fallback)
 // ============================================================================
 
 const rateLimitStore = new Map<string, RateLimitEntry>()
@@ -51,13 +56,93 @@ if (typeof setInterval !== "undefined") {
 }
 
 // ============================================================================
-// RATE LIMIT FUNCTION
+// UPSTASH RATELIMIT INSTANCES (Cached)
+// ============================================================================
+
+const ratelimitInstances = new Map<string, Ratelimit>()
+
+/**
+ * Get or create an Upstash Ratelimit instance
+ */
+function getUpstashRatelimit(identifier: string, limit: number, windowSeconds: number): Ratelimit | null {
+  const redis = getRedisClient()
+  if (!redis) return null
+
+  const cacheKey = `${identifier}:${limit}:${windowSeconds}`
+  
+  if (!ratelimitInstances.has(cacheKey)) {
+    // Use sliding window algorithm for more accurate rate limiting
+    const ratelimit = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(limit, `${windowSeconds}s`),
+      analytics: true,
+      prefix: `ratelimit:${identifier}`,
+    })
+    ratelimitInstances.set(cacheKey, ratelimit)
+  }
+
+  return ratelimitInstances.get(cacheKey)!
+}
+
+// ============================================================================
+// RATE LIMIT FUNCTION (Redis with Memory Fallback)
 // ============================================================================
 
 /**
- * Check and update rate limit for a given key
+ * Check rate limit using Redis (distributed) or in-memory (local)
  */
-export function checkRateLimit(
+export async function checkRateLimitAsync(
+  key: string,
+  options: RateLimitOptions
+): Promise<RateLimitResult> {
+  const useRedis = isRedisConfigured()
+  
+  if (useRedis) {
+    return checkRateLimitRedis(key, options)
+  }
+
+  // Fallback to in-memory rate limiting
+  return checkRateLimitMemory(key, options)
+}
+
+/**
+ * Check rate limit using Upstash Ratelimit (distributed)
+ */
+async function checkRateLimitRedis(
+  key: string,
+  options: RateLimitOptions
+): Promise<RateLimitResult> {
+  const ratelimit = getUpstashRatelimit(options.identifier, options.limit, options.windowSeconds)
+  
+  if (!ratelimit) {
+    logger.warn("Redis ratelimit not available, falling back to memory", { key })
+    return checkRateLimitMemory(key, options)
+  }
+
+  try {
+    const result = await ratelimit.limit(key)
+    const now = Date.now()
+    
+    return {
+      success: result.success,
+      remaining: result.remaining,
+      limit: result.limit,
+      resetAt: result.reset,
+      retryAfterSeconds: result.success ? undefined : Math.ceil((result.reset - now) / 1000),
+    }
+  } catch (error) {
+    logger.error("Redis rate limit check failed, falling back to memory", {
+      key,
+      error: error instanceof Error ? error.message : "Unknown error",
+    })
+    return checkRateLimitMemory(key, options)
+  }
+}
+
+/**
+ * Check rate limit using in-memory store (synchronous, for local development)
+ */
+function checkRateLimitMemory(
   key: string,
   options: RateLimitOptions
 ): RateLimitResult {
@@ -97,7 +182,43 @@ export function checkRateLimit(
 }
 
 /**
+ * Synchronous rate limit check (uses in-memory only)
+ * For backwards compatibility with existing code
+ */
+export function checkRateLimit(
+  key: string,
+  options: RateLimitOptions
+): RateLimitResult {
+  return checkRateLimitMemory(key, options)
+}
+
+/**
  * Reset rate limit for a key (e.g., after successful login)
+ */
+export async function resetRateLimitAsync(key: string, identifier: string): Promise<void> {
+  const useRedis = isRedisConfigured()
+  const fullKey = `${identifier}:${key}`
+
+  if (useRedis) {
+    const ratelimit = getUpstashRatelimit(identifier, 1, 1) // Parameters don't matter for reset
+    if (ratelimit) {
+      try {
+        await ratelimit.resetUsedTokens(key)
+      } catch (error) {
+        logger.warn("Failed to reset Redis rate limit", {
+          key: fullKey,
+          error: error instanceof Error ? error.message : "Unknown error",
+        })
+      }
+    }
+  }
+
+  // Always reset memory store too
+  rateLimitStore.delete(fullKey)
+}
+
+/**
+ * Synchronous reset (memory only, for backwards compatibility)
  */
 export function resetRateLimit(key: string, identifier: string): void {
   rateLimitStore.delete(`${identifier}:${key}`)
@@ -120,6 +241,17 @@ export function checkLoginRateLimit(identifier: string): RateLimitResult {
 }
 
 /**
+ * Async version of login rate limit (uses Redis when available)
+ */
+export async function checkLoginRateLimitAsync(identifier: string): Promise<RateLimitResult> {
+  return checkRateLimitAsync(identifier, {
+    limit: 5,
+    windowSeconds: 15 * 60,
+    identifier: "login",
+  })
+}
+
+/**
  * Rate limit for signup attempts
  * 3 attempts per hour per IP
  */
@@ -127,6 +259,17 @@ export function checkSignupRateLimit(identifier: string): RateLimitResult {
   return checkRateLimit(identifier, {
     limit: 3,
     windowSeconds: 60 * 60, // 1 hour
+    identifier: "signup",
+  })
+}
+
+/**
+ * Async version of signup rate limit
+ */
+export async function checkSignupRateLimitAsync(identifier: string): Promise<RateLimitResult> {
+  return checkRateLimitAsync(identifier, {
+    limit: 3,
+    windowSeconds: 60 * 60,
     identifier: "signup",
   })
 }
@@ -144,6 +287,17 @@ export function checkPasswordResetRateLimit(identifier: string): RateLimitResult
 }
 
 /**
+ * Async version of password reset rate limit
+ */
+export async function checkPasswordResetRateLimitAsync(identifier: string): Promise<RateLimitResult> {
+  return checkRateLimitAsync(identifier, {
+    limit: 3,
+    windowSeconds: 60 * 60,
+    identifier: "password-reset",
+  })
+}
+
+/**
  * Rate limit for API requests (general)
  * 100 requests per minute
  */
@@ -151,6 +305,17 @@ export function checkApiRateLimit(identifier: string): RateLimitResult {
   return checkRateLimit(identifier, {
     limit: 100,
     windowSeconds: 60, // 1 minute
+    identifier: "api",
+  })
+}
+
+/**
+ * Async version of API rate limit
+ */
+export async function checkApiRateLimitAsync(identifier: string): Promise<RateLimitResult> {
+  return checkRateLimitAsync(identifier, {
+    limit: 100,
+    windowSeconds: 60,
     identifier: "api",
   })
 }
@@ -184,8 +349,7 @@ export const TIER_RATE_LIMITS: Record<PlanTier, { requestsPerMinute: number; req
 }
 
 /**
- * Check rate limit based on plan tier
- * Uses both per-minute and per-hour limits
+ * Check rate limit based on plan tier (synchronous, memory only)
  */
 export function checkTierRateLimit(
   identifier: string,
@@ -204,6 +368,35 @@ export function checkTierRateLimit(
     windowSeconds: 3600,
     identifier: `tier-hour-${tier}`,
   })
+
+  return {
+    minuteResult,
+    hourResult,
+    allowed: minuteResult.success && hourResult.success,
+  }
+}
+
+/**
+ * Async version of tier rate limit (uses Redis when available)
+ */
+export async function checkTierRateLimitAsync(
+  identifier: string,
+  tier: PlanTier
+): Promise<{ minuteResult: RateLimitResult; hourResult: RateLimitResult; allowed: boolean }> {
+  const limits = TIER_RATE_LIMITS[tier]
+
+  const [minuteResult, hourResult] = await Promise.all([
+    checkRateLimitAsync(identifier, {
+      limit: limits.requestsPerMinute,
+      windowSeconds: 60,
+      identifier: `tier-minute-${tier}`,
+    }),
+    checkRateLimitAsync(identifier, {
+      limit: limits.requestsPerHour,
+      windowSeconds: 3600,
+      identifier: `tier-hour-${tier}`,
+    }),
+  ])
 
   return {
     minuteResult,
@@ -252,7 +445,7 @@ const ENDPOINT_MULTIPLIERS: Record<EndpointCategory, number> = {
 }
 
 /**
- * Check rate limit for specific endpoint category
+ * Check rate limit for specific endpoint category (synchronous)
  */
 export function checkEndpointRateLimit(
   identifier: string,
@@ -261,10 +454,30 @@ export function checkEndpointRateLimit(
 ): RateLimitResult {
   const baseLimits = TIER_RATE_LIMITS[tier]
   const multiplier = ENDPOINT_MULTIPLIERS[category]
-  
+
   const limit = Math.floor(baseLimits.requestsPerMinute * multiplier)
 
   return checkRateLimit(identifier, {
+    limit,
+    windowSeconds: 60,
+    identifier: `endpoint-${category}`,
+  })
+}
+
+/**
+ * Async version of endpoint rate limit
+ */
+export async function checkEndpointRateLimitAsync(
+  identifier: string,
+  tier: PlanTier,
+  category: EndpointCategory
+): Promise<RateLimitResult> {
+  const baseLimits = TIER_RATE_LIMITS[tier]
+  const multiplier = ENDPOINT_MULTIPLIERS[category]
+
+  const limit = Math.floor(baseLimits.requestsPerMinute * multiplier)
+
+  return checkRateLimitAsync(identifier, {
     limit,
     windowSeconds: 60,
     identifier: `endpoint-${category}`,
@@ -284,6 +497,17 @@ export function checkPartnerRequestRateLimit(identifier: string): RateLimitResul
 }
 
 /**
+ * Async version of partner request rate limit
+ */
+export async function checkPartnerRequestRateLimitAsync(identifier: string): Promise<RateLimitResult> {
+  return checkRateLimitAsync(identifier, {
+    limit: 2,
+    windowSeconds: 60 * 60,
+    identifier: "partner-request",
+  })
+}
+
+/**
  * Rate limit for credits top-up requests
  * 5 attempts per 5 minutes per partner
  */
@@ -292,6 +516,29 @@ export function checkCreditsTopupRateLimit(identifier: string): RateLimitResult 
     limit: 5,
     windowSeconds: 5 * 60, // 5 minutes
     identifier: "credits-topup",
+  })
+}
+
+/**
+ * Async version of credits topup rate limit
+ */
+export async function checkCreditsTopupRateLimitAsync(identifier: string): Promise<RateLimitResult> {
+  return checkRateLimitAsync(identifier, {
+    limit: 5,
+    windowSeconds: 5 * 60,
+    identifier: "credits-topup",
+  })
+}
+
+/**
+ * Rate limit for webhook endpoints
+ * 1000 requests per minute (high volume for external services)
+ */
+export async function checkWebhookRateLimitAsync(identifier: string): Promise<RateLimitResult> {
+  return checkRateLimitAsync(identifier, {
+    limit: 1000,
+    windowSeconds: 60,
+    identifier: "webhook",
   })
 }
 
@@ -310,3 +557,17 @@ export function getRateLimitHeaders(result: RateLimitResult): Record<string, str
   }
 }
 
+// ============================================================================
+// RATE LIMIT BACKEND INFO
+// ============================================================================
+
+/**
+ * Get current rate limiting backend status
+ */
+export function getRateLimitBackend(): { backend: "redis" | "memory"; configured: boolean } {
+  const configured = isRedisConfigured()
+  return {
+    backend: configured ? "redis" : "memory",
+    configured,
+  }
+}

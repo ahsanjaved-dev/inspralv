@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server"
 import { checkDatabaseHealth, isPrismaConfigured } from "@/lib/prisma"
+import { checkRedisHealth, isRedisConfigured } from "@/lib/redis"
+import { getCacheStats } from "@/lib/cache"
+import { getRateLimitBackend } from "@/lib/rate-limit"
 
 /**
  * Health check endpoint
@@ -8,12 +11,16 @@ import { checkDatabaseHealth, isPrismaConfigured } from "@/lib/prisma"
  * Checks:
  * - API is running
  * - Database connection (via Prisma, if configured)
+ * - Redis connection (via Upstash, if configured)
  */
 export async function GET() {
   const startTime = Date.now()
   
   // Check if Prisma is configured
   const prismaEnabled = isPrismaConfigured()
+  
+  // Check if Redis is configured
+  const redisEnabled = isRedisConfigured()
   
   // Check database connection (only if Prisma is configured)
   let dbHealthy: boolean | null = null
@@ -28,9 +35,32 @@ export async function GET() {
     }
   }
   
+  // Check Redis connection (only if configured)
+  let redisHealthy: boolean | null = null
+  let redisLatency: number | null = null
+  let redisError: string | null = null
+  
+  if (redisEnabled) {
+    try {
+      const redisHealth = await checkRedisHealth()
+      redisHealthy = redisHealth.available
+      redisLatency = redisHealth.latencyMs ?? null
+      redisError = redisHealth.error ?? null
+    } catch (error) {
+      redisHealthy = false
+      redisError = error instanceof Error ? error.message : "Unknown Redis error"
+    }
+  }
+  
   const responseTime = Date.now() - startTime
   
+  // Get cache and rate limit info
+  const cacheStats = getCacheStats()
+  const rateLimitInfo = getRateLimitBackend()
+  
   // Determine overall status
+  // Only consider database health as critical if Prisma is configured
+  // Redis is optional - app works with memory fallback
   const isHealthy = prismaEnabled ? dbHealthy === true : true
   
   const health = {
@@ -52,6 +82,26 @@ export async function GET() {
             status: "skipped",
             message: "Prisma not configured (DATABASE_URL not set). Using Supabase client.",
           },
+      redis: redisEnabled
+        ? {
+            status: redisHealthy ? "ok" : "error",
+            type: "upstash",
+            ...(redisLatency && { latencyMs: redisLatency }),
+            ...(redisError && { error: redisError }),
+          }
+        : {
+            status: "skipped",
+            message: "Redis not configured. Using in-memory cache/rate-limiting.",
+          },
+      cache: {
+        backend: cacheStats.backend,
+        memorySize: cacheStats.memorySize,
+        ...(cacheStats.hitRate !== undefined && { hitRate: `${(cacheStats.hitRate * 100).toFixed(1)}%` }),
+      },
+      rateLimit: {
+        backend: rateLimitInfo.backend,
+        distributed: rateLimitInfo.configured,
+      },
     },
   }
   
