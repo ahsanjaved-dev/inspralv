@@ -9,6 +9,8 @@ export {
   mcpClient,
   isMCPConfigured,
   convertToMCPTool,
+  getToolExecutionWebhookUrl,
+  convertPredefinedToolToMCP,
   type MCPToolInput,
   type MCPToolDefinition,
   type ToolParameters,

@@ -146,13 +146,14 @@ export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
   // CALENDAR (Custom Implementation)
   // Calendar tools use our custom Google Calendar integration
   // Configured via CalendarToolsSelector component
+  // Works with both VAPI and Retell (via MCP)
   // ========================================
   book_appointment: {
     key: 'book_appointment',
     displayName: 'Book Appointment',
     type: 'book_appointment',
     category: 'calendar',
-    providers: { vapi: true, retell: false },
+    providers: { vapi: true, retell: true },
     isNative: false,
     description: 'Book a new appointment on Google Calendar.',
     icon: 'CalendarPlus',
@@ -162,7 +163,7 @@ export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
     displayName: 'Cancel Appointment',
     type: 'cancel_appointment',
     category: 'calendar',
-    providers: { vapi: true, retell: false },
+    providers: { vapi: true, retell: true },
     isNative: false,
     description: 'Cancel an existing appointment.',
     icon: 'CalendarX',
@@ -172,7 +173,7 @@ export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
     displayName: 'Reschedule Appointment',
     type: 'reschedule_appointment',
     category: 'calendar',
-    providers: { vapi: true, retell: false },
+    providers: { vapi: true, retell: true },
     isNative: false,
     description: 'Reschedule an appointment to a new time.',
     icon: 'CalendarClock',

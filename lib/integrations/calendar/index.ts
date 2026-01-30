@@ -7,7 +7,7 @@
 export * from './types'
 
 // Encryption utilities
-export { encrypt, decrypt, encryptCredentials, decryptCredentials } from './encryption'
+export { encrypt, decrypt, encryptCredentials, decryptCredentials, DecryptionError } from './encryption'
 
 // Google Calendar API operations
 export {
@@ -60,8 +60,12 @@ export {
   getCalendarToolByName,
   calendarToolToVapiFormat,
   generateVapiCalendarTools,
+  // Retell/MCP format exports
+  calendarToolToMCPFormat,
+  generateMCPCalendarTools,
+  getEnabledCalendarToolsForMCP,
 } from './vapi-tools'
-export type { CalendarToolName } from './vapi-tools'
+export type { CalendarToolName, MCPCalendarToolInput } from './vapi-tools'
 
 // Tool handler
 export { handleCalendarToolCall, isCalendarConfigured } from './tool-handler'

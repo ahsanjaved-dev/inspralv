@@ -152,6 +152,28 @@ const SLOT_DURATIONS = [
   { value: "120", label: "2 hours" },
 ]
 
+const MIN_NOTICE_OPTIONS = [
+  { value: "0", label: "No minimum (allow immediate)" },
+  { value: "1", label: "1 hour before" },
+  { value: "2", label: "2 hours before" },
+  { value: "4", label: "4 hours before" },
+  { value: "8", label: "8 hours before" },
+  { value: "12", label: "12 hours before" },
+  { value: "24", label: "1 day before" },
+  { value: "48", label: "2 days before" },
+  { value: "72", label: "3 days before" },
+]
+
+const MAX_ADVANCE_OPTIONS = [
+  { value: "7", label: "1 week" },
+  { value: "14", label: "2 weeks" },
+  { value: "30", label: "1 month" },
+  { value: "60", label: "2 months" },
+  { value: "90", label: "3 months" },
+  { value: "180", label: "6 months" },
+  { value: "365", label: "1 year" },
+]
+
 export interface CalendarToolSettings {
   slot_duration_minutes: number
   buffer_between_slots_minutes: number
@@ -189,7 +211,7 @@ const DEFAULT_CALENDAR_SETTINGS: CalendarToolSettings = {
   preferred_hours_start: "09:00",
   preferred_hours_end: "17:00",
   timezone: "America/New_York",
-  min_notice_hours: 1,
+  min_notice_hours: 0, // Allow immediate bookings by default
   max_advance_days: 60,
 }
 
@@ -218,7 +240,7 @@ export function CalendarToolConfigDialog({
   const [preferredHoursStart, setPreferredHoursStart] = useState("09:00")
   const [preferredHoursEnd, setPreferredHoursEnd] = useState("17:00")
   const [timezone, setTimezone] = useState("America/New_York")
-  const [minNoticeHours, setMinNoticeHours] = useState("1")
+  const [minNoticeHours, setMinNoticeHours] = useState("0")
   const [maxAdvanceDays, setMaxAdvanceDays] = useState("60")
 
   // Custom parameters
@@ -479,33 +501,45 @@ export function CalendarToolConfigDialog({
                 </div>
               </div>
 
-              {/* Booking Constraints */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm">Minimum Notice (hours)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={168}
-                    value={minNoticeHours}
-                    onChange={e => setMinNoticeHours(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    How far in advance appointments must be booked
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm">Maximum Advance (days)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={maxAdvanceDays}
-                    onChange={e => setMaxAdvanceDays(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    How far in advance appointments can be booked
-                  </p>
+              {/* Booking Rules */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium flex items-center gap-1.5">
+                  <Clock className="h-3 w-3" />
+                  Booking Rules
+                </Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm text-muted-foreground">Minimum Advance Notice</Label>
+                    <Select value={minNoticeHours} onValueChange={setMinNoticeHours}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MIN_NOTICE_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Earliest time before appointment
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm text-muted-foreground">Maximum Advance Booking</Label>
+                    <Select value={maxAdvanceDays} onValueChange={setMaxAdvanceDays}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MAX_ADVANCE_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Furthest time in advance
+                    </p>
+                  </div>
                 </div>
               </div>
 

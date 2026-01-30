@@ -2,19 +2,24 @@
  * MCP Tool Execution Endpoint
  * 
  * Single dynamic endpoint that handles ALL tool execution requests from the MCP server.
- * This endpoint forwards requests to the user-configured API URL for each tool.
+ * This endpoint either:
+ * - Handles built-in tools (calendar) directly
+ * - Forwards custom tools to user-configured API URLs
  * 
  * Flow:
  * 1. Retell calls MCP server to execute a tool
  * 2. MCP server forwards to this endpoint with tool name and arguments
- * 3. This endpoint looks up the tool's API URL from the stored configuration
- * 4. Forwards the request to the user's API URL
- * 5. Result flows back to MCP → Retell → AI speaks result
+ * 3. This endpoint checks if it's a built-in tool (calendar):
+ *    - If YES: Execute directly via internal handlers
+ *    - If NO: Forward to user's API URL
+ * 4. Result flows back to MCP → Retell → AI speaks result
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { logger } from "@/lib/logger"
+import { isCalendarTool } from "@/lib/integrations/calendar/vapi-tools"
+import { handleCalendarToolCall, isCalendarConfigured } from "@/lib/integrations/calendar"
 
 const log = logger.child({ module: "MCPExecute" })
 
@@ -122,6 +127,65 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       )
     }
+
+    // ========================================================================
+    // CALENDAR TOOLS - Handle directly instead of forwarding
+    // ========================================================================
+    if (isCalendarTool(toolName)) {
+      log.info(`📅 Calendar tool detected: ${toolName}`)
+      
+      // Check if calendar is configured for this agent
+      const hasCalendar = await isCalendarConfigured(agentId)
+      if (!hasCalendar) {
+        log.error(`❌ Calendar not configured for agent: ${agentId}`)
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Calendar is not configured for this agent. Please set up Google Calendar integration first.",
+          },
+          { status: 400 }
+        )
+      }
+
+      try {
+        log.info(`📅 Executing calendar tool: ${toolName}`, { args })
+        
+        const result = await handleCalendarToolCall(
+          { name: toolName, arguments: args },
+          { 
+            agentId, 
+            callId: payload.call_id,
+            conversationId: undefined // Will be linked if needed
+          }
+        )
+
+        const duration = Date.now() - startTime
+        log.info(`📅 Calendar tool result:`, { result, duration })
+        log.info("════════════════════════════════════════════════════════════════════")
+
+        // Return in format expected by MCP server
+        return NextResponse.json({
+          success: result.success,
+          message: result.success ? result.result : result.error,
+          result: result.success ? { message: result.result } : undefined,
+          error: result.success ? undefined : result.error,
+        })
+
+      } catch (calendarError) {
+        log.error(`❌ Calendar tool execution failed:`, { error: calendarError })
+        return NextResponse.json(
+          {
+            success: false,
+            error: calendarError instanceof Error ? calendarError.message : "Calendar operation failed",
+          },
+          { status: 500 }
+        )
+      }
+    }
+
+    // ========================================================================
+    // CUSTOM TOOLS - Forward to user's API URL
+    // ========================================================================
 
     // Find the tool in the agent's config
     const agentConfig = agent.config as { tools?: Array<{

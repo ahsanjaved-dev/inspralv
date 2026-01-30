@@ -79,30 +79,6 @@ export interface RetellPressDigitsTool {
 }
 
 /**
- * Check Availability Cal Tool - Check calendar availability on Cal.com
- */
-export interface RetellCheckAvailabilityCalTool {
-  type: 'check_availability_cal'
-  name: string
-  description: string
-  cal_api_key: string
-  event_type_id: number
-  timezone: string
-}
-
-/**
- * Book Appointment Cal Tool - Book appointment on Cal.com
- */
-export interface RetellBookAppointmentCalTool {
-  type: 'book_appointment_cal'
-  name: string
-  description: string
-  cal_api_key: string
-  event_type_id: number
-  timezone: string
-}
-
-/**
  * Send SMS Tool - Send SMS message (requires Twilio integration)
  */
 export interface RetellSendSmsTool {
@@ -159,8 +135,6 @@ export type RetellGeneralTool =
   | RetellEndCallTool
   | RetellTransferCallTool
   | RetellPressDigitsTool
-  | RetellCheckAvailabilityCalTool
-  | RetellBookAppointmentCalTool
   | RetellSendSmsTool
   | RetellMCPToolReference
 
@@ -171,8 +145,6 @@ export type RetellNativeToolType =
   | 'end_call'
   | 'transfer_call'
   | 'press_digit'
-  | 'check_availability_cal'
-  | 'book_appointment_cal'
   | 'send_sms'
 
 /**

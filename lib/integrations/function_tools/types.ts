@@ -56,9 +56,10 @@ export type VapiToolType =
  * - 'transfer_call': Transfer to another number
  * - 'press_digit': Send DTMF tones
  *
- * Calendar Integration (Cal.com):
- * - 'check_availability_cal': Check calendar availability
- * - 'book_appointment_cal': Book an appointment
+ * Calendar Integration (Google Calendar via MCP):
+ * - 'book_appointment': Book a new appointment
+ * - 'cancel_appointment': Cancel an existing appointment
+ * - 'reschedule_appointment': Reschedule an appointment
  *
  * Communication:
  * - 'send_sms': Send SMS message
@@ -71,9 +72,10 @@ export type RetellToolType =
   | 'end_call'
   | 'transfer_call'
   | 'press_digit'
-  // Calendar Integration
-  | 'check_availability_cal'
-  | 'book_appointment_cal'
+  // Calendar Integration (Google Calendar via MCP)
+  | 'book_appointment'
+  | 'cancel_appointment'
+  | 'reschedule_appointment'
   // Communication
   | 'send_sms'
   // Custom Integration

@@ -1689,9 +1689,6 @@ export type FunctionToolType =
   | 'transfer_call'
   | 'press_digit'   // Retell uses singular form
   | 'press_digits'  // Legacy/alias
-  // Calendar Integration (Retell)
-  | 'check_availability_cal'
-  | 'book_appointment_cal'
   // Communication (Retell)
   | 'send_sms'
   // API Integration
@@ -1850,13 +1847,6 @@ export interface FunctionTool {
   /** Digits to press (for press_digit / press_digits). */
   digits?: string
 
-  /** Cal.com API key (for check_availability_cal / book_appointment_cal). */
-  cal_api_key?: string
-  /** Cal.com event type id (for check_availability_cal / book_appointment_cal). */
-  event_type_id?: number
-  /** Timezone (for check_availability_cal / book_appointment_cal). */
-  timezone?: string
-
   /** From number for send_sms (Twilio integration). */
   from_number?: string
 
@@ -1910,9 +1900,6 @@ export const functionToolTypeSchema = z.enum([
   'transfer_call',
   'press_digit',
   'press_digits',
-  // Calendar Integration (Retell)
-  'check_availability_cal',
-  'book_appointment_cal',
   // Communication (Retell)
   'send_sms',
   // API Integration
