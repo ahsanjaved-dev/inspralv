@@ -895,6 +895,15 @@ async function handleEndOfCallReport(
     .eq("id", conversationData.id)
     .single()
 
+  // Update agent stats (conversations count, minutes, cost)
+  // This is critical for showing accurate stats on agent cards
+  if (agentData?.id && finalConversation) {
+    await updateAgentStats(supabase, agentData.id, {
+      duration_seconds: durationSeconds,
+      total_cost: finalConversation.total_cost || messageCost || 0,
+    })
+  }
+
   // Index to Algolia AFTER billing (so cost is correct)
   // IMPORTANT: Must await to ensure indexing completes before serverless function terminates
   if (finalConversation && agentData) {
@@ -1155,6 +1164,52 @@ async function handleDirectFunctionCall(
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+/**
+ * Update agent stats (total_conversations, total_minutes, total_cost)
+ * These are denormalized fields on the ai_agents table for quick display on agent cards
+ */
+async function updateAgentStats(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  agentId: string,
+  data: { duration_seconds: number; total_cost: number }
+) {
+  try {
+    // Get current agent stats
+    const { data: agent, error: fetchError } = await supabase
+      .from("ai_agents")
+      .select("total_conversations, total_minutes, total_cost")
+      .eq("id", agentId)
+      .single()
+
+    if (fetchError || !agent) {
+      console.error(`[VAPI Webhook] Failed to fetch agent for stats update:`, fetchError)
+      return
+    }
+
+    // Calculate new values
+    const newMinutes = data.duration_seconds / 60
+
+    // Update stats
+    const { error: updateError } = await supabase
+      .from("ai_agents")
+      .update({
+        total_conversations: (agent.total_conversations || 0) + 1,
+        total_minutes: (agent.total_minutes || 0) + newMinutes,
+        total_cost: (agent.total_cost || 0) + data.total_cost,
+        last_conversation_at: new Date().toISOString(),
+      })
+      .eq("id", agentId)
+
+    if (updateError) {
+      console.error(`[VAPI Webhook] Failed to update agent stats:`, updateError)
+    } else {
+      console.log(`[VAPI Webhook] Agent stats updated: +1 call, +${newMinutes.toFixed(2)} min, +$${data.total_cost.toFixed(4)}`)
+    }
+  } catch (error) {
+    console.error(`[VAPI Webhook] Error updating agent stats:`, error)
+  }
+}
 
 async function findAgentByAssistantId(assistantId: string | undefined, workspaceIdFromUrl: string) {
   if (!assistantId) {

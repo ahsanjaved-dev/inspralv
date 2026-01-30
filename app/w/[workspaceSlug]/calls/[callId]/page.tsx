@@ -409,16 +409,6 @@ export default function CallDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {/* Real-time connection indicator */}
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <div
-              className={`w-2 h-2 rounded-full ${
-                isConnected ? "bg-green-500" : "bg-gray-400"
-              }`}
-            />
-            {isConnected ? "Live" : "Offline"}
-          </div>
-          
           {/* Status badge */}
           <Badge className={`${statusInfo?.color ?? "bg-gray-100 text-gray-800"} flex items-center gap-1`}>
             {statusInfo?.icon}
