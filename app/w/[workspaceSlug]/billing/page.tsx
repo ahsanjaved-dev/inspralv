@@ -199,6 +199,39 @@ export default function BillingPage() {
         </Card>
       )}
 
+      {/* Free Credits Plan (when no subscription) */}
+      {!hasSubscription && (
+        <Card className="border-green-500/20 bg-green-500/5">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Package className="h-5 w-5 text-green-600" />
+                <CardTitle>Current Plan: Free</CardTitle>
+              </div>
+              <Badge className="bg-green-600">Active</Badge>
+            </div>
+            <CardDescription>
+              You're using the free plan with prepaid credits. Upgrade anytime for more features.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-green-600" />
+                <span>Balance: ${credits?.balanceDollars?.toFixed(2) || "0.00"}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-green-600" />
+                <span>~{credits?.estimatedMinutesRemaining || 0} minutes remaining</span>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              On the free plan, you pay per-minute at ${perMinuteRate}/minute using your credit balance.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Available Plans */}
       {plans.length > 0 && (
         <Card>
