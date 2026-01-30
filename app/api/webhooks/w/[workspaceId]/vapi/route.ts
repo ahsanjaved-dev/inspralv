@@ -25,6 +25,8 @@ import { processCallCompletion } from "@/lib/billing/usage"
 import { indexCallLogToAlgolia } from "@/lib/algolia"
 import type { AgentProvider, Conversation } from "@/types/database.types"
 import { createClient } from "@supabase/supabase-js"
+import { handleCalendarToolCall, isCalendarConfigured } from "@/lib/integrations/calendar"
+import { isCalendarTool } from "@/lib/integrations/calendar/vapi-tools"
 
 export const dynamic = "force-dynamic"
 
@@ -388,9 +390,15 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           break
 
         case "function-call":
-        case "tool-calls":
-          await handleFunctionCall(callPayload, workspaceId)
+        case "tool-calls": {
+          // Execute tools and return results to VAPI
+          const toolResults = await handleFunctionCall(callPayload, workspaceId)
+          if (toolResults) {
+            console.log(`[VAPI Webhook W/${workspaceId}] Returning tool results:`, toolResults)
+            return NextResponse.json(toolResults)
+          }
           break
+        }
 
         default:
           console.log(`[VAPI Webhook W/${workspaceId}] Unhandled event: ${eventType}`)
@@ -927,11 +935,15 @@ async function handleEndOfCallReport(
   await updateCampaignRecipientStatus(call.id, callOutcome, durationSeconds, messageCost)
 }
 
-async function handleFunctionCall(payload: VapiWebhookPayload, workspaceId: string) {
+async function handleFunctionCall(
+  payload: VapiWebhookPayload,
+  workspaceId: string
+): Promise<{ results: Array<{ toolCallId: string; result: string }> } | null> {
   const { call, functionCalls, toolCalls } = payload.message
-  const functions = functionCalls || toolCalls
+  // VAPI can send tool calls in multiple formats
+  const functions = functionCalls || toolCalls || (payload.message as any).toolCallList
 
-  if (!call?.id) return
+  if (!call?.id) return null
 
   console.log(`[VAPI Webhook] Function call for call ${call.id}`)
 
@@ -940,29 +952,107 @@ async function handleFunctionCall(payload: VapiWebhookPayload, workspaceId: stri
 
   if (!agent) {
     console.error(`[VAPI Webhook] Agent not found for call: ${call.id}`)
-    return
+    return null
   }
 
-  // Forward to user's webhook if configured
-  const config = agent.config as any
-  const webhookUrl = config?.tools_server_url
+  const results: Array<{ toolCallId: string; result: string }> = []
 
-  if (webhookUrl) {
-    try {
-      await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "function-call",
-          call_id: call.id,
-          function_calls: functions,
-        }),
-      })
-      console.log(`[VAPI Webhook] Forwarded function call to: ${webhookUrl}`)
-    } catch (error) {
-      console.error("[VAPI Webhook] Failed to forward function call:", error)
+  // Process function calls - execute calendar tools directly
+  if (functions && Array.isArray(functions)) {
+    for (const func of functions) {
+      // VAPI sends tool calls in format: { id, function: { name, arguments } } OR { id, name, arguments }
+      const toolCallId = (func as any)?.id || (func as any)?.toolCallId || "unknown"
+      const toolName = (func as any)?.function?.name || (func as any)?.name
+      const toolArgs = (func as any)?.function?.arguments || (func as any)?.arguments || {}
+
+      // Parse arguments if they're a string (VAPI sometimes sends JSON string)
+      const parsedArgs = typeof toolArgs === "string" ? JSON.parse(toolArgs) : toolArgs
+
+      console.log(`[VAPI Webhook] Processing tool: ${toolName}, args:`, parsedArgs)
+
+      if (toolName && isCalendarTool(toolName)) {
+        console.log(`[VAPI Webhook] Executing calendar tool: ${toolName} for agent ${agent.id}`)
+
+        // Check if calendar is configured
+        const hasCalendar = await isCalendarConfigured(agent.id)
+        if (!hasCalendar) {
+          console.error(`[VAPI Webhook] Calendar not configured for agent ${agent.id}`)
+          results.push({
+            toolCallId,
+            result: "Calendar is not configured for this agent. Please set up Google Calendar integration first.",
+          })
+          continue
+        }
+
+        try {
+          const calendarResult = await handleCalendarToolCall(
+            { name: toolName, arguments: parsedArgs },
+            { agentId: agent.id, conversationId: undefined, callId: call.id }
+          )
+
+          console.log(`[VAPI Webhook] Calendar tool result:`, calendarResult)
+
+          results.push({
+            toolCallId,
+            result: calendarResult.success ? calendarResult.result || "Operation completed successfully" : calendarResult.error || "Operation failed",
+          })
+        } catch (error) {
+          console.error(`[VAPI Webhook] Calendar tool error:`, error)
+          results.push({
+            toolCallId,
+            result: error instanceof Error ? error.message : "An error occurred while processing the request",
+          })
+        }
+      } else {
+        // Non-calendar tool - forward to user's webhook if configured
+        const config = agent.config as any
+        const webhookUrl = config?.tools_server_url
+
+        if (webhookUrl) {
+          try {
+            const response = await fetch(webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                type: "function-call",
+                call_id: call.id,
+                tool_call_id: toolCallId,
+                function_name: toolName,
+                arguments: parsedArgs,
+              }),
+            })
+            const responseData = await response.json()
+            console.log(`[VAPI Webhook] Forwarded to webhook, response:`, responseData)
+
+            results.push({
+              toolCallId,
+              result: responseData?.result || JSON.stringify(responseData),
+            })
+          } catch (error) {
+            console.error("[VAPI Webhook] Failed to forward function call:", error)
+            results.push({
+              toolCallId,
+              result: "Failed to execute function",
+            })
+          }
+        } else {
+          console.warn(`[VAPI Webhook] No webhook URL configured for non-calendar tool: ${toolName}`)
+          results.push({
+            toolCallId,
+            result: "No webhook configured for this tool",
+          })
+        }
+      }
     }
   }
+
+  // Return results if we processed any tools
+  if (results.length > 0) {
+    console.log(`[VAPI Webhook] Returning ${results.length} tool results`)
+    return { results }
+  }
+
+  return null
 }
 
 async function handleDirectFunctionCall(
@@ -982,7 +1072,53 @@ async function handleDirectFunctionCall(
     return { success: false, error: "Agent not found" }
   }
 
-  // Forward to user's webhook
+  const toolName = toolCall?.name
+
+  // Check if this is a calendar tool
+  if (toolName && isCalendarTool(toolName)) {
+    console.log(`[VAPI Webhook] Processing calendar tool: ${toolName} for agent ${agent.id}`)
+    
+    // Check if calendar is configured for this agent
+    const hasCalendar = await isCalendarConfigured(agent.id)
+    if (!hasCalendar) {
+      return {
+        success: false,
+        error: "Calendar is not configured for this agent. Please set up calendar integration first.",
+      }
+    }
+
+    try {
+      const result = await handleCalendarToolCall(
+        {
+          name: toolName,
+          arguments: toolCall?.arguments || {},
+        },
+        {
+          agentId: agent.id,
+          conversationId: undefined, // Will be linked later if needed
+          callId: callId,
+        }
+      )
+
+      // Return in VAPI's expected format
+      return {
+        results: [{
+          toolCallId: (payload as any).toolCall?.id || toolName,
+          result: result.success ? result.result : result.error,
+        }]
+      }
+    } catch (error) {
+      console.error(`[VAPI Webhook] Calendar tool error:`, error)
+      return {
+        results: [{
+          toolCallId: (payload as any).toolCall?.id || toolName,
+          result: error instanceof Error ? error.message : "Calendar operation failed",
+        }]
+      }
+    }
+  }
+
+  // Forward non-calendar tools to user's webhook
   const config = agent.config as any
   const webhookUrl = config?.tools_server_url
 

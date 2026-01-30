@@ -1,7 +1,7 @@
 /**
  * Partner Integrations API (Org-Level)
  * GET  - List all integrations for the partner
- * POST - Create a new integration (add VAPI/Retell/Algolia API keys)
+ * POST - Create a new integration (add VAPI/Retell/Algolia/Google Calendar API keys)
  */
 
 import { NextRequest } from "next/server"
@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma"
 import { startBackgroundBulkSync } from "@/lib/algolia/sync"
 
 // Provider type enum
-const providerEnum = z.enum(["vapi", "retell", "algolia"])
+const providerEnum = z.enum(["vapi", "retell", "algolia", "google_calendar"])
 
 // Additional key schema
 const additionalKeySchema = z.object({
@@ -52,6 +52,23 @@ function sanitizeIntegration(integration: any) {
   const apiKeys = integration.apiKeys as any
   const config = integration.config as any
   const isAlgolia = integration.provider === "algolia"
+  const isGoogleCalendar = integration.provider === "google_calendar"
+
+  // Build sanitized config based on provider
+  let sanitizedConfig = config
+  if (isAlgolia) {
+    sanitizedConfig = {
+      app_id: config?.app_id,
+      call_logs_index: config?.call_logs_index,
+      has_admin_api_key: !!config?.admin_api_key,
+      has_search_api_key: !!config?.search_api_key,
+    }
+  } else if (isGoogleCalendar) {
+    sanitizedConfig = {
+      client_id: config?.client_id,
+      has_client_secret: !!config?.client_secret,
+    }
+  }
 
   return {
     id: integration.id,
@@ -67,12 +84,7 @@ function sanitizeIntegration(integration: any) {
       has_secret_key: !!k.secret_key,
       has_public_key: !!k.public_key,
     })) || [],
-    config: isAlgolia ? {
-      app_id: config?.app_id,
-      call_logs_index: config?.call_logs_index,
-      has_admin_api_key: !!config?.admin_api_key,
-      has_search_api_key: !!config?.search_api_key,
-    } : config,
+    config: sanitizedConfig,
     is_default: integration.isDefault,
     is_active: integration.isActive,
     created_at: integration.createdAt?.toISOString?.() || integration.createdAt,
@@ -179,6 +191,12 @@ export async function POST(request: NextRequest) {
         admin_api_key: (data.config as any).admin_api_key,
         search_api_key: (data.config as any).search_api_key,
         call_logs_index: (data.config as any).call_logs_index,
+      }
+    } else if (data.provider === "google_calendar" && data.config) {
+      // Google Calendar uses OAuth client credentials
+      config = {
+        client_id: (data.config as any).client_id,
+        client_secret: (data.config as any).client_secret,
       }
     }
 

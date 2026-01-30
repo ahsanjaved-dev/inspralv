@@ -48,12 +48,14 @@ vi.mock("@/lib/prisma", () => ({
   },
 }))
 
+const mockStripe = {
+  paymentIntents: {
+    create: vi.fn(),
+  },
+}
+
 vi.mock("@/lib/stripe/index", () => ({
-  getStripe: vi.fn(() => ({
-    paymentIntents: {
-      create: vi.fn(),
-    },
-  })),
+  getStripe: vi.fn(() => mockStripe),
   getConnectAccountId: vi.fn(),
 }))
 
@@ -163,6 +165,80 @@ describe("Partner Credits", () => {
       expect(info.isLowBalance).toBe(true)
       expect(info.estimatedMinutesRemaining).toBe(33) // 500 / 15 = 33.33 -> 33
     })
+
+    it("should handle zero per-minute rate", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      vi.mocked(prisma!.billingCredits.findUnique).mockResolvedValue({
+        id: "credits-1",
+        partnerId: "partner-1",
+        balanceCents: 1000,
+        lowBalanceThresholdCents: 500,
+        perMinuteRateCents: 0, // Zero rate
+      } as any)
+
+      const { getPartnerCreditsInfo } = await import("@/lib/stripe/credits")
+      const info = await getPartnerCreditsInfo("partner-1")
+
+      expect(info.estimatedMinutesRemaining).toBe(0) // Protected against division by zero
+    })
+  })
+
+  describe("getPartnerTransactions", () => {
+    it("should return formatted transactions", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      
+      vi.mocked(prisma!.billingCredits.findUnique).mockResolvedValue({
+        id: "credits-1",
+        partnerId: "partner-1",
+        balanceCents: 1000,
+      } as any)
+
+      const mockTransactions = [
+        {
+          id: "tx-1",
+          type: "topup",
+          amountCents: 1000,
+          balanceAfterCents: 2000,
+          description: "Top-up",
+          createdAt: new Date("2026-01-01"),
+        },
+        {
+          id: "tx-2",
+          type: "usage",
+          amountCents: -500,
+          balanceAfterCents: 1500,
+          description: "Usage",
+          createdAt: new Date("2026-01-02"),
+        },
+      ]
+      vi.mocked(prisma!.creditTransaction.findMany).mockResolvedValue(mockTransactions as any)
+
+      const { getPartnerTransactions } = await import("@/lib/stripe/credits")
+      const transactions = await getPartnerTransactions("partner-1", 10)
+
+      expect(transactions).toHaveLength(2)
+      expect(transactions[0].id).toBe("tx-1")
+      expect(transactions[0].type).toBe("topup")
+      expect(transactions[1].type).toBe("usage")
+    })
+
+    it("should use default limit when not specified", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      
+      vi.mocked(prisma!.billingCredits.findUnique).mockResolvedValue({
+        id: "credits-1",
+        partnerId: "partner-1",
+        balanceCents: 1000,
+      } as any)
+      vi.mocked(prisma!.creditTransaction.findMany).mockResolvedValue([])
+
+      const { getPartnerTransactions } = await import("@/lib/stripe/credits")
+      await getPartnerTransactions("partner-1")
+
+      expect(prisma!.creditTransaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 20 })
+      )
+    })
   })
 
   describe("hasSufficientCredits", () => {
@@ -199,6 +275,60 @@ describe("Partner Credits", () => {
       const result = await hasSufficientCredits("partner-1", 10)
       expect(result).toBe(false)
     })
+
+    it("should return true for zero estimated minutes", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      vi.mocked(prisma!.billingCredits.findUnique).mockResolvedValue({
+        id: "credits-1",
+        partnerId: "partner-1",
+        balanceCents: 0,
+        lowBalanceThresholdCents: 500,
+        perMinuteRateCents: 15,
+      } as any)
+
+      const { hasSufficientCredits } = await import("@/lib/stripe/credits")
+      const result = await hasSufficientCredits("partner-1", 0)
+      expect(result).toBe(true)
+    })
+  })
+
+  describe("createTopupPaymentIntent", () => {
+    it("should create payment intent with correct parameters", async () => {
+      mockStripe.paymentIntents.create.mockResolvedValue({
+        client_secret: "pi_secret_123",
+        id: "pi_123",
+      })
+
+      const { createTopupPaymentIntent } = await import("@/lib/stripe/credits")
+      const result = await createTopupPaymentIntent("partner-1", 2500, "cus_123")
+
+      expect(result.clientSecret).toBe("pi_secret_123")
+      expect(result.paymentIntentId).toBe("pi_123")
+      expect(mockStripe.paymentIntents.create).toHaveBeenCalledWith({
+        amount: 2500,
+        currency: "usd",
+        customer: "cus_123",
+        metadata: {
+          partner_id: "partner-1",
+          type: "credits_topup",
+          amount_cents: "2500",
+        },
+        automatic_payment_methods: { enabled: true },
+      })
+    })
+
+    it("should throw error when client_secret is missing", async () => {
+      mockStripe.paymentIntents.create.mockResolvedValue({
+        id: "pi_123",
+        client_secret: null,
+      })
+
+      const { createTopupPaymentIntent } = await import("@/lib/stripe/credits")
+      
+      await expect(
+        createTopupPaymentIntent("partner-1", 2500, "cus_123")
+      ).rejects.toThrow("Failed to create payment intent")
+    })
   })
 
   describe("applyTopup", () => {
@@ -234,6 +364,218 @@ describe("Partner Credits", () => {
       expect(result.success).toBe(true)
       expect(result.alreadyApplied).toBe(true)
       expect(prisma!.$transaction).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("deductUsage", () => {
+    it("should deduct usage and create transaction", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      
+      vi.mocked(prisma!.billingCredits.findUnique).mockResolvedValue({
+        id: "credits-1",
+        partnerId: "partner-1",
+        balanceCents: 1000,
+        perMinuteRateCents: 15,
+        lowBalanceThresholdCents: 500,
+      } as any)
+
+      vi.mocked(prisma!.$transaction).mockImplementation(async (callback: any) => {
+        // Simulate interactive transaction
+        const mockTx = {
+          billingCredits: {
+            updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+            findUnique: vi.fn().mockResolvedValue({
+              balanceCents: 970, // 1000 - (2 * 15)
+              lowBalanceThresholdCents: 500,
+            }),
+          },
+          creditTransaction: {
+            create: vi.fn().mockResolvedValue({}),
+          },
+        }
+        return callback(mockTx)
+      })
+
+      const { deductUsage } = await import("@/lib/stripe/credits")
+      const result = await deductUsage("partner-1", 90, "conv-1", "Test usage")
+
+      expect(result.amountDeducted).toBe(30) // 2 minutes * 15 cents
+      expect(result.newBalanceCents).toBe(970)
+      expect(result.isLowBalance).toBe(false)
+    })
+
+    it("should throw error when insufficient credits", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      
+      vi.mocked(prisma!.billingCredits.findUnique).mockResolvedValue({
+        id: "credits-1",
+        partnerId: "partner-1",
+        balanceCents: 10, // Very low balance
+        perMinuteRateCents: 15,
+        lowBalanceThresholdCents: 500,
+      } as any)
+
+      vi.mocked(prisma!.$transaction).mockImplementation(async (callback: any) => {
+        const mockTx = {
+          billingCredits: {
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }), // No rows updated
+            findUnique: vi.fn().mockResolvedValue({ balanceCents: 10 }),
+          },
+        }
+        return callback(mockTx)
+      })
+
+      const { deductUsage } = await import("@/lib/stripe/credits")
+      
+      await expect(
+        deductUsage("partner-1", 120, "conv-1")
+      ).rejects.toThrow("Insufficient credits")
+    })
+
+    it("should use default description when not provided", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      
+      vi.mocked(prisma!.billingCredits.findUnique).mockResolvedValue({
+        id: "credits-1",
+        partnerId: "partner-1",
+        balanceCents: 1000,
+        perMinuteRateCents: 15,
+        lowBalanceThresholdCents: 500,
+      } as any)
+
+      let capturedDescription = ""
+      vi.mocked(prisma!.$transaction).mockImplementation(async (callback: any) => {
+        const mockTx = {
+          billingCredits: {
+            updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+            findUnique: vi.fn().mockResolvedValue({
+              balanceCents: 985,
+              lowBalanceThresholdCents: 500,
+            }),
+          },
+          creditTransaction: {
+            create: vi.fn().mockImplementation((data: any) => {
+              capturedDescription = data.data.description
+              return {}
+            }),
+          },
+        }
+        return callback(mockTx)
+      })
+
+      const { deductUsage } = await import("@/lib/stripe/credits")
+      await deductUsage("partner-1", 60) // 1 minute, no description
+
+      expect(capturedDescription).toContain("Usage: 1 minute")
+    })
+  })
+
+  describe("checkAndSendLowBalanceAlert", () => {
+    it("should send alert when balance is low", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      const { sendLowBalanceAlertEmail } = await import("@/lib/email/send")
+      
+      vi.mocked(prisma!.partner.findUnique).mockResolvedValue({
+        name: "Test Partner",
+        billingCredits: { lowBalanceThresholdCents: 1000 },
+        members: [
+          { user: { email: "admin@test.com", firstName: "Admin" } },
+        ],
+      } as any)
+
+      const { checkAndSendLowBalanceAlert } = await import("@/lib/stripe/credits")
+      await checkAndSendLowBalanceAlert("partner-1", 500, true)
+
+      expect(sendLowBalanceAlertEmail).toHaveBeenCalledWith(
+        ["admin@test.com"],
+        expect.objectContaining({
+          recipient_name: "Admin",
+          account_name: "Test Partner",
+          account_type: "partner",
+        })
+      )
+    })
+
+    it("should not send alert when balance is not low", async () => {
+      const { sendLowBalanceAlertEmail } = await import("@/lib/email/send")
+      
+      const { checkAndSendLowBalanceAlert } = await import("@/lib/stripe/credits")
+      await checkAndSendLowBalanceAlert("partner-1", 5000, false)
+
+      expect(sendLowBalanceAlertEmail).not.toHaveBeenCalled()
+    })
+
+    it("should handle missing partner gracefully", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      const { sendLowBalanceAlertEmail } = await import("@/lib/email/send")
+      
+      vi.mocked(prisma!.partner.findUnique).mockResolvedValue(null)
+
+      const { checkAndSendLowBalanceAlert } = await import("@/lib/stripe/credits")
+      await checkAndSendLowBalanceAlert("partner-1", 500, true)
+
+      expect(sendLowBalanceAlertEmail).not.toHaveBeenCalled()
+    })
+
+    it("should handle partner with no members gracefully", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      const { sendLowBalanceAlertEmail } = await import("@/lib/email/send")
+      
+      vi.mocked(prisma!.partner.findUnique).mockResolvedValue({
+        name: "Test Partner",
+        billingCredits: { lowBalanceThresholdCents: 1000 },
+        members: [],
+      } as any)
+
+      const { checkAndSendLowBalanceAlert } = await import("@/lib/stripe/credits")
+      await checkAndSendLowBalanceAlert("partner-1", 500, true)
+
+      expect(sendLowBalanceAlertEmail).not.toHaveBeenCalled()
+    })
+
+    it("should use default recipient name when firstName is missing", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      const { sendLowBalanceAlertEmail } = await import("@/lib/email/send")
+      
+      vi.mocked(prisma!.partner.findUnique).mockResolvedValue({
+        name: "Test Partner",
+        billingCredits: { lowBalanceThresholdCents: 1000 },
+        members: [
+          { user: { email: "admin@test.com", firstName: null } },
+        ],
+      } as any)
+
+      const { checkAndSendLowBalanceAlert } = await import("@/lib/stripe/credits")
+      await checkAndSendLowBalanceAlert("partner-1", 500, true)
+
+      expect(sendLowBalanceAlertEmail).toHaveBeenCalledWith(
+        ["admin@test.com"],
+        expect.objectContaining({
+          recipient_name: "Admin", // Default fallback
+        })
+      )
+    })
+
+    it("should handle email send errors gracefully", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      const { sendLowBalanceAlertEmail } = await import("@/lib/email/send")
+      
+      vi.mocked(prisma!.partner.findUnique).mockResolvedValue({
+        name: "Test Partner",
+        billingCredits: { lowBalanceThresholdCents: 1000 },
+        members: [
+          { user: { email: "admin@test.com", firstName: "Admin" } },
+        ],
+      } as any)
+
+      vi.mocked(sendLowBalanceAlertEmail).mockRejectedValue(new Error("Email failed"))
+
+      const { checkAndSendLowBalanceAlert } = await import("@/lib/stripe/credits")
+      
+      // Should not throw
+      await expect(
+        checkAndSendLowBalanceAlert("partner-1", 500, true)
+      ).resolves.toBeUndefined()
     })
   })
 })
@@ -286,6 +628,49 @@ describe("Workspace Credits", () => {
       expect(info.balanceDollars).toBe(20)
       expect(info.estimatedMinutesRemaining).toBe(100) // 2000 / 20
       expect(info.isLowBalance).toBe(false)
+    })
+
+    it("should create credits record if not exists for non-exempt workspace", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      vi.mocked(prisma!.workspace.findUnique).mockResolvedValue({
+        id: "ws-1",
+        isBillingExempt: false,
+        perMinuteRateCents: 15,
+        workspaceCredits: null,
+      } as any)
+
+      vi.mocked(prisma!.workspaceCredits.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma!.workspaceCredits.create).mockResolvedValue({
+        id: "wc-new",
+        workspaceId: "ws-1",
+        balanceCents: 0,
+        lowBalanceThresholdCents: 500,
+      } as any)
+
+      const { getWorkspaceCreditsInfo } = await import("@/lib/stripe/workspace-credits")
+      const info = await getWorkspaceCreditsInfo("ws-1")
+
+      expect(info.balanceCents).toBe(0)
+      expect(info.isLowBalance).toBe(true) // 0 < 500
+    })
+
+    it("should handle zero per-minute rate", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      vi.mocked(prisma!.workspace.findUnique).mockResolvedValue({
+        id: "ws-1",
+        isBillingExempt: false,
+        perMinuteRateCents: 0,
+        workspaceCredits: {
+          id: "wc-1",
+          balanceCents: 1000,
+          lowBalanceThresholdCents: 500,
+        },
+      } as any)
+
+      const { getWorkspaceCreditsInfo } = await import("@/lib/stripe/workspace-credits")
+      const info = await getWorkspaceCreditsInfo("ws-1")
+
+      expect(info.estimatedMinutesRemaining).toBe(0) // Protected against division by zero
     })
   })
 
@@ -386,6 +771,26 @@ describe("Workspace Credits", () => {
       expect(result.allowed).toBe(true)
       expect(result.billingType).toBe("none")
       expect(result.message).toContain("No active subscription")
+    })
+
+    it("should handle postpaid with zero limit", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      vi.mocked(prisma!.workspaceSubscription.findUnique).mockResolvedValue({
+        status: "active",
+        postpaidMinutesUsed: 0,
+        minutesUsedThisPeriod: 0,
+        plan: {
+          billingType: "postpaid",
+          postpaidMinutesLimit: null, // No limit set
+          includedMinutes: 0,
+        },
+      } as any)
+
+      const { canMakePostpaidCall } = await import("@/lib/stripe/workspace-credits")
+      const result = await canMakePostpaidCall("ws-1")
+
+      expect(result.allowed).toBe(false) // 0 >= 0 limit means exceeded
+      expect(result.limitMinutes).toBe(0)
     })
   })
 
@@ -492,6 +897,78 @@ describe("Free Tier Credits", () => {
       expect(result.alreadyGranted).toBe(true)
       expect(prisma!.$transaction).not.toHaveBeenCalled()
     })
+
+    it("should allow custom amount for free tier grant", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      
+      vi.mocked(prisma!.workspaceCredits.findUnique).mockResolvedValue({
+        id: "wc-1",
+        workspaceId: "ws-1",
+        balanceCents: 0,
+        lowBalanceThresholdCents: 500,
+      } as any)
+      
+      vi.mocked(prisma!.workspaceCreditTransaction.findFirst).mockResolvedValue(null)
+      vi.mocked(prisma!.$transaction).mockResolvedValue([{}, {}])
+
+      const { grantInitialFreeTierCredits } = await import("@/lib/stripe/workspace-credits")
+      const result = await grantInitialFreeTierCredits("ws-1", 2500) // Custom $25
+
+      expect(result.success).toBe(true)
+      expect(result.newBalanceCents).toBe(2500)
+    })
+
+    it("should create credits record if not exists", async () => {
+      const { prisma } = await import("@/lib/prisma")
+      
+      vi.mocked(prisma!.workspaceCredits.findUnique).mockResolvedValue(null)
+      vi.mocked(prisma!.workspaceCredits.create).mockResolvedValue({
+        id: "wc-new",
+        workspaceId: "ws-1",
+        balanceCents: 0,
+        lowBalanceThresholdCents: 500,
+      } as any)
+      vi.mocked(prisma!.workspaceCreditTransaction.findFirst).mockResolvedValue(null)
+      vi.mocked(prisma!.$transaction).mockResolvedValue([{}, {}])
+
+      const { grantInitialFreeTierCredits } = await import("@/lib/stripe/workspace-credits")
+      const result = await grantInitialFreeTierCredits("ws-1")
+
+      expect(result.success).toBe(true)
+      expect(prisma!.workspaceCredits.create).toHaveBeenCalled()
+    })
   })
 })
 
+// =============================================================================
+// CONSTANTS TESTS
+// =============================================================================
+
+describe("Credits Constants", () => {
+  it("should export correct topup amounts for partners", async () => {
+    const { TOPUP_AMOUNTS_CENTS } = await import("@/lib/stripe/credits")
+    
+    expect(TOPUP_AMOUNTS_CENTS).toHaveLength(4)
+    expect(TOPUP_AMOUNTS_CENTS[0]).toEqual({ label: "$10", value: 1000 })
+    expect(TOPUP_AMOUNTS_CENTS[3]).toEqual({ label: "$100", value: 10000 })
+  })
+
+  it("should export correct topup amounts for workspaces", async () => {
+    const { WORKSPACE_TOPUP_AMOUNTS_CENTS } = await import("@/lib/stripe/workspace-credits")
+    
+    expect(WORKSPACE_TOPUP_AMOUNTS_CENTS).toHaveLength(4)
+    expect(WORKSPACE_TOPUP_AMOUNTS_CENTS[0]).toEqual({ label: "$5", value: 500 })
+  })
+
+  it("should export correct free tier amount", async () => {
+    const { FREE_TIER_CREDITS_CENTS } = await import("@/lib/stripe/workspace-credits")
+    
+    expect(FREE_TIER_CREDITS_CENTS).toBe(1000) // $10
+  })
+
+  it("should export default per-minute rate", async () => {
+    const { DEFAULT_PER_MINUTE_RATE_CENTS } = await import("@/lib/stripe/credits")
+    
+    expect(DEFAULT_PER_MINUTE_RATE_CENTS).toBe(15) // $0.15
+  })
+})

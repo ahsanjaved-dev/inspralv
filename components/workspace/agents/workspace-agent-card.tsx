@@ -25,14 +25,18 @@ import {
   Loader2,
   PhoneIncoming,
   PhoneOutgoing,
+  Calendar,
 } from "lucide-react"
 import type { AIAgent } from "@/types/database.types"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { TestCallModal } from "@/components/agents/test-call-modal"
 import { TestOutboundCallModal } from "@/components/agents/test-outbound-call-modal"
 import { useTestCallValidation } from "../../../lib/hooks/use-test-call-validations"
+
+// Calendar tool names
+const CALENDAR_TOOL_NAMES = ["book_appointment", "cancel_appointment", "reschedule_appointment"]
 
 interface WorkspaceAgentCardProps {
   agent: AIAgent
@@ -70,6 +74,16 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
   // Check if agent can make outbound calls (both VAPI and Retell support outbound)
   const canMakeOutboundCall = (agent.provider === "vapi" || agent.provider === "retell") && !!agent.external_agent_id
   const isOutboundAgent = agent.agent_direction === "outbound"
+  
+  // Check if agent has calendar tools
+  const calendarTools = useMemo(() => {
+    const tools = agent.config?.tools || []
+    return tools.filter((tool: { name?: string }) => 
+      tool.name && CALENDAR_TOOL_NAMES.includes(tool.name)
+    )
+  }, [agent.config?.tools])
+  
+  const hasCalendarTools = calendarTools.length > 0
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -228,6 +242,16 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
             </Link>
           </Button>
         </div>
+        
+        {/* View Appointments Button - Only shown if agent has calendar tools */}
+        {hasCalendarTools && (
+          <Button variant="secondary" size="sm" className="w-full mt-2" asChild>
+            <Link href={`${baseUrl}/agents/${agent.id}/appointments`}>
+              <Calendar className="h-3 w-3 mr-1.5" />
+              View Appointments
+            </Link>
+          </Button>
+        )}
 
         {/* Disabled Reason - shown below buttons */}
         {!validation.isLoading && !validation.canCall && validation.reason && (

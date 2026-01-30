@@ -105,6 +105,18 @@ export function WorkspaceAgentForm({
   // Function tools state
   const [tools, setTools] = useState<FunctionTool[]>((initialData?.config as any)?.tools || [])
   
+  // Calendar settings for calendar tools
+  const [calendarSettings, setCalendarSettings] = useState({
+    slot_duration_minutes: (initialData?.config as any)?.calendar_settings?.slot_duration_minutes || 30,
+    buffer_between_slots_minutes: (initialData?.config as any)?.calendar_settings?.buffer_between_slots_minutes || 0,
+    preferred_days: (initialData?.config as any)?.calendar_settings?.preferred_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+    preferred_hours_start: (initialData?.config as any)?.calendar_settings?.preferred_hours_start || "09:00",
+    preferred_hours_end: (initialData?.config as any)?.calendar_settings?.preferred_hours_end || "17:00",
+    timezone: (initialData?.config as any)?.calendar_settings?.timezone || "America/New_York",
+    min_notice_hours: (initialData?.config as any)?.calendar_settings?.min_notice_hours || 1,
+    max_advance_days: (initialData?.config as any)?.calendar_settings?.max_advance_days || 60,
+  })
+  
   // DEBUG: Wrapper to log tools changes
   const handleToolsChange = (newTools: FunctionTool[]) => {
     console.log("[WorkspaceAgentForm] handleToolsChange called")
@@ -319,6 +331,10 @@ export function WorkspaceAgentForm({
     
     const currentConfig = data.config || {}
 
+    // Check if agent has calendar tools
+    const calendarToolNames = ["book_appointment", "cancel_appointment", "reschedule_appointment"]
+    const hasCalendarTools = tools.some(t => calendarToolNames.includes(t.name))
+
     const completeConfig = {
       system_prompt: currentConfig.system_prompt || "",
       first_message: currentConfig.first_message || "",
@@ -326,6 +342,8 @@ export function WorkspaceAgentForm({
       voice_settings: currentConfig.voice_settings || {},
       // Include function tools
       tools: tools.length > 0 ? tools : undefined,
+      // Include calendar settings if agent has calendar tools
+      calendar_settings: hasCalendarTools ? calendarSettings : undefined,
     }
     
     // DEBUG: Log completeConfig.tools
@@ -1346,6 +1364,8 @@ export function WorkspaceAgentForm({
             onChange={handleToolsChange}
             disabled={isSubmitting}
             provider={selectedProvider}
+            calendarSettings={calendarSettings}
+            onCalendarSettingsChange={setCalendarSettings}
           />
         </CardContent>
       </Card>
