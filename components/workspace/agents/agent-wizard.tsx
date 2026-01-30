@@ -121,6 +121,17 @@ interface WizardFormData {
   tools: FunctionTool[]
   // Agent-level custom variables
   agentCustomVariables: AgentCustomVariableDefinition[]
+  // Calendar Settings (for calendar tools) - matches CalendarToolSettings
+  calendarSettings: {
+    slot_duration_minutes: number
+    buffer_between_slots_minutes: number
+    preferred_days: ("SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY")[]
+    preferred_hours_start: string
+    preferred_hours_end: string
+    timezone: string
+    min_notice_hours: number
+    max_advance_days: number
+  }
 }
 
 // Knowledge document type icons
@@ -243,6 +254,16 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     style: "friendly",
     tools: [],
     agentCustomVariables: [],
+    calendarSettings: {
+      slot_duration_minutes: 30,
+      buffer_between_slots_minutes: 0,
+      preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+      preferred_hours_start: "09:00",
+      preferred_hours_end: "17:00",
+      timezone: "America/New_York",
+      min_notice_hours: 1,
+      max_advance_days: 60,
+    },
   })
 
   // Fetch Retell voices dynamically
@@ -537,6 +558,10 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     const tools =
       formData.tools.length > 0 ? functionToolsArraySchema.parse(formData.tools) : undefined
 
+    // Check if agent has calendar tools
+    const calendarToolNames = ["book_appointment", "cancel_appointment", "reschedule_appointment"]
+    const hasCalendarTools = formData.tools.some(t => calendarToolNames.includes(t.name))
+
     // Map wizard data to API schema
     const apiData: CreateWorkspaceAgentInput = {
       name: formData.name,
@@ -571,6 +596,8 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
         custom_variables: formData.agentCustomVariables.length > 0 
           ? formData.agentCustomVariables 
           : undefined,
+        // Include calendar settings if agent has calendar tools (for auto-setup)
+        calendar_settings: hasCalendarTools ? formData.calendarSettings : undefined,
       },
       agent_secret_api_key: [],
       agent_public_api_key: [],
@@ -1692,6 +1719,8 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 tools={formData.tools}
                 onChange={(tools) => updateFormData("tools", tools)}
                 provider={formData.provider}
+                calendarSettings={formData.calendarSettings}
+                onCalendarSettingsChange={(settings) => updateFormData("calendarSettings", settings)}
               />
             </CardContent>
           </Card>

@@ -1,9 +1,13 @@
 "use client"
 
+import { useState } from "react"
 import { useRouter, useParams } from "next/navigation"
-import { ArrowLeft, Loader2, AlertCircle } from "lucide-react"
+import { ArrowLeft, Loader2, AlertCircle, Settings, Calendar, CalendarCog } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { WorkspaceAgentForm } from "@/components/workspace/agents/workspace-agent-form"
+import { AppointmentsList } from "@/components/workspace/agents/appointments-list"
+import { CalendarConfig } from "@/components/workspace/agents/calendar-config"
 import { useWorkspaceAgent, useUpdateWorkspaceAgent } from "@/lib/hooks/use-workspace-agents"
 import type { CreateWorkspaceAgentInput } from "@/types/api.types"
 import Link from "next/link"
@@ -61,7 +65,7 @@ export default function EditWorkspaceAgentPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-4xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
         <Button variant="ghost" size="icon" asChild>
           <Link href={`/w/${workspaceSlug}/agents`}>
@@ -69,23 +73,56 @@ export default function EditWorkspaceAgentPage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-3xl font-bold">Edit Agent</h1>
-          <p className="text-muted-foreground mt-1">Update configuration for {agent.name}</p>
+          <h1 className="text-3xl font-bold">{agent.name}</h1>
+          <p className="text-muted-foreground mt-1">Manage agent settings and view appointments</p>
         </div>
       </div>
 
-      {updateMutation.error && (
-        <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg border border-red-200 dark:border-red-800 mb-6">
-          <p className="font-medium">Failed to update agent</p>
-          <p className="text-sm mt-1">Please try again. If the problem continues, contact support.</p>
-        </div>
-      )}
+      <Tabs defaultValue="settings" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="settings" className="gap-2">
+            <Settings className="h-4 w-4" />
+            Settings
+          </TabsTrigger>
+          <TabsTrigger value="calendar" className="gap-2">
+            <CalendarCog className="h-4 w-4" />
+            Calendar
+          </TabsTrigger>
+          <TabsTrigger value="appointments" className="gap-2">
+            <Calendar className="h-4 w-4" />
+            Appointments
+          </TabsTrigger>
+        </TabsList>
 
-      <WorkspaceAgentForm
-        initialData={agent}
-        onSubmit={handleSubmit}
-        isSubmitting={updateMutation.isPending}
-      />
+        <TabsContent value="settings" className="space-y-6">
+          {updateMutation.error && (
+            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg border border-red-200 dark:border-red-800">
+              <p className="font-medium">Failed to update agent</p>
+              <p className="text-sm mt-1">Please try again. If the problem continues, contact support.</p>
+            </div>
+          )}
+
+          <WorkspaceAgentForm
+            initialData={agent}
+            onSubmit={handleSubmit}
+            isSubmitting={updateMutation.isPending}
+          />
+        </TabsContent>
+
+        <TabsContent value="calendar">
+          <CalendarConfig
+            workspaceSlug={workspaceSlug}
+            agentId={agentId}
+          />
+        </TabsContent>
+
+        <TabsContent value="appointments">
+          <AppointmentsList
+            workspaceSlug={workspaceSlug}
+            agentId={agentId}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

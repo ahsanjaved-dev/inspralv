@@ -37,6 +37,18 @@ export const agentKnowledgeBaseConfigSchema = z.object({
 // Agent direction schema
 export const agentDirectionSchema = z.enum(["inbound", "outbound"] as const)
 
+// Calendar settings schema for agents with appointment tools
+export const calendarSettingsSchema = z.object({
+  slot_duration_minutes: z.number().min(15).max(240).optional().default(30),
+  buffer_between_slots_minutes: z.number().min(0).max(60).optional().default(0),
+  preferred_days: z.array(z.enum(["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"])).optional().default(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]),
+  preferred_hours_start: z.string().optional().default("09:00"),
+  preferred_hours_end: z.string().optional().default("17:00"),
+  timezone: z.string().optional().default("America/New_York"),
+  min_notice_hours: z.number().min(0).max(168).optional().default(1),
+  max_advance_days: z.number().min(1).max(365).optional().default(60),
+})
+
 // Agent schema for workspace context (workspace comes from URL)
 export const createWorkspaceAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(40, "Agent name must be 40 characters or less"),
@@ -86,6 +98,8 @@ export const createWorkspaceAgentSchema = z.object({
       knowledge_base: agentKnowledgeBaseConfigSchema.optional(),
       // Agent-level custom variables (specific to this agent)
       custom_variables: agentCustomVariablesArraySchema.optional(),
+      // Calendar settings for agents with appointment tools
+      calendar_settings: calendarSettingsSchema.optional(),
     })
     .optional(),
   agent_secret_api_key: z.array(agentSecretApiKeySchema).optional().default([]),

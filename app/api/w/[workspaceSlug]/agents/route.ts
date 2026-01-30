@@ -7,6 +7,7 @@ import type { AgentProvider, AIAgent } from "@/types/database.types"
 import { safeVapiSync } from "@/lib/integrations/vapi/agent/sync"
 import { safeRetellSync } from "@/lib/integrations/retell/agent/sync"
 import { prisma } from "@/lib/prisma"
+import { setupAgentCalendar } from "@/lib/integrations/calendar"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string }>
@@ -68,15 +69,23 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 export async function POST(request: NextRequest, { params }: RouteContext) {
   try {
     const { workspaceSlug } = await params
+    console.log(`[AgentCreate] Creating agent for workspace: ${workspaceSlug}`)
+    
     const ctx = await getWorkspaceContext(workspaceSlug, ["owner", "admin", "member"])
 
     if (!ctx) {
+      console.error(`[AgentCreate] No context found for workspace: ${workspaceSlug}`)
       return forbidden("No permission to create agents in this workspace")
     }
 
+    console.log(`[AgentCreate] Context found - workspace: ${ctx.workspace.id}, user: ${ctx.user.id}`)
+
     // Check paywall - block agent creation if credits exhausted
     const paywallError = await checkWorkspacePaywall(ctx.workspace.id, workspaceSlug)
-    if (paywallError) return paywallError
+    if (paywallError) {
+      console.error(`[AgentCreate] Paywall error for workspace: ${workspaceSlug}`)
+      return paywallError
+    }
 
     const body = await request.json()
     const validation = createWorkspaceAgentSchema.safeParse(body)
@@ -94,7 +103,9 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     const resourceLimits = ctx.workspace.resource_limits as { max_agents?: number } | null
     const maxAgents = resourceLimits?.max_agents || 10
+    console.log(`[AgentCreate] Agent count: ${count}, max: ${maxAgents}`)
     if (count && count >= maxAgents) {
+      console.error(`[AgentCreate] Agent limit reached: ${count}/${maxAgents}`)
       return apiError(`Agent limit reached for this workspace. Maximum: ${maxAgents} agents.`, 403)
     }
 
@@ -299,6 +310,50 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       }
     }
 
+    // Auto-setup calendar if agent has calendar tools and calendar_settings
+    const tools = inputConfig.tools || []
+    const calendarToolNames = ["book_appointment", "cancel_appointment", "reschedule_appointment"]
+    const hasCalendarTools = tools.some((t: any) => calendarToolNames.includes(t.name))
+    const calendarSettings = inputConfig.calendar_settings
+
+    console.log(`[AgentCreate] Calendar check - hasCalendarTools: ${hasCalendarTools}, calendarSettings:`, JSON.stringify(calendarSettings))
+
+    if (hasCalendarTools && calendarSettings?.timezone) {
+      console.log(`[AgentCreate] Agent has calendar tools, auto-setting up calendar...`)
+      try {
+        // Get partner ID from the workspace context
+        const partnerId = ctx.workspace.partner_id
+        
+        if (partnerId) {
+          const setupResult = await setupAgentCalendar({
+            agentId: agent.id,
+            agentName: agent.name,
+            workspaceId: ctx.workspace.id,
+            partnerId,
+            timezone: calendarSettings.timezone,
+            slot_duration_minutes: calendarSettings.slot_duration_minutes || 30,
+            buffer_between_slots_minutes: calendarSettings.buffer_between_slots_minutes || 0,
+            preferred_days: calendarSettings.preferred_days || ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'],
+            preferred_hours_start: calendarSettings.preferred_hours_start || '09:00',
+            preferred_hours_end: calendarSettings.preferred_hours_end || '17:00',
+            min_notice_hours: calendarSettings.min_notice_hours || 1,
+            max_advance_days: calendarSettings.max_advance_days || 60,
+          })
+
+          if (setupResult.success) {
+            console.log(`[AgentCreate] Calendar setup successful:`, setupResult.data?.calendar_id)
+          } else {
+            console.warn(`[AgentCreate] Calendar setup failed (non-blocking):`, setupResult.error)
+          }
+        } else {
+          console.warn(`[AgentCreate] Cannot setup calendar - no partner_id for workspace`)
+        }
+      } catch (calendarError) {
+        console.warn(`[AgentCreate] Calendar setup error (non-blocking):`, calendarError)
+        // Don't fail agent creation if calendar setup fails
+      }
+    }
+
     // Audit log
     const { ipAddress, userAgent } = getRequestMetadata(request)
     await createAuditLog({
@@ -314,6 +369,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         sync_status: syncedAgent.sync_status,
         external_agent_id: syncedAgent.external_agent_id,
         knowledge_document_count: knowledgeDocumentIds.length,
+        has_calendar_tools: hasCalendarTools,
       },
       ipAddress,
       userAgent,

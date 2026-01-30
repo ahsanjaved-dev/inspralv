@@ -14,6 +14,7 @@ import { safeRetellSync, shouldSyncToRetell } from "@/lib/integrations/retell/ag
 import { bindPhoneNumberToVapiAssistant, unbindPhoneNumberFromVapiAssistant } from "@/lib/integrations/vapi/agent/response"
 import type { AIAgent } from "@/types/database.types"
 import { prisma } from "@/lib/prisma"
+import { setupAgentCalendar } from "@/lib/integrations/calendar"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string; id: string }>
@@ -378,6 +379,53 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         if (!bindResult.success) {
           console.error(`[AgentUpdate] Failed to bind new phone number: ${bindResult.error}`)
         }
+      }
+    }
+
+    // =========================================================================
+    // CALENDAR AUTO-SETUP
+    // Auto-setup calendar if agent has calendar tools and calendar_settings
+    // =========================================================================
+    const newConfigData = validation.data.config
+    const tools = (newConfigData?.tools || []) as Array<{ name: string }>
+    const calendarToolNames = ["book_appointment", "cancel_appointment", "reschedule_appointment"]
+    const hasCalendarTools = tools.some(t => calendarToolNames.includes(t.name))
+    const calendarSettings = (newConfigData as any)?.calendar_settings
+
+    // Only setup calendar if:
+    // 1. Agent has calendar tools
+    // 2. Calendar settings with timezone are provided
+    if (hasCalendarTools && calendarSettings?.timezone) {
+      console.log(`[AgentUpdate] Agent has calendar tools, auto-setting up calendar...`)
+      try {
+        const partnerId = ctx.workspace.partner_id
+        
+        if (partnerId) {
+          const setupResult = await setupAgentCalendar({
+            agentId: id,
+            agentName: syncedAgent.name,
+            workspaceId: ctx.workspace.id,
+            partnerId,
+            timezone: calendarSettings.timezone,
+            slot_duration_minutes: calendarSettings.slot_duration_minutes || 30,
+            buffer_between_slots_minutes: calendarSettings.buffer_between_slots_minutes || 0,
+            preferred_days: calendarSettings.preferred_days || ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'],
+            preferred_hours_start: calendarSettings.preferred_hours_start || '09:00',
+            preferred_hours_end: calendarSettings.preferred_hours_end || '17:00',
+            min_notice_hours: calendarSettings.min_notice_hours || 1,
+            max_advance_days: calendarSettings.max_advance_days || 60,
+          })
+
+          if (setupResult.success) {
+            console.log(`[AgentUpdate] Calendar setup successful:`, setupResult.data?.calendar_id)
+          } else {
+            console.warn(`[AgentUpdate] Calendar setup failed (non-blocking):`, setupResult.error)
+          }
+        } else {
+          console.warn(`[AgentUpdate] Cannot setup calendar - no partner_id for workspace`)
+        }
+      } catch (calendarError) {
+        console.warn(`[AgentUpdate] Calendar setup error (non-blocking):`, calendarError)
       }
     }
 

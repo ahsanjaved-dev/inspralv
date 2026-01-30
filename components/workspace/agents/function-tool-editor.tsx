@@ -41,6 +41,7 @@ import {
 } from "@/lib/integrations/function_tools/vapi/registry"
 import { RETELL_TOOL_REGISTRY } from "@/lib/integrations/function_tools/retell/registry"
 import { SUGGESTED_PARAMETERS, getParameterCategories, type SuggestedParameter } from "@/lib/tools/registry"
+import { CalendarToolConfigDialog, isCalendarToolType, type CalendarToolSettings, type CalendarToolType, CALENDAR_TOOL_TYPES } from "./calendar-tool-config"
 
 // ============================================================================
 // AVAILABLE TOOLS CONFIG
@@ -51,8 +52,9 @@ const VAPI_AVAILABLE_TOOLS = [
   "endCall",
   "transferCall", 
   "apiRequest",
-  "googleCalendarCreateEvent",
-  "googleCalendarCheckAvailability",
+  "book_appointment",
+  "cancel_appointment",
+  "reschedule_appointment",
 ]
 
 // Retell available tools
@@ -90,6 +92,8 @@ interface FunctionToolEditorProps {
   onChange: (tools: FunctionTool[]) => void
   disabled?: boolean
   provider?: "vapi" | "retell"
+  calendarSettings?: CalendarToolSettings
+  onCalendarSettingsChange?: (settings: CalendarToolSettings) => void
 }
 
 // ============================================================================
@@ -131,9 +135,6 @@ function createToolFromDefinition(def: BuiltInToolDefinition): FunctionTool {
       return { ...baseTool, method: "POST", url: "" }
     case "function":
       return { ...baseTool }
-    case "googleCalendarCreateEvent":
-    case "googleCalendarCheckAvailability":
-      return { ...baseTool, credential_id: "" }
     default:
       return baseTool
   }
@@ -876,11 +877,37 @@ export function FunctionToolEditor({
   onChange,
   disabled,
   provider = "vapi",
+  calendarSettings,
+  onCalendarSettingsChange,
 }: FunctionToolEditorProps) {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [editingTool, setEditingTool] = useState<FunctionTool | null>(null)
   const [pendingTool, setPendingTool] = useState<FunctionTool | null>(null) // Tool not yet added, waiting for dialog save
   const [searchQuery, setSearchQuery] = useState("")
+  
+  // Calendar tool config dialog state
+  const [showCalendarConfigDialog, setShowCalendarConfigDialog] = useState(false)
+  const [selectedCalendarToolType, setSelectedCalendarToolType] = useState<CalendarToolType | null>(null)
+  const [editingCalendarTool, setEditingCalendarTool] = useState<FunctionTool | null>(null)
+  const [localCalendarSettings, setLocalCalendarSettings] = useState<CalendarToolSettings>(
+    calendarSettings || {
+      slot_duration_minutes: 30,
+      buffer_between_slots_minutes: 0,
+      preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+      preferred_hours_start: "09:00",
+      preferred_hours_end: "17:00",
+      timezone: "America/New_York",
+      min_notice_hours: 1,
+      max_advance_days: 60,
+    }
+  )
+  
+  // Sync calendar settings with props
+  useEffect(() => {
+    if (calendarSettings) {
+      setLocalCalendarSettings(calendarSettings)
+    }
+  }, [calendarSettings])
 
   // Get available tools based on provider
   const availableToolKeys = provider === "retell" ? RETELL_AVAILABLE_TOOLS : VAPI_AVAILABLE_TOOLS
@@ -938,6 +965,9 @@ export function FunctionToolEditor({
 
   // Tools that require configuration before being added
   const TOOLS_REQUIRING_CONFIG = ["apiRequest", "transfer_call", "transferCall"]
+  
+  // Calendar tool keys
+  const CALENDAR_TOOL_KEYS = ["book_appointment", "cancel_appointment", "reschedule_appointment"]
 
   // Toggle a built-in tool
   const toggleBuiltInTool = (def: BuiltInToolDefinition) => {
@@ -946,6 +976,14 @@ export function FunctionToolEditor({
       // Remove tool
       onChange(tools.filter((t) => t.name !== toolName))
     } else {
+      // Check if it's a calendar tool
+      if (CALENDAR_TOOL_KEYS.includes(def.key)) {
+        setSelectedCalendarToolType(def.key as CalendarToolType)
+        setEditingCalendarTool(null)
+        setShowCalendarConfigDialog(true)
+        return
+      }
+      
       // Add tool
       const newTool = createToolFromDefinition(def)
       
@@ -959,6 +997,31 @@ export function FunctionToolEditor({
         onChange([...tools, newTool])
       }
     }
+  }
+  
+  // Handle calendar tool save
+  const handleSaveCalendarTool = (tool: FunctionTool) => {
+    const existingIndex = tools.findIndex((t) => t.id === tool.id)
+    if (existingIndex >= 0) {
+      const updated = [...tools]
+      updated[existingIndex] = tool
+      onChange(updated)
+    } else {
+      onChange([...tools, tool])
+    }
+  }
+  
+  // Handle calendar settings change
+  const handleCalendarSettingsChange = (settings: CalendarToolSettings) => {
+    setLocalCalendarSettings(settings)
+    onCalendarSettingsChange?.(settings)
+  }
+  
+  // Handle edit calendar tool
+  const handleEditCalendarTool = (tool: FunctionTool) => {
+    setSelectedCalendarToolType(tool.name as CalendarToolType)
+    setEditingCalendarTool(tool)
+    setShowCalendarConfigDialog(true)
   }
 
   // Check if a tool is a custom function
@@ -1040,18 +1103,18 @@ export function FunctionToolEditor({
           <Label className="text-sm font-medium">
             Selected Tools ({tools.length})
           </Label>
-        <div className="space-y-2">
-          {tools.map((tool) => (
+          <div className="space-y-2">
+            {tools.map((tool) => (
               <SelectedToolItem
-              key={tool.id}
-              tool={tool}
+                key={tool.id}
+                tool={tool}
                 toolDef={getToolDef(tool)}
-                onEdit={() => handleEditTool(tool)}
-              onRemove={() => removeTool(tool.id)}
-              disabled={disabled}
+                onEdit={() => isCalendarToolType(tool.name) ? handleEditCalendarTool(tool) : handleEditTool(tool)}
+                onRemove={() => removeTool(tool.id)}
+                disabled={disabled}
                 isCustomFunction={isCustomFunction(tool)}
-            />
-          ))}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -1150,6 +1213,20 @@ export function FunctionToolEditor({
         isCustomFunction={editingTool ? isCustomFunction(editingTool) : !pendingTool}
         provider={provider}
       />
+      
+      {/* Calendar Tool Config Dialog */}
+      {selectedCalendarToolType && (
+        <CalendarToolConfigDialog
+          open={showCalendarConfigDialog}
+          onOpenChange={setShowCalendarConfigDialog}
+          onSave={handleSaveCalendarTool}
+          toolType={selectedCalendarToolType}
+          existingTool={editingCalendarTool}
+          calendarSettings={localCalendarSettings}
+          onCalendarSettingsChange={handleCalendarSettingsChange}
+          isFirstCalendarTool={!tools.some(t => isCalendarToolType(t.name))}
+        />
+      )}
     </div>
   )
 }
