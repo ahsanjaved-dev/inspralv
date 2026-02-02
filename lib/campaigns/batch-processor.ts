@@ -258,7 +258,10 @@ export class BatchProcessor {
     }
 
     // Check business hours
-    if (!isWithinBusinessHours(this.config.businessHoursConfig, this.config.timezone)) {
+    // IMPORTANT: Use the timezone from business hours config if available
+    // This ensures we check against the timezone the user configured in the schedule step
+    const effectiveTimezone = this.config.businessHoursConfig?.timezone || this.config.timezone || "UTC"
+    if (!isWithinBusinessHours(this.config.businessHoursConfig, effectiveTimezone)) {
       this.callbacks.onProgress?.({
         total: recipients.length,
         completed: 0,
@@ -312,8 +315,8 @@ export class BatchProcessor {
 
         // Re-check business hours periodically
         if (completedCount > 0 && completedCount % 10 === 0) {
-          if (!isWithinBusinessHours(this.config.businessHoursConfig, this.config.timezone)) {
-            console.log("[BatchProcessor] Business hours ended, pausing batch")
+          if (!isWithinBusinessHours(this.config.businessHoursConfig, effectiveTimezone)) {
+            console.log(`[BatchProcessor] Business hours ended (timezone: ${effectiveTimezone}), pausing batch`)
             this.isPaused = true
             this.reportProgress(recipients.length, completedCount, successCount, failCount, inProgress, queue.length, "outside_hours")
             continue

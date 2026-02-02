@@ -424,6 +424,15 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
   const [apiUrl, setApiUrl] = useState("")
   const [authToken, setAuthToken] = useState("")
   const [apiMethod, setApiMethod] = useState<"GET" | "POST" | "PUT" | "PATCH" | "DELETE">("POST")
+  
+  // NEW: Enhanced custom function fields per requirements
+  const [functionPrompt, setFunctionPrompt] = useState("") // When/why to trigger
+  const [headers, setHeaders] = useState("") // Custom headers JSON
+  const [requestBodyFormat, setRequestBodyFormat] = useState("") // Expected request body format
+  const [responseFormat, setResponseFormat] = useState("") // Expected response format
+  const [callOutcome, setCallOutcome] = useState<"fetch_info" | "action_success">("fetch_info") // Success criteria
+  const [successMessage, setSuccessMessage] = useState("") // Message on success
+  const [errorMessage, setErrorMessage] = useState("") // Message on failure
 
   // Track if we've initialized for this open session
   const [initialized, setInitialized] = useState(false)
@@ -442,9 +451,17 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
         // Retell fields
         setApiUrl(tool.server_url || "")
         // Get metadata from 'extra' or treat tool as any to access metadata
-        const toolMeta = (tool as unknown as { metadata?: Record<string, string> }).metadata || {}
-        setAuthToken(toolMeta.authToken || "")
+        const toolMeta = (tool as unknown as { metadata?: Record<string, unknown> }).metadata || {}
+        setAuthToken((toolMeta.authToken as string) || "")
         setApiMethod((toolMeta.apiMethod as "GET" | "POST" | "PUT" | "PATCH" | "DELETE") || "POST")
+        // NEW: Enhanced fields
+        setFunctionPrompt((toolMeta.functionPrompt as string) || "")
+        setHeaders((toolMeta.headers as string) || "")
+        setRequestBodyFormat((toolMeta.requestBodyFormat as string) || "")
+        setResponseFormat((toolMeta.responseFormat as string) || "")
+        setCallOutcome((toolMeta.callOutcome as "fetch_info" | "action_success") || "fetch_info")
+        setSuccessMessage(tool.success_message || "")
+        setErrorMessage(tool.error_message || "")
       } else {
         // New custom function
         setName("")
@@ -457,6 +474,14 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
         setApiUrl("")
         setAuthToken("")
         setApiMethod("POST")
+        // NEW: Reset enhanced fields
+        setFunctionPrompt("")
+        setHeaders("")
+        setRequestBodyFormat("")
+        setResponseFormat("")
+        setCallOutcome("fetch_info")
+        setSuccessMessage("")
+        setErrorMessage("")
       }
       setInitialized(true)
     } else if (!open) {
@@ -470,12 +495,15 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
   const isTransferCall = tool?.tool_type === "transfer_call" || tool?.tool_type === "transferCall"
   const isNameTaken = !isEditing && existingNames.includes(name)
   const isRetellCustom = provider === "retell" && (isCustomFunction || !tool)
+  const isVapiCustom = provider === "vapi" && (isCustomFunction || !tool)
+  const isAnyCustomFunction = isRetellCustom || isVapiCustom
   
   // Validation: check required fields based on tool type
+  // For custom functions, API URL is required
   const canSave = name.trim() && description.trim() && !isNameTaken && 
     (!isApiRequest || url.trim()) && 
     (!isTransferCall || transferNumber.trim()) &&
-    (!isRetellCustom || apiUrl.trim())
+    (!isAnyCustomFunction || apiUrl.trim())
 
   const handleParametersChange = (
     newProperties: Record<string, FunctionToolParameterProperty>,
@@ -499,6 +527,19 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
     console.log("[ToolEditDialog] Current required state:", required)
     console.log("[ToolEditDialog] Property count:", Object.keys(properties).length)
 
+    // Build metadata object with all enhanced fields
+    const buildMetadata = () => {
+      const meta: Record<string, unknown> = {}
+      if (authToken.trim()) meta.authToken = authToken.trim()
+      meta.apiMethod = apiMethod
+      if (functionPrompt.trim()) meta.functionPrompt = functionPrompt.trim()
+      if (headers.trim()) meta.headers = headers.trim()
+      if (requestBodyFormat.trim()) meta.requestBodyFormat = requestBodyFormat.trim()
+      if (responseFormat.trim()) meta.responseFormat = responseFormat.trim()
+      meta.callOutcome = callOutcome
+      return meta
+    }
+
     const updatedTool: FunctionTool = {
       ...tool,
       id: tool?.id || generateId(),
@@ -513,13 +554,12 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
       enabled: tool?.enabled ?? true,
       ...(isApiRequest ? { url: url.trim(), method } : {}),
       ...(isTransferCall ? { transfer_destination: { type: "predefined" as const, number: transferNumber.trim() } } : {}),
-      // Retell custom function fields
-      ...(isRetellCustom ? { 
-        server_url: apiUrl.trim(),
-        metadata: {
-          ...(authToken.trim() ? { authToken: authToken.trim() } : {}),
-          apiMethod: apiMethod,
-        },
+      // Custom function fields (both VAPI and Retell)
+      ...((isRetellCustom || isCustomFunction || !tool) ? { 
+        server_url: apiUrl.trim() || url.trim(),
+        success_message: successMessage.trim() || undefined,
+        error_message: errorMessage.trim() || undefined,
+        metadata: buildMetadata(),
       } : {}),
     }
 
@@ -541,7 +581,7 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[550px] max-h-[85vh] flex flex-col p-0 gap-0">
+      <DialogContent className="sm:max-w-[650px] max-h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -556,7 +596,9 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
             {getTitle()}
           </DialogTitle>
           <DialogDescription>
-            Configure the tool settings and parameters.
+            {isAnyCustomFunction 
+              ? "Configure when this function is called, how it's executed, and how the response is handled."
+              : "Configure the tool settings and parameters."}
           </DialogDescription>
         </DialogHeader>
 
@@ -647,17 +689,37 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
               </div>
             )}
 
-            {/* Retell Custom Function specific fields */}
-            {isRetellCustom && (
+            {/* Custom Function fields (both VAPI and Retell) */}
+            {(isCustomFunction || !tool || isRetellCustom) && (
               <>
+                {/* Section: Function Prompt - When/Why to trigger */}
+                <div className="space-y-1.5 pt-3 border-t">
+                  <Label htmlFor="function-prompt" className="text-sm font-medium flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                    Function Prompt
+                  </Label>
+                  <Textarea
+                    id="function-prompt"
+                    value={functionPrompt}
+                    onChange={(e) => setFunctionPrompt(e.target.value)}
+                    placeholder="Describe when and why this function should be called. E.g., 'Call this function when the user asks for order details' or 'Use this function to fetch customer information after identity is confirmed.'"
+                    rows={3}
+                    className="resize-none"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Explains the conditions or intent behind calling this function
+                  </p>
+                </div>
+
+                {/* Section: URL & Method */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="api-url" className="text-sm flex items-center gap-2">
+                  <Label htmlFor="custom-api-url" className="text-sm font-medium flex items-center gap-2">
                     <Link className="h-3.5 w-3.5" />
-                    API URL <span className="text-destructive">*</span>
+                    API Endpoint <span className="text-destructive">*</span>
                   </Label>
                   <div className="flex gap-2">
                     <select
-                      id="api-method"
+                      id="custom-api-method"
                       aria-label="HTTP Method"
                       value={apiMethod}
                       onChange={(e) => setApiMethod(e.target.value as "GET" | "POST" | "PUT" | "PATCH" | "DELETE")}
@@ -670,32 +732,151 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
                       <option value="DELETE">DELETE</option>
                     </select>
                     <Input
-                      id="api-url"
+                      id="custom-api-url"
                       value={apiUrl}
                       onChange={(e) => setApiUrl(e.target.value)}
-                      placeholder="https://your-api.com/endpoint"
+                      placeholder="https://api.example.com/endpoint"
                       className="font-mono flex-1"
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    The HTTP method and endpoint for tool execution requests
+                    The HTTP method and endpoint URL where the function request will be sent
                   </p>
                 </div>
+
+                {/* Section: Headers */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="auth-token" className="text-sm flex items-center gap-2">
+                  <Label htmlFor="custom-headers" className="text-sm font-medium flex items-center gap-2">
                     <Key className="h-3.5 w-3.5" />
-                    Authorization Token <span className="text-muted-foreground font-normal">(optional)</span>
+                    Headers <span className="text-muted-foreground font-normal">(optional)</span>
                   </Label>
-                  <Input
-                    id="auth-token"
-                    type="password"
-                    value={authToken}
-                    onChange={(e) => setAuthToken(e.target.value)}
-                    placeholder="Bearer token or API key"
+                  <Textarea
+                    id="custom-headers"
+                    value={headers}
+                    onChange={(e) => setHeaders(e.target.value)}
+                    placeholder={`{
+  "Authorization": "Bearer your-token",
+  "Content-Type": "application/json",
+  "X-Custom-Header": "value"
+}`}
+                    rows={4}
+                    className="resize-none font-mono text-xs"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Will be sent as Authorization header
+                    Custom HTTP headers in JSON format (for authentication, content type, etc.)
                   </p>
+                </div>
+
+                {/* Section: Request Body Format */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="request-body-format" className="text-sm font-medium">
+                    Request Body Format <span className="text-muted-foreground font-normal">(optional)</span>
+                  </Label>
+                  <Textarea
+                    id="request-body-format"
+                    value={requestBodyFormat}
+                    onChange={(e) => setRequestBodyFormat(e.target.value)}
+                    placeholder={`{
+  "user_id": "{{user_id}}",
+  "query": "{{query}}",
+  "timestamp": "{{timestamp}}"
+}`}
+                    rows={4}
+                    className="resize-none font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Template for the request body. Use {"{{param}}"} for dynamic values from parameters.
+                  </p>
+                </div>
+
+                {/* Section: Response Format */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="response-format" className="text-sm font-medium">
+                    Expected Response Format <span className="text-muted-foreground font-normal">(optional)</span>
+                  </Label>
+                  <Textarea
+                    id="response-format"
+                    value={responseFormat}
+                    onChange={(e) => setResponseFormat(e.target.value)}
+                    placeholder={`{
+  "success": true,
+  "data": {
+    "result": "...",
+    "message": "..."
+  }
+}`}
+                    rows={4}
+                    className="resize-none font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Describes how the API response should be structured and parsed
+                  </p>
+                </div>
+
+                {/* Section: Call Outcome */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Call Outcome</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCallOutcome("fetch_info")}
+                      className={cn(
+                        "p-3 rounded-lg border text-left transition-all",
+                        callOutcome === "fetch_info"
+                          ? "border-primary bg-primary/5"
+                          : "hover:bg-muted/50"
+                      )}
+                    >
+                      <div className="font-medium text-sm">Fetch Information</div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Only retrieves data, no action required
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCallOutcome("action_success")}
+                      className={cn(
+                        "p-3 rounded-lg border text-left transition-all",
+                        callOutcome === "action_success"
+                          ? "border-primary bg-primary/5"
+                          : "hover:bg-muted/50"
+                      )}
+                    >
+                      <div className="font-medium text-sm">Action Success</div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Success only when operation completes
+                      </p>
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Defines the success criteria for this function call
+                  </p>
+                </div>
+
+                {/* Section: Success/Error Messages */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="success-message" className="text-sm">
+                      Success Message <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
+                    <Input
+                      id="success-message"
+                      value={successMessage}
+                      onChange={(e) => setSuccessMessage(e.target.value)}
+                      placeholder="Operation completed successfully"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="error-message" className="text-sm">
+                      Error Message <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
+                    <Input
+                      id="error-message"
+                      value={errorMessage}
+                      onChange={(e) => setErrorMessage(e.target.value)}
+                      placeholder="Something went wrong"
+                    />
+                  </div>
                 </div>
               </>
             )}
@@ -703,15 +884,21 @@ function ToolEditDialog({ open, onOpenChange, onSave, tool, existingNames, isCus
             {/* Parameters - only for custom functions */}
             {(isCustomFunction || !tool) && (
               <div className="pt-3 border-t">
+                <Label className="text-sm font-medium mb-3 block">
+                  Parameters Schema
+                </Label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Define the parameters this function accepts. These will be extracted from the conversation and sent to your API.
+                </p>
                 <ParameterEditor
                   properties={properties}
                   required={required}
                   onChange={handleParametersChange}
                 />
-                      </div>
-                    )}
-                  </div>
-                </div>
+              </div>
+            )}
+          </div>
+        </div>
 
         <DialogFooter className="px-6 py-4 border-t shrink-0">
           <Button variant="outline" onClick={handleClose}>

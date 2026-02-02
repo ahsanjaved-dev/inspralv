@@ -8,6 +8,7 @@ import {
 } from "@/lib/integrations/campaign-provider"
 import type { CampaignData, RecipientData } from "@/lib/integrations/campaign-provider"
 import type { BusinessHoursConfig } from "@/types/database.types"
+import { isWithinBusinessHours, getNextBusinessHoursStart } from "@/lib/campaigns/batch-caller"
 
 // ============================================================================
 // VERCEL CONFIG
@@ -421,6 +422,44 @@ export async function POST(
 
     if (!agent.external_agent_id) {
       return apiError("Agent has not been synced with the voice provider")
+    }
+
+    // Check business hours before starting
+    const businessHoursConfig = campaign.business_hours_config as BusinessHoursConfig | null
+    // IMPORTANT: Use the timezone from business hours config (set by user in the schedule step)
+    // Fall back to campaign.timezone only if business hours config doesn't have a timezone
+    const campaignTimezone = businessHoursConfig?.timezone || campaign.timezone || "UTC"
+    
+    console.log("[CampaignStart] Business hours check:", {
+      enabled: businessHoursConfig?.enabled,
+      configTimezone: businessHoursConfig?.timezone,
+      campaignTimezone: campaign.timezone,
+      effectiveTimezone: campaignTimezone,
+      schedule: businessHoursConfig?.schedule,
+    })
+    
+    if (businessHoursConfig?.enabled) {
+      const withinBusinessHours = isWithinBusinessHours(businessHoursConfig, campaignTimezone)
+      
+      if (!withinBusinessHours) {
+        // Get next available business hours window
+        const nextWindow = getNextBusinessHoursStart(businessHoursConfig, campaignTimezone)
+        
+        // Format timezone name nicely (e.g., "Australia/Melbourne" -> "Melbourne")
+        const tzName = campaignTimezone.split('/').pop()?.replace('_', ' ') || campaignTimezone
+        
+        if (nextWindow) {
+          return apiError(
+            `Outside business hours. Next calling window: ${nextWindow.dayName} at ${nextWindow.nextStartTimeFormatted} (${tzName})`,
+            400
+          )
+        } else {
+          return apiError(
+            `Outside business hours. No calling windows configured for the upcoming week.`,
+            400
+          )
+        }
+      }
     }
 
     // Get CLI (Caller ID)

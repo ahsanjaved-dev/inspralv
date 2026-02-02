@@ -352,15 +352,20 @@ export async function POST(
 
     // Extract wizard-specific fields if present
     const recipients = isWizardFlow ? (rest as any).recipients || [] : []
+    const businessHoursConfig = isWizardFlow ? (rest as any).business_hours_config || null : null
     const wizardFields = isWizardFlow
       ? {
-          business_hours_config: (rest as any).business_hours_config || null,
+          business_hours_config: businessHoursConfig,
           variable_mappings: (rest as any).variable_mappings || [],
           agent_prompt_overrides: (rest as any).agent_prompt_overrides || null,
           csv_column_headers: (rest as any).csv_column_headers || [],
           wizard_completed: true,
         }
       : {}
+
+    // IMPORTANT: Use the timezone from business hours config if available
+    // This ensures the campaign timezone matches what the user selected in the schedule step
+    const effectiveTimezone = businessHoursConfig?.timezone || rest.timezone || "UTC"
 
     // Prepare campaign data
     const campaignData = {
@@ -372,7 +377,7 @@ export async function POST(
       business_hours_only: rest.business_hours_only || false,
       business_hours_start: rest.business_hours_start || null,
       business_hours_end: rest.business_hours_end || null,
-      timezone: rest.timezone || "UTC",
+      timezone: effectiveTimezone,
       concurrency_limit: 1,
       max_attempts: 3,
       retry_delay_minutes: 30,

@@ -370,7 +370,7 @@ export function PartnerRequestForm({
           </p>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              We've sent a confirmation email to <strong>{formData.contact_email}</strong>
+              We will send a confirmation email to <strong>{formData.contact_email}</strong> once your request is approved.
             </p>
             {selectedPlan && (
               <div className="bg-primary/5 rounded-lg p-4 inline-block">
