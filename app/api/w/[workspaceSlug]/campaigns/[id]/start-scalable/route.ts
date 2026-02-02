@@ -112,16 +112,49 @@ export async function POST(
     }
 
     // Check business hours if configured
-    // TEMPORARILY DISABLED FOR TESTING - re-enable when testing is complete
-    // const businessHoursConfig = campaign.business_hours_config as BusinessHoursConfig | null
-    // if (businessHoursConfig?.enabled) {
-    //   const { isWithinBusinessHours } = await import("@/lib/integrations/vapi/batch-calls")
-    //   const timezone = campaign.timezone || "UTC"
-    //   
-    //   if (!isWithinBusinessHours(businessHoursConfig, timezone)) {
-    //     return apiError("Cannot start campaign outside of business hours. The campaign will start automatically during the next business hours window.")
-    //   }
-    // }
+    const businessHoursConfig = campaign.business_hours_config as BusinessHoursConfig | null
+    // IMPORTANT: Use the timezone from business hours config (set by user in the schedule step)
+    // Fall back to campaign.timezone only if business hours config doesn't have a timezone
+    const campaignTimezone = (businessHoursConfig as any)?.timezone || campaign.timezone || "UTC"
+    
+    console.log("[CampaignStart:Scalable] Business hours check:", {
+      enabled: businessHoursConfig?.enabled,
+      configTimezone: (businessHoursConfig as any)?.timezone,
+      campaignTimezone: campaign.timezone,
+      effectiveTimezone: campaignTimezone,
+      schedule: businessHoursConfig?.schedule,
+    })
+    
+    if (businessHoursConfig?.enabled) {
+      const { isWithinBusinessHours, getNextBusinessHoursInfo } = await import("@/lib/integrations/vapi/batch-calls")
+      
+      if (!isWithinBusinessHours(businessHoursConfig, campaignTimezone)) {
+        const nextInfo = getNextBusinessHoursInfo(businessHoursConfig, campaignTimezone)
+        
+        // Format the start time nicely (e.g., "09:00" -> "9:00 AM")
+        let nextWindowStr = ""
+        if (nextInfo) {
+          const [hours = 0, minutes = 0] = nextInfo.startTime.split(":").map(Number)
+          const period = hours >= 12 ? "PM" : "AM"
+          const displayHour = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours
+          nextWindowStr = `${nextInfo.dayName} at ${displayHour}:${String(minutes).padStart(2, "0")} ${period}`
+        }
+        
+        // Format timezone name nicely (e.g., "Australia/Melbourne" -> "Melbourne")
+        const tzName = campaignTimezone.split('/').pop()?.replace('_', ' ') || campaignTimezone
+        
+        console.log("[CampaignStart:Scalable] BLOCKED - Outside business hours:", {
+          effectiveTimezone: campaignTimezone,
+          nextWindow: nextInfo,
+        })
+        
+        const message = nextWindowStr
+          ? `Outside business hours. Next calling window: ${nextWindowStr} (${tzName})`
+          : `Outside business hours. No calling windows configured for the upcoming week.`
+        
+        return apiError(message, 400)
+      }
+    }
 
     // =========================================================================
     // STEP 1: UPDATE CAMPAIGN TO "ACTIVE"

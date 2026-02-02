@@ -159,53 +159,57 @@ export function getNextBusinessHourWindow(
   try {
     const now = new Date()
     
+    // Get current time in the target timezone
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    const parts = formatter.formatToParts(now)
+    const currentWeekday = parts.find(p => p.type === "weekday")?.value?.toLowerCase() as DayOfWeek
+    const currentHour = parseInt(parts.find(p => p.type === "hour")?.value || "0", 10)
+    const currentMinute = parseInt(parts.find(p => p.type === "minute")?.value || "0", 10)
+    const currentTimeStr = `${String(currentHour).padStart(2, "0")}:${String(currentMinute).padStart(2, "0")}`
+    
+    const dayOrder: DayOfWeek[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+    const todayIndex = dayOrder.indexOf(currentWeekday)
+    
+    // Check each day starting from today
     for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-      const checkDate = new Date(now.getTime() + dayOffset * 24 * 60 * 60 * 1000)
+      const dayIndex = (todayIndex + dayOffset) % 7
+      const dayName = dayOrder[dayIndex]
+      if (!dayName) continue
+      const slots = config.schedule[dayName] || []
       
-      const options: Intl.DateTimeFormatOptions = {
-        timeZone: timezone,
-        weekday: "long",
-      }
+      if (slots.length === 0) continue
       
-      const weekday = new Intl.DateTimeFormat("en-US", options)
-        .format(checkDate)
-        .toLowerCase() as DayOfWeek
+      // Sort slots by start time and get the first one
+      const sortedSlots = [...slots].sort((a, b) => a.start.localeCompare(b.start))
       
-      const slots = config.schedule[weekday] || []
-      
-      if (slots.length > 0) {
-        const firstSlot = slots.sort((a, b) => a.start.localeCompare(b.start))[0]
-        
-        if (firstSlot) {
-          const timeParts = firstSlot.start.split(":").map(Number)
-          const hours = timeParts[0]
-          const minutes = timeParts[1]
-          
-          if (hours === undefined || minutes === undefined) {
-            continue
+      for (const slot of sortedSlots) {
+        // If today, check if slot is still available
+        if (dayOffset === 0) {
+          // If current time is before slot start, return slot start time
+          if (currentTimeStr < slot.start) {
+            // Return a Date object representing slot.start in the target timezone
+            // We'll use the slot.start time string for display, not the Date
+            const result = new Date(now)
+            result.setDate(result.getDate() + dayOffset)
+            return result // The display will use slot.start directly
           }
-          
-          const targetDate = new Date(checkDate)
-          targetDate.setHours(hours, minutes, 0, 0)
-          
-          if (dayOffset === 0) {
-            const currentTime = new Date().toLocaleTimeString("en-US", {
-              timeZone: timezone,
-              hour12: false,
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-            
-            if (currentTime > firstSlot.end) {
-              continue
-            }
-            
-            if (currentTime >= firstSlot.start) {
-              return now
-            }
+          // If current time is within slot, we're in business hours (shouldn't reach here)
+          if (currentTimeStr >= slot.start && currentTimeStr <= slot.end) {
+            return now
           }
-          
-          return targetDate
+          // If current time is after this slot, try next slot
+          continue
+        } else {
+          // Future day - return the first slot's start time
+          const result = new Date(now)
+          result.setDate(result.getDate() + dayOffset)
+          return result
         }
       }
     }
@@ -213,6 +217,93 @@ export function getNextBusinessHourWindow(
     return null
   } catch (error) {
     console.error("[VapiBatch] Error calculating next business hour:", error)
+    return null
+  }
+}
+
+/**
+ * Get the next business hours slot info (day name + start time)
+ * Returns formatted info for display purposes
+ */
+export function getNextBusinessHoursInfo(
+  config: BusinessHoursConfig | null | undefined,
+  timezone: string = "UTC"
+): { dayName: string; startTime: string } | null {
+  if (!config || !config.enabled) {
+    return null
+  }
+
+  try {
+    const now = new Date()
+    
+    // Get current time in the target timezone
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    const parts = formatter.formatToParts(now)
+    const currentWeekday = parts.find(p => p.type === "weekday")?.value?.toLowerCase() as DayOfWeek
+    const currentHour = parseInt(parts.find(p => p.type === "hour")?.value || "0", 10)
+    const currentMinute = parseInt(parts.find(p => p.type === "minute")?.value || "0", 10)
+    const currentTimeStr = `${String(currentHour).padStart(2, "0")}:${String(currentMinute).padStart(2, "0")}`
+    
+    const dayOrder: DayOfWeek[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+    const dayNames: Record<DayOfWeek, string> = {
+      sunday: "Sunday",
+      monday: "Monday", 
+      tuesday: "Tuesday",
+      wednesday: "Wednesday",
+      thursday: "Thursday",
+      friday: "Friday",
+      saturday: "Saturday",
+    }
+    const todayIndex = dayOrder.indexOf(currentWeekday)
+    
+    // Check each day starting from today
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+      const dayIndex = (todayIndex + dayOffset) % 7
+      const dayName = dayOrder[dayIndex]
+      if (!dayName) continue
+      const slots = config.schedule[dayName] || []
+      
+      if (slots.length === 0) continue
+      
+      // Sort slots by start time and get the first one
+      const sortedSlots = [...slots].sort((a, b) => a.start.localeCompare(b.start))
+      
+      for (const slot of sortedSlots) {
+        // If today, check if slot is still available
+        if (dayOffset === 0) {
+          if (currentTimeStr < slot.start) {
+            return {
+              dayName: "Today",
+              startTime: slot.start,
+            }
+          }
+          if (currentTimeStr >= slot.start && currentTimeStr <= slot.end) {
+            return null // Currently in business hours
+          }
+          continue
+        } else if (dayOffset === 1) {
+          return {
+            dayName: "Tomorrow",
+            startTime: slot.start,
+          }
+        } else {
+          return {
+            dayName: dayNames[dayName] ?? dayName,
+            startTime: slot.start,
+          }
+        }
+      }
+    }
+    
+    return null
+  } catch (error) {
+    console.error("[VapiBatch] Error calculating next business hours info:", error)
     return null
   }
 }
@@ -418,10 +509,14 @@ export async function processBatchCalls(
   let consecutiveConcurrencyErrors = 0
   
   // Business hours check
+  // IMPORTANT: Use the timezone from business hours config if available
+  // This ensures we check against the timezone the user configured in the schedule step
+  const effectiveTimezone = businessHoursConfig?.timezone || timezone || "UTC"
   if (!skipBusinessHoursCheck && businessHoursConfig?.enabled) {
-    const withinHours = isWithinBusinessHours(businessHoursConfig, timezone)
+    const withinHours = isWithinBusinessHours(businessHoursConfig, effectiveTimezone)
     
     if (!withinHours) {
+      console.log(`[VapiBatch] Outside business hours (timezone: ${effectiveTimezone})`)
       return {
         success: false,
         totalCalls: callList.length,
@@ -429,7 +524,7 @@ export async function processBatchCalls(
         failedCalls: 0,
         skippedCalls: callList.length,
         results: [],
-        error: `Outside business hours`,
+        error: `Outside business hours (${effectiveTimezone})`,
       }
     }
   }

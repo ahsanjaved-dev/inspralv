@@ -200,6 +200,98 @@ export function isWithinBusinessHours(
   }
 }
 
+/**
+ * Get the next available business hours window start time
+ * Returns the next time when calling will be allowed based on business hours config
+ */
+export function getNextBusinessHoursStart(
+  config: BusinessHoursConfig | null | undefined,
+  timezone: string
+): { nextStartTime: Date; nextStartTimeFormatted: string; dayName: string } | null {
+  if (!config || !config.enabled) {
+    return null
+  }
+
+  try {
+    const now = new Date()
+    const options: Intl.DateTimeFormatOptions = {
+      timeZone: timezone || "UTC",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      weekday: "long",
+    }
+
+    const formatter = new Intl.DateTimeFormat("en-US", options)
+    const parts = formatter.formatToParts(now)
+
+    const hourPart = parts.find((p) => p.type === "hour")
+    const minutePart = parts.find((p) => p.type === "minute")
+    const weekdayPart = parts.find((p) => p.type === "weekday")
+
+    if (!hourPart || !minutePart || !weekdayPart) {
+      return null
+    }
+
+    const currentHour = parseInt(hourPart.value, 10)
+    const currentMinute = parseInt(minutePart.value, 10)
+    const currentTime = `${String(currentHour).padStart(2, "0")}:${String(currentMinute).padStart(2, "0")}`
+    const weekdayName = weekdayPart.value.toLowerCase() as DayOfWeek
+    
+    // Day order starting from today
+    const dayOrder: DayOfWeek[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+    const todayIndex = dayOrder.indexOf(weekdayName)
+    
+    // Check today first - is there a later slot today?
+    const todaySlots = config.schedule[weekdayName] || []
+    for (const slot of todaySlots) {
+      if (slot.start > currentTime) {
+        // Found a slot later today
+        const [hour = 0, minute = 0] = slot.start.split(":").map(Number)
+        const nextStart = new Date(now)
+        nextStart.setHours(hour, minute, 0, 0)
+        
+        return {
+          nextStartTime: nextStart,
+          nextStartTimeFormatted: slot.start,
+          dayName: weekdayName.charAt(0).toUpperCase() + weekdayName.slice(1),
+        }
+      }
+    }
+    
+    // Check subsequent days (up to 7 days)
+    for (let i = 1; i <= 7; i++) {
+      const dayIndex = (todayIndex + i) % 7
+      const dayName = dayOrder[dayIndex]
+      if (!dayName) continue
+      const daySlots = config.schedule[dayName] || []
+      
+      if (daySlots.length > 0) {
+        // Found a day with slots - use the first slot
+        const firstSlot = daySlots[0]
+        if (!firstSlot) continue
+        const [hour = 0, minute = 0] = firstSlot.start.split(":").map(Number)
+        
+        const nextStart = new Date(now)
+        nextStart.setDate(nextStart.getDate() + i)
+        nextStart.setHours(hour, minute, 0, 0)
+        
+        return {
+          nextStartTime: nextStart,
+          nextStartTimeFormatted: firstSlot.start,
+          dayName: dayName.charAt(0).toUpperCase() + dayName.slice(1),
+        }
+      }
+    }
+    
+    // No business hours found in the next week
+    return null
+  } catch (error) {
+    console.error("[BatchCaller] Error calculating next business hours:", error)
+    return null
+  }
+}
+
 // ============================================================================
 // BULK DATABASE OPERATIONS
 // ============================================================================
@@ -597,9 +689,12 @@ export async function runBatchCaller(
       }
 
       // Check business hours
+      // IMPORTANT: Use the timezone from business hours config if available
+      // This ensures we check against the timezone the user configured in the schedule step
       if (config.businessHoursConfig?.enabled) {
-        if (!isWithinBusinessHours(config.businessHoursConfig, config.timezone)) {
-          console.log(`[BatchCaller] Outside business hours, pausing`)
+        const effectiveTimezone = config.businessHoursConfig.timezone || config.timezone || "UTC"
+        if (!isWithinBusinessHours(config.businessHoursConfig, effectiveTimezone)) {
+          console.log(`[BatchCaller] Outside business hours (timezone: ${effectiveTimezone}), pausing`)
           result.paused = true
           break
         }

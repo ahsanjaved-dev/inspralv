@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { logger } from "@/lib/logger"
 import { cleanupExpiredCampaigns, cleanupOldIncompleteDrafts } from "@/lib/campaigns/cleanup-expired"
+import { startScheduledCampaigns } from "@/lib/campaigns/start-scheduled"
 
 /**
  * Master Cron Job Orchestrator
@@ -132,16 +133,63 @@ export async function POST(request: NextRequest) {
     }
 
     // ========================================================================
-    // TASK 3: Send Expiring Campaign Notifications (PLACEHOLDER)
+    // TASK 3: Start Scheduled Campaigns
+    // ========================================================================
+    // This is a fallback - the process-campaigns cron should handle this
+    // more frequently, but we check here too in case it hasn't run
+    try {
+      logger.info("[MasterCron] Task 3/5: Start Scheduled Campaigns - Starting")
+      const taskStart = Date.now()
+
+      const scheduledResult = await startScheduledCampaigns()
+
+      const taskDuration = Date.now() - taskStart
+      results.startScheduledCampaigns = {
+        success: scheduledResult.success,
+        startedCount: scheduledResult.startedCount,
+        skippedCount: scheduledResult.skippedCount,
+        errorCount: scheduledResult.errors.length,
+        errors: scheduledResult.errors.slice(0, 5),
+        durationMs: taskDuration,
+      }
+
+      if (scheduledResult.success) {
+        logger.info("[MasterCron] Task 3/5: Start Scheduled Campaigns - Complete", {
+          startedCount: scheduledResult.startedCount,
+          skippedCount: scheduledResult.skippedCount,
+          durationMs: taskDuration,
+        })
+      } else {
+        logger.error("[MasterCron] Task 3/5: Start Scheduled Campaigns - Partial failure", {
+          startedCount: scheduledResult.startedCount,
+          errorCount: scheduledResult.errors.length,
+          durationMs: taskDuration,
+        })
+        errors.push(`Scheduled campaign start completed with ${scheduledResult.errors.length} errors`)
+      }
+    } catch (error) {
+      const taskError = error instanceof Error ? error.message : String(error)
+      logger.error("[MasterCron] Task 3/5: Start Scheduled Campaigns - Failed", {
+        message: taskError,
+      })
+      results.startScheduledCampaigns = {
+        success: false,
+        error: taskError,
+      }
+      errors.push("Scheduled campaign start task failed")
+    }
+
+    // ========================================================================
+    // TASK 4: Send Expiring Campaign Notifications (PLACEHOLDER)
     // ========================================================================
     // Uncomment when implemented
     // try {
-    //   logger.info("[MasterCron] Task 3/4: Send Expiring Notifications - Starting")
+    //   logger.info("[MasterCron] Task 4/5: Send Expiring Notifications - Starting")
     //   const notifyResult = await sendCampaignExpiringNotifications()
     //   results.sendExpiringNotifications = notifyResult
-    //   logger.info("[MasterCron] Task 3/4: Send Expiring Notifications - Complete")
+    //   logger.info("[MasterCron] Task 4/5: Send Expiring Notifications - Complete")
     // } catch (error) {
-    //   logger.error("[MasterCron] Task 3/4: Send Expiring Notifications - Failed", {
+    //   logger.error("[MasterCron] Task 4/5: Send Expiring Notifications - Failed", {
     //     message: error instanceof Error ? error.message : String(error),
     //   })
     //   results.sendExpiringNotifications = { success: false, error: String(error) }
@@ -149,17 +197,17 @@ export async function POST(request: NextRequest) {
     // }
 
     // ========================================================================
-    // TASK 4: Sync Agents to Providers (PLACEHOLDER)
+    // TASK 5: Sync Agents to Providers (PLACEHOLDER)
     // ========================================================================
     // Uncomment when implemented
     // Note: This is a heavy operation - consider running less frequently
     // try {
-    //   logger.info("[MasterCron] Task 4/4: Sync Agents - Starting")
+    //   logger.info("[MasterCron] Task 5/5: Sync Agents - Starting")
     //   const syncResult = await syncAgentsToProviders()
     //   results.syncAgentsToProviders = syncResult
-    //   logger.info("[MasterCron] Task 4/4: Sync Agents - Complete")
+    //   logger.info("[MasterCron] Task 5/5: Sync Agents - Complete")
     // } catch (error) {
-    //   logger.error("[MasterCron] Task 4/4: Sync Agents - Failed", {
+    //   logger.error("[MasterCron] Task 5/5: Sync Agents - Failed", {
     //     message: error instanceof Error ? error.message : String(error),
     //   })
     //   results.syncAgentsToProviders = { success: false, error: String(error) }
@@ -233,6 +281,13 @@ export async function GET() {
         description: "Delete abandoned 'Untitled Campaign' drafts older than 24 hours with no recipients",
         status: "enabled",
         frequency: "every 12 hours",
+      },
+      {
+        name: "startScheduledCampaigns",
+        description: "Start campaigns that have reached their scheduled_start_at time (fallback - use process-campaigns cron for frequent execution)",
+        status: "enabled",
+        frequency: "every 12 hours (fallback)",
+        note: "For frequent checking, use /api/cron/process-campaigns or external cron service",
       },
       {
         name: "sendExpiringNotifications",

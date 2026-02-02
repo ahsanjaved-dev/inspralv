@@ -6,6 +6,7 @@ import {
   getCampaignQueueEntry,
   type CampaignQueueEntry,
 } from "@/lib/campaigns/queue-processor"
+import { startScheduledCampaigns } from "@/lib/campaigns/start-scheduled"
 
 /**
  * Campaign Chunk Processing Cron
@@ -21,6 +22,7 @@ import {
  * to call this endpoint more frequently.
  * 
  * Features:
+ * - Starts scheduled campaigns when their scheduled time arrives
  * - Processes all active campaign queues
  * - Respects business hours per campaign
  * - Handles paused/cancelled campaigns
@@ -84,14 +86,35 @@ export async function POST(request: NextRequest) {
     const startTime = Date.now()
     const adminClient = getSupabaseAdmin()
 
-    logger.info("[CampaignCron] Starting campaign chunk processing", {
+    logger.info("[CampaignCron] Starting campaign processing", {
       timestamp: new Date().toISOString(),
       maxCampaigns: MAX_CAMPAIGNS_PER_RUN,
       maxChunksPerCampaign: MAX_CHUNKS_PER_CAMPAIGN,
     })
 
     // ========================================================================
-    // FIND ACTIVE CAMPAIGN QUEUES
+    // STEP 1: START SCHEDULED CAMPAIGNS THAT HAVE REACHED THEIR TIME
+    // ========================================================================
+    let scheduledResult = null
+    try {
+      logger.info("[CampaignCron] Checking for scheduled campaigns to start...")
+      scheduledResult = await startScheduledCampaigns()
+      
+      if (scheduledResult.startedCount > 0 || scheduledResult.skippedCount > 0) {
+        logger.info("[CampaignCron] Scheduled campaigns processed:", {
+          started: scheduledResult.startedCount,
+          skipped: scheduledResult.skippedCount,
+          errors: scheduledResult.errors.length,
+        })
+      }
+    } catch (scheduledError) {
+      logger.error("[CampaignCron] Error processing scheduled campaigns:", {
+        error: scheduledError instanceof Error ? scheduledError.message : String(scheduledError),
+      })
+    }
+
+    // ========================================================================
+    // STEP 2: FIND ACTIVE CAMPAIGN QUEUES
     // ========================================================================
     
     const { data: activeQueues, error: queueError } = await adminClient
@@ -226,12 +249,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: errorCount === 0,
       message: `Processed ${totalChunksProcessed} chunk(s) across ${results.length} campaign(s)`,
+      // Scheduled campaigns
+      scheduledCampaignsStarted: scheduledResult?.startedCount || 0,
+      scheduledCampaignsSkipped: scheduledResult?.skippedCount || 0,
+      // Active campaign processing
       campaignsProcessed: results.length,
       totalChunksProcessed,
       completedCampaigns,
       errorCount,
       durationMs: totalDuration,
       results,
+      scheduledDetails: scheduledResult?.details || [],
       timestamp: new Date().toISOString(),
     })
 
@@ -271,11 +299,22 @@ export async function GET() {
     paused: queueStats?.filter(q => q.status === "paused").length || 0,
   }
 
+  // Get scheduled campaigns count
+  const { count: scheduledCount } = await adminClient
+    .from("call_campaigns")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "scheduled")
+    .lte("scheduled_start_at", new Date().toISOString())
+    .is("deleted_at", null)
+
   return NextResponse.json({
     endpoint: "/api/cron/process-campaigns",
     status: "ready",
-    description: "Processes active campaign chunks in background",
-    currentQueueStats: stats,
+    description: "Starts scheduled campaigns and processes active campaign chunks",
+    currentQueueStats: {
+      ...stats,
+      scheduledReadyToStart: scheduledCount || 0,
+    },
     configuration: {
       maxCampaignsPerRun: MAX_CAMPAIGNS_PER_RUN,
       maxChunksPerCampaign: MAX_CHUNKS_PER_CAMPAIGN,
@@ -293,9 +332,15 @@ export async function GET() {
       externalService: "Call this endpoint from cron-job.org or similar for frequent execution",
     },
     documentation: {
+      tasks: [
+        "1. Start scheduled campaigns whose scheduled_start_at has passed",
+        "2. Process active campaign queue chunks",
+      ],
       response: {
         success: "boolean",
-        campaignsProcessed: "number",
+        scheduledCampaignsStarted: "number of scheduled campaigns started",
+        scheduledCampaignsSkipped: "number skipped (outside business hours, etc.)",
+        campaignsProcessed: "number of active campaigns processed",
         totalChunksProcessed: "number",
         completedCampaigns: "number",
         results: "array of per-campaign results",
