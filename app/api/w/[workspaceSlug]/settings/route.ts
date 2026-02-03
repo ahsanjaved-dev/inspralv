@@ -31,6 +31,7 @@ const validTimezones = [
   "Europe/Rome",
   "Europe/Stockholm",
   "Asia/Dubai",
+  "Asia/Karachi",
   "Asia/Kolkata",
   "Asia/Singapore",
   "Asia/Tokyo",

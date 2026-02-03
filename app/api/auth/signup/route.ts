@@ -17,6 +17,12 @@ function generateSlug(name: string): string {
     .replace(/-+/g, "-")
 }
 
+// Check if a string is a valid UUID
+function isUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  return uuidRegex.test(str)
+}
+
 /**
  * POST /api/auth/signup
  * 
@@ -24,19 +30,20 @@ function generateSlug(name: string): string {
  * 
  * Three distinct flows:
  * 
- * 1. SELF-SIGNUP (Business Owners - Platform Partner Only):
+ * 1. PLATFORM PARTNER SELF-SIGNUP (Business Owners on Genius365):
  *    - User signs up directly on the platform partner (genius365.ai)
  *    - Gets added as partner member (member role)
  *    - Gets a DEFAULT WORKSPACE created (they become owner)
+ *    - Can select a plan (Free or Pro) during signup
  *    - Can then invite their team to their workspace
  * 
- * 2. CLIENT INVITATION (White-Label Partners):
- *    - Partner admin invites a client via client-invitations API
- *    - Client receives invitation with a token
- *    - Client signs up with the token
+ * 2. WHITE-LABEL PLAN-BASED SIGNUP (Agency Customers):
+ *    - User signs up on a white-label partner's domain with a plan parameter
+ *    - The plan parameter is the plan ID from the agency's pricing page
  *    - Gets added as partner member (member role)
- *    - NEW WORKSPACE created with the plan limits from the invitation
- *    - Client becomes OWNER of their new workspace
+ *    - Gets their own workspace created with the plan's limits
+ *    - Workspace is subscribed to the selected plan
+ *    - If paid plan, redirect to Stripe checkout (via agency's Connect account)
  * 
  * 3. TEAM INVITATION (Both Platform and White-Label):
  *    - User signs up via a team invitation link
@@ -53,10 +60,9 @@ export async function POST(request: NextRequest) {
       email, 
       firstName, 
       lastName, 
-      selectedPlan, 
+      selectedPlan, // Can be slug (free, pro) for platform or plan ID (UUID) for white-label
       signupSource,
-      isInvitation = false,  // Flag to indicate if signup is from an invitation
-      invitationToken = null // NEW: Token for client invitations
+      isInvitation = false  // Flag to indicate if signup is from a team invitation
     } = body
 
     if (!userId || !email) {
@@ -90,7 +96,7 @@ export async function POST(request: NextRequest) {
       try {
         await adminClient.auth.admin.updateUserById(userId, {
           user_metadata: {
-            selected_plan: selectedPlan || "starter",
+            selected_plan: selectedPlan || "free",
             signup_source: signupSource || "direct",
             signup_date: new Date().toISOString(),
           },
@@ -127,55 +133,54 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 5: Create workspace based on signup type
-    // - Platform partner self-signup: Default workspace with default limits
-    // - Client invitation: Workspace with plan limits from invitation
-    // - Team invitation: No workspace (handled by invitation acceptance)
     let defaultWorkspace = null
     let workspaceRedirect: string | null = null
-    let clientInvitationPlan: { id: string; name: string; includedMinutes: number; maxAgents: number | null } | null = null
+    let checkoutUrl: string | null = null
 
-    // Check if this is a client invitation (has token)
-    let clientInvitation = null
-    if (invitationToken) {
-      const { data: invitation, error: invError } = await adminClient
-        .from("partner_invitations")
-        .select("id, partner_id, email, metadata, status")
-        .eq("token", invitationToken)
-        .eq("status", "pending")
-        .maybeSingle()
+    // Determine the signup flow
+    const isPlanBasedSignup = selectedPlan && !isInvitation
+    const isWhiteLabelPlanSignup = isPlanBasedSignup && !partner.is_platform_partner && isUUID(selectedPlan)
+    const isPlatformPlanSignup = isPlanBasedSignup && partner.is_platform_partner
 
-      if (!invError && invitation) {
-        const metadata = invitation.metadata as Record<string, unknown>
-        if (metadata?.invitation_type === "client") {
-          clientInvitation = invitation
-          clientInvitationPlan = {
-            id: metadata.plan_id as string,
-            name: metadata.plan_name as string,
-            includedMinutes: metadata.plan_included_minutes as number || 0,
-            maxAgents: metadata.plan_max_agents as number | null,
-          }
-        }
+    if (isWhiteLabelPlanSignup && prisma) {
+      // =========================================================================
+      // WHITE-LABEL PLAN-BASED SIGNUP
+      // User selected a plan from the agency's pricing page
+      // =========================================================================
+      console.log(`[Signup] White-label plan-based signup for plan ID: ${selectedPlan}`)
+
+      // Fetch the plan from the database
+      const subscriptionPlan = await prisma.workspaceSubscriptionPlan.findFirst({
+        where: {
+          id: selectedPlan,
+          partnerId: partner.id,
+          isActive: true,
+          isPublic: true,
+        },
+      })
+
+      if (!subscriptionPlan) {
+        console.error(`[Signup] Plan not found or not available: ${selectedPlan}`)
+        return apiError("Selected plan is not available")
       }
-    }
 
-    // Create workspace based on signup type
-    if (clientInvitation && clientInvitationPlan) {
-      // CLIENT INVITATION: Create workspace with plan limits
-      const metadata = clientInvitation.metadata as Record<string, unknown>
-      const workspaceName = (metadata.workspace_name as string) || `${firstName || email.split("@")[0]}'s Workspace`
+      console.log(`[Signup] Found plan: ${subscriptionPlan.name} ($${subscriptionPlan.monthlyPriceCents / 100}/mo)`)
+
+      // Create workspace with plan limits
+      const workspaceName = `${firstName || email.split("@")[0]}'s Workspace`
       const workspaceSlug = generateSlug(workspaceName) + "-" + Date.now().toString(36)
 
       const { data: workspace, error: wsError } = await adminClient
         .from("workspaces")
         .insert({
-          partner_id: clientInvitation.partner_id,
+          partner_id: partner.id,
           name: workspaceName,
           slug: workspaceSlug,
-          description: `Workspace on ${clientInvitationPlan.name} plan`,
+          description: `Workspace on ${subscriptionPlan.name} plan`,
           resource_limits: {
             max_users: 10,
-            max_agents: clientInvitationPlan.maxAgents || 999,
-            max_minutes_per_month: clientInvitationPlan.includedMinutes || 100,
+            max_agents: subscriptionPlan.maxAgents || 999,
+            max_minutes_per_month: subscriptionPlan.includedMinutes || 100,
           },
           status: "active",
         })
@@ -183,58 +188,72 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (wsError) {
-        console.error("Failed to create client workspace:", wsError)
-      } else {
-        defaultWorkspace = workspace
+        console.error("Failed to create workspace:", wsError)
+        return serverError("Failed to create workspace")
+      }
 
-        // Add user as workspace owner
-        await adminClient.from("workspace_members").insert({
-          workspace_id: workspace.id,
-          user_id: userId,
-          role: "owner",
-          joined_at: new Date().toISOString(),
+      defaultWorkspace = workspace
+
+      // Add user as workspace owner
+      await adminClient.from("workspace_members").insert({
+        workspace_id: workspace.id,
+        user_id: userId,
+        role: "owner",
+        joined_at: new Date().toISOString(),
+      })
+
+      // Auto-assign default partner integrations
+      const integrationResult = await assignDefaultIntegrationsToWorkspace(
+        workspace.id,
+        partner.id,
+        userId
+      )
+      if (integrationResult.assignedCount > 0) {
+        console.log(`[Signup] Assigned ${integrationResult.assignedCount} default integration(s) to workspace ${workspace.slug}`)
+      }
+
+      // Handle billing based on plan price
+      if (subscriptionPlan.monthlyPriceCents === 0) {
+        // FREE PLAN: Create subscription record, grant credits if configured
+        await prisma.workspaceSubscription.create({
+          data: {
+            workspaceId: workspace.id,
+            planId: subscriptionPlan.id,
+            status: "active",
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+          },
         })
 
-        // Create subscription record for the workspace
-        if (prisma && clientInvitationPlan.id) {
-          try {
-            await prisma.workspaceSubscription.create({
-              data: {
-                workspaceId: workspace.id,
-                planId: clientInvitationPlan.id,
-                status: "active",
-                currentPeriodStart: new Date(),
-                currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-              },
-            })
-          } catch (subError) {
-            console.error("Failed to create subscription:", subError)
-          }
-        }
-
-        // Mark invitation as accepted
-        await adminClient
-          .from("partner_invitations")
-          .update({ 
-            status: "accepted",
-            accepted_at: new Date().toISOString()
-          })
-          .eq("id", clientInvitation.id)
-
-        // Auto-assign default partner integrations to the new workspace
-        const integrationResult = await assignDefaultIntegrationsToWorkspace(
-          workspace.id,
-          clientInvitation.partner_id,
-          userId
-        )
-        if (integrationResult.assignedCount > 0) {
-          console.log(`[Signup] Assigned ${integrationResult.assignedCount} default integration(s) to client workspace ${workspace.slug}`)
+        // Grant initial credits for free tier
+        try {
+          await grantInitialFreeTierCredits(workspace.id)
+        } catch (creditsError) {
+          console.error("Failed to grant free tier credits:", creditsError)
         }
 
         workspaceRedirect = `/w/${workspace.slug}/dashboard`
+      } else {
+        // PAID PLAN: Create Stripe checkout session
+        checkoutUrl = await createAgencyPlanCheckoutSession(
+          workspace.id,
+          workspace.slug,
+          partner.id,
+          subscriptionPlan,
+          email
+        )
+
+        if (!checkoutUrl) {
+          // If checkout failed, still allow access but subscription will be incomplete
+          workspaceRedirect = `/w/${workspace.slug}/dashboard`
+        }
       }
-    } else if (!isInvitation && partner.is_platform_partner) {
-      // PLATFORM PARTNER SELF-SIGNUP: Create default workspace
+
+    } else if (isPlatformPlanSignup) {
+      // =========================================================================
+      // PLATFORM PARTNER SELF-SIGNUP
+      // User signed up on the main platform (genius365.ai)
+      // =========================================================================
       const workspaceName = `${firstName || email.split("@")[0]}'s Workspace`
       const workspaceSlug = generateSlug(workspaceName) + "-" + Date.now().toString(36)
 
@@ -271,7 +290,7 @@ export async function POST(request: NextRequest) {
         if (wsMemberError) {
           console.error("Failed to add workspace member:", wsMemberError)
         } else {
-          // Auto-assign default partner integrations to the new workspace
+          // Auto-assign default partner integrations
           const integrationResult = await assignDefaultIntegrationsToWorkspace(
             workspace.id,
             partner.id,
@@ -283,48 +302,38 @@ export async function POST(request: NextRequest) {
 
           workspaceRedirect = `/w/${workspace.slug}/dashboard`
         }
+
+        // Handle platform plan-specific logic
+        const planKey = selectedPlan?.toLowerCase() || "free"
+
+        if (planKey === "free") {
+          // Grant initial free tier credits
+          try {
+            await grantInitialFreeTierCredits(workspace.id)
+          } catch (creditsError) {
+            console.error("Failed to grant free tier credits:", creditsError)
+          }
+        } else if (planKey === "pro" || planKey === "starter" || planKey === "professional") {
+          // Start Stripe checkout for paid plans
+          const mappedPlanKey = planKey === "pro" ? "pro" : planKey
+          try {
+            checkoutUrl = await createPlatformPlanCheckoutSession(
+              workspace.id,
+              workspace.slug,
+              partner.id,
+              mappedPlanKey,
+              email
+            )
+          } catch (checkoutError) {
+            console.error("Failed to create checkout session:", checkoutError)
+          }
+        }
       }
     }
 
     // For team invitation signups, don't set a redirect - let the invitation flow handle it
-    if (isInvitation && !clientInvitation) {
+    if (isInvitation) {
       workspaceRedirect = null
-    }
-
-    // Step 6: Handle plan-specific logic
-    // This works for both platform partner and white-label partners
-    // - Platform partner: Uses main Stripe account
-    // - White-label partners: Uses their Stripe Connect account
-    let checkoutUrl: string | null = null
-
-    if (defaultWorkspace && !isInvitation) {
-      const planKey = selectedPlan?.toLowerCase() || "free"
-
-      if (planKey === "free") {
-        // Grant initial free tier credits
-        try {
-          await grantInitialFreeTierCredits(defaultWorkspace.id)
-        } catch (creditsError) {
-          console.error("Failed to grant free tier credits:", creditsError)
-          // Continue - user can still use workspace, just without initial credits
-        }
-      } else if (planKey === "pro" || planKey === "starter" || planKey === "professional") {
-        // Start Stripe checkout for paid plans
-        // The createPlanCheckoutSession function handles both platform and Connect accounts
-        const mappedPlanKey = planKey === "pro" ? "pro" : planKey
-        try {
-          checkoutUrl = await createPlanCheckoutSession(
-            defaultWorkspace.id,
-            defaultWorkspace.slug,
-            partner.id,
-            mappedPlanKey,
-            email
-          )
-        } catch (checkoutError) {
-          console.error("Failed to create checkout session:", checkoutError)
-          // Continue - user can subscribe later from billing page
-        }
-      }
     }
 
     return apiResponse({
@@ -361,103 +370,62 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Create a Stripe Checkout session for a paid plan (Starter/Professional)
- * Maps the marketing plan key to a WorkspaceSubscriptionPlan and creates a checkout session.
+ * Create a Stripe Checkout session for a white-label agency's plan
+ * Uses the agency's Stripe Connect account
  */
-async function createPlanCheckoutSession(
+async function createAgencyPlanCheckoutSession(
   workspaceId: string,
   workspaceSlug: string,
   partnerId: string,
-  planKey: string,
+  subscriptionPlan: {
+    id: string
+    name: string
+    stripePriceId: string | null
+    monthlyPriceCents: number
+  },
   userEmail: string
 ): Promise<string | null> {
   if (!prisma) {
-    console.error("[Signup Checkout] Database not configured")
-    return null
-  }
-
-  // Map marketing plan key to plan slug for matching
-  const planSlugMap: Record<string, string> = {
-    pro: "pro",
-    starter: "pro", // Legacy - maps to Pro
-    professional: "pro", // Legacy - maps to Pro
-  }
-
-  const planSlug = planSlugMap[planKey]
-  if (!planSlug) {
-    console.error(`[Signup Checkout] Unknown plan key: ${planKey}`)
-    return null
-  }
-
-  // Find the subscription plan in the database by slug
-  const subscriptionPlan = await prisma.workspaceSubscriptionPlan.findFirst({
-    where: {
-      partnerId,
-      isActive: true,
-      isPublic: true,
-      slug: planSlug,
-    },
-  })
-
-  if (!subscriptionPlan) {
-    console.error(`[Signup Checkout] No subscription plan found for slug "${planSlug}" (partner: ${partnerId})`)
+    console.error("[Agency Checkout] Database not configured")
     return null
   }
 
   if (!subscriptionPlan.stripePriceId) {
-    console.error(`[Signup Checkout] Plan "${subscriptionPlan.name}" has no Stripe price ID configured`)
+    console.error(`[Agency Checkout] Plan "${subscriptionPlan.name}" has no Stripe price ID configured`)
     return null
   }
 
-  // Get partner's Connect account and platform partner flag
+  // Get partner's Connect account
   const partner = await prisma.partner.findUnique({
     where: { id: partnerId },
-    select: {
-      settings: true,
-      isPlatformPartner: true,
-    },
+    select: { settings: true },
   })
 
-  const isPlatformPartner = partner?.isPlatformPartner || false
+  const connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown> | null)
 
-  console.log(`[Signup Checkout] Partner ${partnerId} is platform partner: ${isPlatformPartner}`)
-
-  // For platform partner: use main Stripe account
-  // For other partners: use Stripe Connect account
-  let connectAccountId: string | null = null
-
-  if (!isPlatformPartner) {
-    connectAccountId = getConnectAccountId(partner?.settings as Record<string, unknown> | null) ?? null
-
-    if (!connectAccountId) {
-      console.error(`[Signup Checkout] Non-platform partner ${partnerId} has no Stripe Connect account`)
-      return null
-    }
-    console.log(`[Signup Checkout] Using Stripe Connect account: ${connectAccountId}`)
-  } else {
-    console.log(`[Signup Checkout] Using main platform Stripe account for platform partner`)
+  if (!connectAccountId) {
+    console.error(`[Agency Checkout] Partner ${partnerId} has no Stripe Connect account`)
+    return null
   }
 
-  // Create or get Stripe customer
-  // For platform partner: use main account
-  // For other partners: use Connect account
+  console.log(`[Agency Checkout] Using Stripe Connect account: ${connectAccountId}`)
+
   const stripe = getStripe()
 
-  const customerParams = {
-    email: userEmail,
-    metadata: {
-      workspace_id: workspaceId,
-      workspace_slug: workspaceSlug,
-      partner_id: partnerId,
-      is_platform_partner: isPlatformPartner.toString(),
+  // Create customer on the Connect account
+  const customer = await stripe.customers.create(
+    {
+      email: userEmail,
+      metadata: {
+        workspace_id: workspaceId,
+        workspace_slug: workspaceSlug,
+        partner_id: partnerId,
+      },
     },
-  }
+    { stripeAccount: connectAccountId }
+  )
 
-  const customer = connectAccountId
-    ? await stripe.customers.create(customerParams, { stripeAccount: connectAccountId })
-    : await stripe.customers.create(customerParams)
-
-  console.log(`[Signup Checkout] Created Stripe customer: ${customer.id}`)
+  console.log(`[Agency Checkout] Created Stripe customer: ${customer.id}`)
 
   // Create subscription record as incomplete
   await prisma.workspaceSubscription.upsert({
@@ -477,15 +445,136 @@ async function createPlanCheckoutSession(
 
   // Create Checkout Session
   const baseUrl = env.appUrl || "http://localhost:3000"
-  // After successful payment, redirect to login page (user needs to confirm email and login)
-  // The workspace slug is passed so we can redirect to the correct workspace after login
   const successUrl = `${baseUrl}/login?subscription=success&workspace=${workspaceSlug}`
   const cancelUrl = `${baseUrl}/login?subscription=canceled&workspace=${workspaceSlug}`
 
-  const sessionParams = {
+  const session = await stripe.checkout.sessions.create(
+    {
+      customer: customer.id,
+      mode: "subscription",
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price: subscriptionPlan.stripePriceId,
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      subscription_data: {
+        metadata: {
+          workspace_id: workspaceId,
+          plan_id: subscriptionPlan.id,
+          type: "workspace_subscription",
+          partner_id: partnerId,
+        },
+      },
+      metadata: {
+        workspace_id: workspaceId,
+        plan_id: subscriptionPlan.id,
+        type: "workspace_subscription",
+        partner_id: partnerId,
+      },
+    },
+    { stripeAccount: connectAccountId }
+  )
+
+  console.log(`[Agency Checkout] Created checkout session ${session.id} for workspace ${workspaceId}, plan: ${subscriptionPlan.name}`)
+
+  return session.url
+}
+
+/**
+ * Create a Stripe Checkout session for a platform partner plan (Free/Pro)
+ * Uses the main Stripe account
+ */
+async function createPlatformPlanCheckoutSession(
+  workspaceId: string,
+  workspaceSlug: string,
+  partnerId: string,
+  planKey: string,
+  userEmail: string
+): Promise<string | null> {
+  if (!prisma) {
+    console.error("[Platform Checkout] Database not configured")
+    return null
+  }
+
+  // Map marketing plan key to plan slug for matching
+  const planSlugMap: Record<string, string> = {
+    pro: "pro",
+    starter: "pro", // Legacy - maps to Pro
+    professional: "pro", // Legacy - maps to Pro
+  }
+
+  const planSlug = planSlugMap[planKey]
+  if (!planSlug) {
+    console.error(`[Platform Checkout] Unknown plan key: ${planKey}`)
+    return null
+  }
+
+  // Find the subscription plan in the database by slug
+  const subscriptionPlan = await prisma.workspaceSubscriptionPlan.findFirst({
+    where: {
+      partnerId,
+      isActive: true,
+      isPublic: true,
+      slug: planSlug,
+    },
+  })
+
+  if (!subscriptionPlan) {
+    console.error(`[Platform Checkout] No subscription plan found for slug "${planSlug}" (partner: ${partnerId})`)
+    return null
+  }
+
+  if (!subscriptionPlan.stripePriceId) {
+    console.error(`[Platform Checkout] Plan "${subscriptionPlan.name}" has no Stripe price ID configured`)
+    return null
+  }
+
+  console.log(`[Platform Checkout] Using main platform Stripe account`)
+
+  const stripe = getStripe()
+
+  // Create customer on the main account
+  const customer = await stripe.customers.create({
+    email: userEmail,
+    metadata: {
+      workspace_id: workspaceId,
+      workspace_slug: workspaceSlug,
+      partner_id: partnerId,
+      is_platform_partner: "true",
+    },
+  })
+
+  console.log(`[Platform Checkout] Created Stripe customer: ${customer.id}`)
+
+  // Create subscription record as incomplete
+  await prisma.workspaceSubscription.upsert({
+    where: { workspaceId },
+    create: {
+      workspaceId,
+      planId: subscriptionPlan.id,
+      stripeCustomerId: customer.id,
+      status: "incomplete",
+    },
+    update: {
+      planId: subscriptionPlan.id,
+      stripeCustomerId: customer.id,
+      status: "incomplete",
+    },
+  })
+
+  // Create Checkout Session
+  const baseUrl = env.appUrl || "http://localhost:3000"
+  const successUrl = `${baseUrl}/login?subscription=success&workspace=${workspaceSlug}`
+  const cancelUrl = `${baseUrl}/login?subscription=canceled&workspace=${workspaceSlug}`
+
+  const session = await stripe.checkout.sessions.create({
     customer: customer.id,
-    mode: "subscription" as const,
-    payment_method_types: ["card" as const],
+    mode: "subscription",
+    payment_method_types: ["card"],
     line_items: [
       {
         price: subscriptionPlan.stripePriceId,
@@ -500,7 +589,7 @@ async function createPlanCheckoutSession(
         plan_id: subscriptionPlan.id,
         type: "workspace_subscription",
         partner_id: partnerId,
-        is_platform_partner: isPlatformPartner.toString(),
+        is_platform_partner: "true",
       },
     },
     metadata: {
@@ -509,13 +598,9 @@ async function createPlanCheckoutSession(
       type: "workspace_subscription",
       partner_id: partnerId,
     },
-  }
+  })
 
-  const session = connectAccountId
-    ? await stripe.checkout.sessions.create(sessionParams, { stripeAccount: connectAccountId })
-    : await stripe.checkout.sessions.create(sessionParams)
-
-  console.log(`[Signup Checkout] Created checkout session ${session.id} for workspace ${workspaceId}, plan: ${subscriptionPlan.name}`)
+  console.log(`[Platform Checkout] Created checkout session ${session.id} for workspace ${workspaceId}, plan: ${subscriptionPlan.name}`)
 
   return session.url
 }

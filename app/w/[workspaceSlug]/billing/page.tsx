@@ -29,19 +29,23 @@ import {
 } from "@/lib/hooks/use-workspace-subscription"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { SkeletonBillingPage } from "@/components/ui/skeleton"
 
 export default function BillingPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const workspaceSlug = params.workspaceSlug as string
   
-  const { data, refetch } = useWorkspaceCredits(workspaceSlug)
-  const { data: subscriptionData, refetch: refetchSubscription } = useWorkspaceSubscription(workspaceSlug)
-  const { data: plansData } = useSubscriptionPlans(workspaceSlug)
+  const { data, refetch, isLoading: isCreditsLoading } = useWorkspaceCredits(workspaceSlug)
+  const { data: subscriptionData, refetch: refetchSubscription, isLoading: isSubscriptionLoading } = useWorkspaceSubscription(workspaceSlug)
+  const { data: plansData, isLoading: isPlansLoading } = useSubscriptionPlans(workspaceSlug)
   const subscribeMutation = useSubscribeToPlan(workspaceSlug)
   const cancelMutation = useCancelSubscription(workspaceSlug)
   const previewMutation = usePlanChangePreview(workspaceSlug)
   const changePlanMutation = useChangePlan(workspaceSlug)
+  
+  // Combined loading state for initial page load
+  const isInitialLoading = isCreditsLoading || isSubscriptionLoading || isPlansLoading
   
   const credits = data?.credits
   const subscription = subscriptionData?.subscription
@@ -127,6 +131,11 @@ export default function BillingPage() {
     } catch (err) {
       toast.error("Failed to change plan", { description: (err as Error).message })
     }
+  }
+
+  // Show skeleton during initial loading
+  if (isInitialLoading) {
+    return <SkeletonBillingPage />
   }
 
   return (

@@ -1,20 +1,16 @@
 import Link from "next/link"
-import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Mic } from "lucide-react"
 import { getPartnerFromHost } from "@/lib/api/partner"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 
-export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
+/**
+ * Public Layout - Accessible to ALL partners (platform and white-label)
+ * Used for pages like /pricing that need to be visible on white-label domains
+ */
+export default async function PublicLayout({ children }: { children: React.ReactNode }) {
   const partner = await getPartnerFromHost()
   
-  // Marketing pages are only available on platform partner domain
-  // White-label partners should not see marketing content
-  // NOTE: /pricing is in a separate route group (public) to allow white-label access
-  if (!partner.is_platform_partner) {
-    redirect("/login")
-  }
-
   const branding = partner.branding
   const companyName = branding.company_name || partner.name
 
@@ -23,7 +19,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
       {/* Navigation */}
       <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-xl">
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href={partner.is_platform_partner ? "/" : "/pricing"} className="flex items-center gap-2">
             {branding.logo_url ? (
               <img src={branding.logo_url} alt={companyName} className="h-8" />
             ) : (
@@ -36,17 +32,26 @@ export default async function MarketingLayout({ children }: { children: React.Re
             )}
           </Link>
           
-          <div className="hidden md:flex items-center gap-8">
-            <Link href="/#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Features
-            </Link>
-            <Link href="/#use-cases" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Use Cases
-            </Link>
-            <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Pricing
-            </Link>
-          </div>
+          {/* Show full nav for platform partner, simplified for white-label */}
+          {partner.is_platform_partner ? (
+            <div className="hidden md:flex items-center gap-8">
+              <Link href="/#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Features
+              </Link>
+              <Link href="/#use-cases" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Use Cases
+              </Link>
+              <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Pricing
+              </Link>
+            </div>
+          ) : (
+            <div className="hidden md:flex items-center gap-8">
+              <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Pricing
+              </Link>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -69,7 +74,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
             {/* Brand */}
             <div className="md:col-span-2">
-              <Link href="/" className="flex items-center gap-2 mb-4">
+              <Link href={partner.is_platform_partner ? "/" : "/pricing"} className="flex items-center gap-2 mb-4">
                 {branding.logo_url ? (
                   <img src={branding.logo_url} alt={companyName} className="h-8" />
                 ) : (
@@ -91,7 +96,6 @@ export default async function MarketingLayout({ children }: { children: React.Re
               <h3 className="font-semibold mb-4">Product</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><Link href="/pricing" className="hover:text-foreground transition-colors">Pricing</Link></li>
-                <li><Link href="/request-partner" className="hover:text-foreground transition-colors">White-Label</Link></li>
               </ul>
             </div>
 
@@ -116,3 +120,4 @@ export default async function MarketingLayout({ children }: { children: React.Re
     </div>
   )
 }
+

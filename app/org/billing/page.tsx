@@ -16,10 +16,19 @@ import {
   XCircle,
   ShieldCheck,
   Package,
-  Info
+  Info,
+  Receipt,
+  TrendingUp,
+  Users,
+  Wallet,
+  FileText,
+  Settings,
+  DollarSign,
+  BarChart3
 } from "lucide-react"
 import { useEffect } from "react"
 import { useSearchParams } from "next/navigation"
+import Link from "next/link"
 import {
   useBillingInfo,
   useCheckout,
@@ -143,6 +152,7 @@ export default function OrgBillingPage() {
       {/* ============================================================ */}
       {isBillingExempt && (
         <>
+          {/* Platform Partner Status Banner */}
           <Card className="border-green-500/30 bg-green-500/5">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
@@ -154,20 +164,63 @@ export default function OrgBillingPage() {
                     Platform Partner - Billing Exempt
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Your organization is exempt from platform billing fees. End users subscribe to plans at the workspace level.
+                    Your organization is exempt from platform billing fees. All billing is managed through the main platform Stripe account.
                   </p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Info card for platform partners */}
+          {/* Platform Billing Overview */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Wallet className="h-4 w-4" />
+                  Billing Model
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-primary">Centralized</p>
+                <p className="text-xs text-muted-foreground mt-1">Main Stripe Account</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Receipt className="h-4 w-4" />
+                  Invoice Destination
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-blue-600">Platform</p>
+                <p className="text-xs text-muted-foreground mt-1">All invoices to main account</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Fee Structure
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-green-600">Exempt</p>
+                <p className="text-xs text-muted-foreground mt-1">No platform fees</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* How Platform Billing Works */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Info className="h-5 w-5" />
-                How Billing Works
+                How Platform Billing Works
               </CardTitle>
+              <CardDescription>
+                As a platform partner, billing is handled through the main platform Stripe account
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
               <div className="flex items-start gap-3">
@@ -175,7 +228,7 @@ export default function OrgBillingPage() {
                   <span className="text-xs font-bold text-primary">1</span>
                 </div>
                 <p>
-                  <strong className="text-foreground">End User Subscriptions:</strong> Your end users subscribe to Free or Pro plans at the workspace level via their workspace billing page.
+                  <strong className="text-foreground">Workspace Subscriptions:</strong> End users subscribe to plans at the workspace level. All subscription payments are processed through the main platform Stripe account.
                 </p>
               </div>
               <div className="flex items-start gap-3">
@@ -183,8 +236,59 @@ export default function OrgBillingPage() {
                   <span className="text-xs font-bold text-primary">2</span>
                 </div>
                 <p>
-                  <strong className="text-foreground">Stripe Connect (Optional):</strong> Set up Stripe Connect below if you want to process payments through your own merchant account.
+                  <strong className="text-foreground">Centralized Invoicing:</strong> All billing invoices are consolidated in the main Stripe dashboard. No separate Stripe Connect accounts needed.
                 </p>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-xs font-bold text-primary">3</span>
+                </div>
+                <p>
+                  <strong className="text-foreground">Usage Tracking:</strong> Monitor workspace usage and billing metrics from the Subscription Plans section.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Quick Actions for Platform Partner */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Billing Management
+              </CardTitle>
+              <CardDescription>
+                Manage subscription plans and view billing activity
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Link href="/org/plans" className="block">
+                  <div className="flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors cursor-pointer">
+                    <div className="h-10 w-10 rounded-full bg-purple-500/10 flex items-center justify-center">
+                      <Package className="h-5 w-5 text-purple-500" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium">Subscription Plans</p>
+                      <p className="text-sm text-muted-foreground">
+                        Create and manage workspace plans
+                      </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </Link>
+                <div className="flex items-center gap-4 p-4 rounded-lg border border-border bg-muted/30">
+                  <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                    <BarChart3 className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">Stripe Dashboard</p>
+                    <p className="text-sm text-muted-foreground">
+                      View invoices in main Stripe account
+                    </p>
+                  </div>
+                  <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -373,85 +477,112 @@ export default function OrgBillingPage() {
       )}
 
       {/* ============================================================ */}
-      {/* STRIPE CONNECT - For all partners to process workspace payments */}
+      {/* STRIPE CONNECT - Only for agency partners (not platform partner) */}
       {/* ============================================================ */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Link2 className="h-5 w-5" />
-            Stripe Connect
-          </CardTitle>
-          <CardDescription>
-            {isBillingExempt 
-              ? "Connect your Stripe account to process payments from your workspaces"
-              : "Connect your Stripe account to create paid subscription plans and receive workspace payments"
-            }
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {connectLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : connectStatus?.connected ? (
-            <div className="space-y-4">
-              {/* Connected Status */}
-              <div className="flex items-center gap-3 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                <CheckCircle2 className="h-6 w-6 text-green-500" />
-                <div>
-                  <p className="font-medium text-green-700 dark:text-green-400">
-                    Stripe Account Connected
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Account ID: {connectStatus.accountId}
-                  </p>
-                </div>
+      {!isBillingExempt && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Link2 className="h-5 w-5" />
+              Stripe Connect
+            </CardTitle>
+            <CardDescription>
+              Connect your Stripe account to create paid subscription plans and receive workspace payments
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {connectLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
+            ) : connectStatus?.connected ? (
+              <div className="space-y-4">
+                {/* Connected Status */}
+                <div className="flex items-center gap-3 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <CheckCircle2 className="h-6 w-6 text-green-500" />
+                  <div>
+                    <p className="font-medium text-green-700 dark:text-green-400">
+                      Stripe Account Connected
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Account ID: {connectStatus.accountId}
+                    </p>
+                  </div>
+                </div>
 
-              {/* Account Status Indicators */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-center gap-2">
-                  {connectStatus.chargesEnabled ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-red-500" />
-                  )}
-                  <span className="text-sm">
-                    Charges {connectStatus.chargesEnabled ? "Enabled" : "Disabled"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {connectStatus.payoutsEnabled ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-red-500" />
-                  )}
-                  <span className="text-sm">
-                    Payouts {connectStatus.payoutsEnabled ? "Enabled" : "Disabled"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {connectStatus.onboardingComplete ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 text-yellow-500" />
-                  )}
-                  <span className="text-sm">
-                    Onboarding {connectStatus.onboardingComplete ? "Complete" : "Incomplete"}
-                  </span>
-                </div>
-                {connectStatus.country && (
+                {/* Account Status Indicators */}
+                <div className="grid grid-cols-2 gap-4">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      Country: {connectStatus.country}
+                    {connectStatus.chargesEnabled ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-500" />
+                    )}
+                    <span className="text-sm">
+                      Charges {connectStatus.chargesEnabled ? "Enabled" : "Disabled"}
                     </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {connectStatus.payoutsEnabled ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-500" />
+                    )}
+                    <span className="text-sm">
+                      Payouts {connectStatus.payoutsEnabled ? "Enabled" : "Disabled"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {connectStatus.onboardingComplete ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-yellow-500" />
+                    )}
+                    <span className="text-sm">
+                      Onboarding {connectStatus.onboardingComplete ? "Complete" : "Incomplete"}
+                    </span>
+                  </div>
+                  {connectStatus.country && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        Country: {connectStatus.country}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Continue Onboarding if incomplete */}
+                {!connectStatus.onboardingComplete && (
+                  <div className="pt-2">
+                    <Button 
+                      onClick={handleConnectOnboarding}
+                      disabled={connectOnboarding.isPending}
+                    >
+                      {connectOnboarding.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                      )}
+                      Complete Onboarding
+                    </Button>
                   </div>
                 )}
               </div>
-
-              {/* Continue Onboarding if incomplete */}
-              {!connectStatus.onboardingComplete && (
-                <div className="pt-2">
+            ) : (
+              <div className="space-y-4">
+                <p className="text-muted-foreground">
+                  Connect your Stripe account to create paid subscription plans. When workspaces subscribe, payments go directly to your connected Stripe account.
+                </p>
+                <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
+                  <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Link2 className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">Stripe Express Account</p>
+                    <p className="text-sm text-muted-foreground">
+                      Quick setup with Stripe-hosted onboarding
+                    </p>
+                  </div>
                   <Button 
                     onClick={handleConnectOnboarding}
                     disabled={connectOnboarding.isPending}
@@ -461,45 +592,14 @@ export default function OrgBillingPage() {
                     ) : (
                       <ExternalLink className="h-4 w-4 mr-2" />
                     )}
-                    Complete Onboarding
+                    Connect with Stripe
                   </Button>
                 </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <p className="text-muted-foreground">
-                {isBillingExempt 
-                  ? "Connect your Stripe account to start accepting payments from your workspaces. This allows you to bill your clients directly through the platform."
-                  : "Connect your Stripe account to create paid subscription plans. When workspaces subscribe, payments go directly to your connected Stripe account."
-                }
-              </p>
-              <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
-                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Link2 className="h-6 w-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium">Stripe Express Account</p>
-                  <p className="text-sm text-muted-foreground">
-                    Quick setup with Stripe-hosted onboarding
-                  </p>
-                </div>
-                <Button 
-                  onClick={handleConnectOnboarding}
-                  disabled={connectOnboarding.isPending}
-                >
-                  {connectOnboarding.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                  )}
-                  Connect with Stripe
-                </Button>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Info card for agencies about how billing works */}
       {!isBillingExempt && (

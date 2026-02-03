@@ -68,6 +68,7 @@ const timezones = [
   { value: "Europe/Rome", label: "Rome (CET/CEST)" },
   { value: "Europe/Stockholm", label: "Stockholm (CET/CEST)" },
   { value: "Asia/Dubai", label: "Dubai (GST)" },
+  { value: "Asia/Karachi", label: "Pakistan (PKT)" },
   { value: "Asia/Kolkata", label: "India (IST)" },
   { value: "Asia/Singapore", label: "Singapore (SGT)" },
   { value: "Asia/Tokyo", label: "Tokyo (JST)" },
@@ -264,15 +265,6 @@ export default function WorkspaceSettingsPage() {
               onChange={(e) => setName(e.target.value)}
               placeholder="My Workspace"
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="slug">Workspace URL</Label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">/w/</span>
-              <Input id="slug" value={workspace?.slug || ""} disabled className="bg-muted" />
-            </div>
-            <p className="text-xs text-muted-foreground">The workspace URL cannot be changed</p>
           </div>
 
           <div className="space-y-2">

@@ -570,7 +570,10 @@ export function WorkspaceAgentForm({
               className="h-4 w-4 rounded border-input bg-background text-primary focus:ring-primary"
             />
             <Label htmlFor="is_active" className="text-sm font-normal">
-              Agent is active and can receive calls
+              {agentDirection === "outbound" 
+                ? "Agent is active and can make calls"
+                : "Agent is active and can receive calls"
+              }
             </Label>
           </div>
         </CardContent>
@@ -747,85 +750,13 @@ export function WorkspaceAgentForm({
         </CardContent>
       </Card>
 
-      {/* Voice & Model Settings Card */}
+      {/* Voice Configuration Card */}
       <Card>
         <CardHeader>
-          <CardTitle>Voice & Model Settings</CardTitle>
-          <CardDescription>Choose the voice and language model for your agent</CardDescription>
+          <CardTitle>Voice Configuration</CardTitle>
+          <CardDescription>Select the voice for your AI agent</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label>Voice Provider</Label>
-              <Select
-                value={watch("voice_provider") || ""}
-                onValueChange={(value) =>
-                  setValue("voice_provider", value as FormData["voice_provider"])
-                }
-                disabled={isSubmitting}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select voice" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="elevenlabs">ElevenLabs</SelectItem>
-                  <SelectItem value="deepgram">Deepgram</SelectItem>
-                  <SelectItem value="azure">Azure</SelectItem>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                  <SelectItem value="cartesia">Cartesia</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Model Provider</Label>
-              <Select
-                value={watch("model_provider") || ""}
-                onValueChange={(value) =>
-                  setValue("model_provider", value as FormData["model_provider"])
-                }
-                disabled={isSubmitting}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select model" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                  <SelectItem value="anthropic">Anthropic</SelectItem>
-                  <SelectItem value="google">Google</SelectItem>
-                  <SelectItem value="groq">Groq</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Transcriber</Label>
-              <Select
-                value={watch("transcriber_provider") || ""}
-                onValueChange={(value) =>
-                  setValue("transcriber_provider", value as FormData["transcriber_provider"])
-                }
-                disabled={isSubmitting}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select transcriber" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="deepgram">Deepgram</SelectItem>
-                  <SelectItem value="assemblyai">AssemblyAI</SelectItem>
-                  <SelectItem value="openai">OpenAI Whisper</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Voice Configuration */}
-          <div className="space-y-4 p-4 rounded-lg border border-violet-500/20 bg-violet-500/5">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-base font-semibold">Voice Configuration</Label>
-                <p className="text-xs text-muted-foreground mt-1">Select a voice for your agent</p>
-              </div>
-            </div>
-
+        <CardContent>
             {(() => {
               const selectedVoiceId = watch("config.voice_id")
               // For Retell: use dynamically fetched voices, for VAPI: use static list
@@ -842,7 +773,14 @@ export function WorkspaceAgentForm({
                 setVoiceFilters((prev) => ({ ...prev, accent: "all" }))
               }
               
-              const selectedVoice = allVoices.find((v) => v.id === selectedVoiceId)
+              // Find selected voice - check both id AND providerId (for VAPI ElevenLabs voices)
+              // When agents are synced, voice_id might be stored as the provider's voice ID
+              const selectedVoice = allVoices.find((v) => {
+                if (v.id === selectedVoiceId) return true
+                // For VAPI voices, also check the providerId (ElevenLabs ID)
+                if ('providerId' in v && (v as VoiceOption).providerId === selectedVoiceId) return true
+                return false
+              })
               const isRetellProvider = selectedProvider === "retell"
               
               // Check if any filter is active
@@ -1231,7 +1169,6 @@ export function WorkspaceAgentForm({
                 </div>
               )
             })()}
-          </div>
         </CardContent>
       </Card>
 
@@ -1252,15 +1189,39 @@ export function WorkspaceAgentForm({
               disabled={isSubmitting}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="first_message">First Message</Label>
-            <Input
-              id="first_message"
-              placeholder="Hello! How can I help you today?"
-              {...register("config.first_message")}
-              disabled={isSubmitting}
-            />
-          </div>
+          
+          {/* First Message - Only show for inbound agents */}
+          {/* Outbound agents wait for the recipient to speak first (e.g., "Hello?") */}
+          {agentDirection !== "outbound" && (
+            <div className="space-y-2">
+              <Label htmlFor="first_message">First Message</Label>
+              <Input
+                id="first_message"
+                placeholder="Hello! How can I help you today?"
+                {...register("config.first_message")}
+                disabled={isSubmitting}
+              />
+            </div>
+          )}
+          
+          {/* Outbound Agent Info Banner */}
+          {agentDirection === "outbound" && (
+            <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <div className="flex items-start gap-3">
+                <PhoneOutgoing className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                    Outbound Agent Behavior
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    For outbound calls, the agent waits for the recipient to speak first 
+                    (e.g., "Hello?") before responding according to the system prompt.
+                    No initial greeting is needed.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1370,22 +1331,25 @@ export function WorkspaceAgentForm({
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-4">
-        <Button type="button" variant="outline" disabled={isSubmitting} asChild>
-          <Link href={`/w/${workspaceSlug}/agents`}>Cancel</Link>
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {initialData ? "Updating..." : "Creating..."}
-            </>
-          ) : initialData ? (
-            "Update Agent"
-          ) : (
-            "Create Agent"
-          )}
-        </Button>
+      {/* Fixed Action Buttons */}
+      <div className="fixed-action-bar fixed bottom-0 left-0 right-0 z-40 px-4 sm:px-6 py-4 bg-background/95 backdrop-blur-sm border-t shadow-lg lg:left-64">
+        <div className="max-w-4xl mx-auto flex flex-col-reverse sm:flex-row justify-end gap-3 sm:gap-4">
+          <Button type="button" variant="outline" disabled={isSubmitting} asChild className="w-full sm:w-auto">
+            <Link href={`/w/${workspaceSlug}/agents`}>Cancel</Link>
+          </Button>
+          <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto">
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {initialData ? "Updating..." : "Creating..."}
+              </>
+            ) : initialData ? (
+              "Update Agent"
+            ) : (
+              "Create Agent"
+            )}
+          </Button>
+        </div>
       </div>
     </form>
   )

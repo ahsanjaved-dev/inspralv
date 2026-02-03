@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   Building2,
-  Users,
   UserPlus,
   Settings,
   LogOut,
@@ -100,16 +99,12 @@ export function OrgDashboardLayout({
     return styles
   }, [branding])
 
-  const isPlatformPartner = partner.is_platform_partner
-  
   const navigation = [
     { title: "Overview", href: "/org", icon: LayoutGrid },
     { title: "Integrations", href: "/org/integrations", icon: Plug },
     { title: "Telephony", href: "/org/telephony", icon: Phone },
     // Team invitations for org admins/members
     { title: "Team Invitations", href: "/org/invitations", icon: UserPlus },
-    // Client invitations - only for white-label partners
-    ...(!isPlatformPartner ? [{ title: "Client Invitations", href: "/org/clients", icon: Users }] : []),
     { title: "Billing", href: "/org/billing", icon: CreditCard },
     { title: "Subscription Plans", href: "/org/plans", icon: Package },
     { title: "Settings", href: "/org/settings", icon: Settings },
@@ -161,7 +156,10 @@ export function OrgDashboardLayout({
             <nav className="space-y-1 px-3">
               {navigation.map((item) => {
                 const Icon = item.icon
-                const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+                // For /org (Overview), only match exact path to avoid highlighting when on sub-routes
+                const isActive = item.href === "/org" 
+                  ? pathname === "/org"
+                  : pathname === item.href || pathname.startsWith(item.href + "/")
 
                 return (
                   <Link

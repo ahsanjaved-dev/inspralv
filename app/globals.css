@@ -116,8 +116,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    @apply h-full bg-background;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground min-h-screen;
   }
 }
 
@@ -384,4 +387,11 @@
 
 .workspace-theme .page-title {
   @apply text-3xl font-bold tracking-tight;
+}
+
+/* Adjust fixed action bar when sidebar is collapsed */
+@media (min-width: 1024px) {
+  .workspace-theme[data-sidebar-collapsed="true"] .fixed-action-bar {
+    left: 4.5rem;
+  }
 }

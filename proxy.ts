@@ -16,10 +16,13 @@ const PARTNER_CACHE_TTL = 60 * 1000 // 60 seconds
  * - Full access to all routes (marketing, auth, dashboard, etc.)
  *
  * WHITE-LABEL PARTNERS (partner subdomains/custom domains):
- * - Only allowed routes: /login, /signup (with invitation token), /w/*, /org/*, /select-workspace
- * - All marketing pages return 404
- * - Public APIs restricted
- * - Logged-in users on marketing pages → redirect to dashboard
+ * - Allowed routes: /pricing, /login, /signup, /w/*, /org/*, /select-workspace
+ * - Root "/" redirects to /pricing (entry point for new visitors)
+ * - /pricing shows agency's custom subscription plans
+ * - /signup with plan ID creates workspace with selected plan
+ * - Team invitations work via /signup?token=xxx
+ * - Most marketing pages return 404
+ * - Logged-in users on restricted pages → redirect to dashboard
  * 
  * @see https://nextjs.org/docs/app/api-reference/file-conventions/proxy
  */
@@ -28,6 +31,7 @@ const PARTNER_CACHE_TTL = 60 * 1000 // 60 seconds
 const PARTNER_ALLOWED_ROUTES = [
   "/login",
   "/signup",
+  "/pricing", // White-label partners have their own pricing page
   "/forgot-password",
   "/reset-password",
   "/accept-partner-invitation",
@@ -45,6 +49,7 @@ const PARTNER_ALLOWED_PREFIXES = [
   "/api/w/", // Workspace API routes
   "/api/auth/", // Auth API routes
   "/api/webhooks/", // Webhook routes
+  "/api/public/", // Public API routes (pricing, etc.)
   "/_next/", // Next.js internals
   "/favicon", // Favicon
 ]
@@ -142,8 +147,8 @@ async function resolvePartnerFromHostname(
     }
   }
 
-  // OPTIMIZATION: Query all hostname variants in one request using OR filter
-  const { data: domainMatches } = await supabase
+  // Step 1: Try exact domain match in partner_domains table
+  const { data: domainMatches, error: domainError } = await supabase
     .from("partner_domains")
     .select(
       `
@@ -155,49 +160,81 @@ async function resolvePartnerFromHostname(
     )
     .in("hostname", hostnamesToTry)
 
+  if (domainError) {
+    console.error("[Proxy] Domain lookup error:", domainError.message)
+  }
+
   if (domainMatches && domainMatches.length > 0) {
     // Use first match (prefer the order in hostnamesToTry)
     for (const hostnameVariant of hostnamesToTry) {
       const match = domainMatches.find((d: any) => d.hostname === hostnameVariant)
       if (match?.partner) {
         const result = (match.partner as { is_platform_partner: boolean }[])?.[0] ?? null
-        // Cache the result
-        partnerCache.set(cacheKey, { data: result, timestamp: Date.now() })
-        return result
+        if (result) {
+          partnerCache.set(cacheKey, { data: result, timestamp: Date.now() })
+          return result
+        }
       }
     }
   }
 
-  // Check if it's a subdomain pattern (for dev mode)
+  // Step 2: Try subdomain pattern (e.g., "test81.localhost" → slug "test81")
   const parts = hostname.split(".")
   if (parts.length >= 2) {
     const potentialSlug = parts[0]
+    
+    // For "subdomain.localhost" pattern (local dev)
+    const isLocalDevSubdomain = parts.length === 2 && parts[1] === "localhost"
+    
+    // For "subdomain.domain.tld" pattern (production)
+    const platformParts = platformDomain.split(":")[0]?.split(".") || []
+    const isProductionSubdomain = parts.length > platformParts.length && 
+      parts.slice(-platformParts.length).join(".") === platformParts.join(".")
 
-    // Try to find partner by slug
-    const { data: slugMatch } = await supabase
-      .from("partners")
-      .select("is_platform_partner")
-      .eq("slug", potentialSlug)
-      .is("deleted_at", null)
-      .single()
+    if (isLocalDevSubdomain || isProductionSubdomain) {
+      // Try to find partner by slug using maybeSingle to avoid errors
+      const { data: slugMatch, error: slugError } = await supabase
+        .from("partners")
+        .select("is_platform_partner, slug")
+        .eq("slug", potentialSlug)
+        .is("deleted_at", null)
+        .maybeSingle()
 
-    if (slugMatch) {
-      // Cache the result
-      partnerCache.set(cacheKey, { data: slugMatch, timestamp: Date.now() })
-      return slugMatch
+      if (slugError) {
+        console.error(`[Proxy] Slug lookup error for "${potentialSlug}":`, slugError.message)
+      }
+
+      if (slugMatch) {
+        console.log(`[Proxy] Resolved partner by slug: ${potentialSlug} → is_platform_partner: ${slugMatch.is_platform_partner}`)
+        const result = { is_platform_partner: slugMatch.is_platform_partner }
+        partnerCache.set(cacheKey, { data: result, timestamp: Date.now() })
+        return result
+      } else {
+        console.warn(`[Proxy] No partner found with slug: ${potentialSlug}`)
+      }
     }
   }
 
-  // Fallback to platform partner
-  const { data: platformPartner } = await supabase
+  // Step 3: Fallback to platform partner
+  const { data: platformPartner, error: platformError } = await supabase
     .from("partners")
     .select("is_platform_partner")
     .eq("is_platform_partner", true)
-    .single()
+    .maybeSingle()
 
-  // Cache the result
-  partnerCache.set(cacheKey, { data: platformPartner, timestamp: Date.now() })
-  return platformPartner
+  if (platformError) {
+    console.error("[Proxy] Platform partner lookup error:", platformError.message)
+    return null
+  }
+
+  if (platformPartner) {
+    console.log(`[Proxy] Using platform partner fallback for hostname: ${hostname}`)
+    partnerCache.set(cacheKey, { data: platformPartner, timestamp: Date.now() })
+    return platformPartner
+  }
+
+  console.error("[Proxy] No platform partner found in database")
+  return null
 }
 
 /**
@@ -245,9 +282,9 @@ export async function proxy(request: NextRequest) {
   // Check if route is allowed for partners
   const isAllowed = isRouteAllowedForPartner(pathname)
 
-  // Root path "/" - redirect to login for partners
+  // Root path "/" - redirect to pricing for partners (where they can see plans and sign up)
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/login", request.url))
+    return NextResponse.redirect(new URL("/pricing", request.url))
   }
 
   // If user is logged in and trying to access a restricted route, redirect to dashboard
