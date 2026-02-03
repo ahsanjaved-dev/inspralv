@@ -72,7 +72,7 @@ export async function PATCH(request: NextRequest) {
     const validationResult = updateBrandingSchema.safeParse(branding)
     if (!validationResult.success) {
       return apiError(
-        `Invalid branding data: ${validationResult.error.errors.map(e => e.message).join(", ")}`,
+        `Invalid branding data: ${validationResult.error.issues.map((e) => e.message).join(", ")}`,
         400
       )
     }
