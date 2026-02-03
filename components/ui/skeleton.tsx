@@ -272,3 +272,211 @@ export function SkeletonDashboard() {
     </div>
   )
 }
+
+// ============================================================================
+// BILLING PAGE SKELETON
+// ============================================================================
+
+/**
+ * Skeleton for subscription plan card
+ */
+export function SkeletonPlanCard({ className }: { className?: string }) {
+  return (
+    <div className={cn("rounded-lg border bg-card p-4 shadow-sm", className)}>
+      <div className="pb-3">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-6 w-16 rounded-full" />
+        </div>
+        <div className="mt-2 flex items-baseline gap-1">
+          <Skeleton className="h-9 w-20" />
+          <Skeleton className="h-4 w-12" />
+        </div>
+        <Skeleton className="mt-2 h-4 w-full" />
+      </div>
+      <div className="space-y-4 pt-3">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-4 w-28" />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Skeleton className="h-4 w-4 rounded-full" />
+              <Skeleton className="h-4 w-36" />
+            </div>
+          ))}
+        </div>
+        <Skeleton className="h-10 w-full rounded" />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Skeleton for current subscription card
+ */
+export function SkeletonCurrentSubscription({ className }: { className?: string }) {
+  return (
+    <div className={cn("rounded-lg border border-primary/20 bg-primary/5 p-6", className)}>
+      <div className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-5 w-5 rounded" />
+            <Skeleton className="h-6 w-40" />
+          </div>
+          <Skeleton className="h-6 w-16 rounded-full" />
+        </div>
+        <Skeleton className="mt-2 h-4 w-64" />
+      </div>
+      <div className="space-y-4 pt-3">
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <Skeleton className="h-4 w-36" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+          <Skeleton className="h-2 w-full rounded" />
+        </div>
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-8 w-32 rounded" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Skeleton for credits card
+ */
+export function SkeletonCreditsCard({ className }: { className?: string }) {
+  return (
+    <div className={cn("rounded-lg border bg-card", className)}>
+      <div className="p-6 pb-3">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-5 w-5 rounded" />
+              <Skeleton className="h-5 w-20" />
+            </div>
+            <Skeleton className="h-4 w-40" />
+          </div>
+          <Skeleton className="h-6 w-24 rounded-full" />
+        </div>
+      </div>
+      <div className="p-6 pt-0 space-y-6">
+        {/* Balance Display */}
+        <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border">
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-9 w-28" />
+            <div className="flex items-center gap-4 mt-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+          </div>
+        </div>
+        {/* Top-up Options */}
+        <div>
+          <Skeleton className="h-4 w-24 mb-3" />
+          <div className="grid grid-cols-4 gap-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 rounded" />
+            ))}
+          </div>
+        </div>
+        {/* Recent Transactions */}
+        <div>
+          <Skeleton className="h-4 w-28 mb-3" />
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-8 w-8 rounded-full" />
+                  <div className="space-y-1">
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                </div>
+                <div className="text-right space-y-1">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Skeleton for billing page
+ */
+export function SkeletonBillingPage() {
+  return (
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div className="page-header">
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+      </div>
+
+      {/* Current Subscription Skeleton */}
+      <SkeletonCurrentSubscription />
+
+      {/* Available Plans */}
+      <div className="rounded-lg border bg-card">
+        <div className="p-6 pb-3">
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="mt-2 h-4 w-64" />
+        </div>
+        <div className="p-6 pt-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <SkeletonPlanCard />
+            <SkeletonPlanCard />
+            <SkeletonPlanCard />
+          </div>
+        </div>
+      </div>
+
+      {/* Credits Card */}
+      <SkeletonCreditsCard />
+
+      {/* Usage Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <SkeletonStatCard />
+        <SkeletonStatCard />
+        <SkeletonStatCard />
+      </div>
+
+      {/* Info Card */}
+      <div className="rounded-lg border bg-card">
+        <div className="p-6 pb-3">
+          <Skeleton className="h-6 w-36" />
+          <Skeleton className="mt-2 h-4 w-48" />
+        </div>
+        <div className="p-6 pt-0 space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <Skeleton className="h-6 w-6 rounded-full flex-shrink-0" />
+              <div className="space-y-1 flex-1">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}

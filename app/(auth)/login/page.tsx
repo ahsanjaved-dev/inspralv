@@ -9,6 +9,32 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Loader2, CheckCircle2, AlertCircle, ArrowRight } from "lucide-react"
+import { cn } from "@/lib/utils"
+
+/**
+ * Redirect loading overlay shown after successful login
+ */
+function RedirectOverlay({ message }: { message: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
+      <div className="text-center space-y-4 animate-in fade-in-0 zoom-in-95 duration-300">
+        <div className="relative mx-auto w-16 h-16">
+          {/* Spinning ring */}
+          <div className="absolute inset-0 rounded-full border-4 border-primary/20" />
+          <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary animate-spin" />
+          {/* Inner checkmark */}
+          <div className="absolute inset-2 rounded-full bg-primary/10 flex items-center justify-center">
+            <CheckCircle2 className="h-6 w-6 text-primary animate-in zoom-in-50 duration-500 delay-200" />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <p className="text-lg font-medium text-foreground">{message}</p>
+          <p className="text-sm text-muted-foreground">Please wait...</p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function LoginForm() {
   const router = useRouter()
@@ -21,6 +47,8 @@ function LoginForm() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  const [redirectMessage, setRedirectMessage] = useState("")
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -36,35 +64,46 @@ function LoginForm() {
 
       if (error) throw error
 
+      // Show redirect overlay with appropriate message
+      setIsRedirecting(true)
+      
       if (redirectTo) {
+        setRedirectMessage("Redirecting you back...")
         router.push(redirectTo)
       } else if (workspaceSlug) {
+        setRedirectMessage("Opening your workspace...")
         router.push(`/w/${workspaceSlug}/dashboard${subscriptionStatus === 'success' ? '?subscription=success' : ''}`)
       } else {
+        // Generic message works for both single workspace (auto-redirect) and multi-workspace users
+        setRedirectMessage("Signing you in...")
         router.push("/select-workspace")
       }
       router.refresh()
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to login"
       setError(errorMessage)
-    } finally {
       setLoading(false)
     }
+    // Note: Don't set loading to false on success - keep showing the redirect overlay
   }
 
   return (
-    <Card>
-      <CardHeader className="text-center pb-2">
-        <CardTitle>Welcome back</CardTitle>
-        <CardDescription>
-          {subscriptionStatus === 'success'
-            ? 'Payment successful! Sign in to continue.'
-            : subscriptionStatus === 'canceled'
-            ? 'Payment was canceled. Sign in to try again.'
-            : 'Sign in to your account to continue'}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <>
+      {/* Redirect overlay shown after successful login */}
+      {isRedirecting && <RedirectOverlay message={redirectMessage} />}
+      
+      <Card className={cn(isRedirecting && "opacity-50 pointer-events-none")}>
+        <CardHeader className="text-center pb-2">
+          <CardTitle>Welcome back</CardTitle>
+          <CardDescription>
+            {subscriptionStatus === 'success'
+              ? 'Payment successful! Sign in to continue.'
+              : subscriptionStatus === 'canceled'
+              ? 'Payment was canceled. Sign in to try again.'
+              : 'Sign in to your account to continue'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
         {/* Status Messages */}
         {subscriptionStatus === 'success' && (
           <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400 px-4 py-3 rounded-lg text-sm mb-4">
@@ -147,6 +186,7 @@ function LoginForm() {
         </p>
       </CardContent>
     </Card>
+    </>
   )
 }
 
