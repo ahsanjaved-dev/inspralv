@@ -117,7 +117,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
         {/* Apply theme BEFORE anything renders to prevent white flash */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
@@ -127,7 +127,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: suppressSdkErrorsScript }} />
       </head>
       <body 
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background min-h-screen`}
         suppressHydrationWarning
       >
         <ThemeProvider defaultTheme="system" storageKey="genius365-theme">

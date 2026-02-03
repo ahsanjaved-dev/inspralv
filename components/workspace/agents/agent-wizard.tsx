@@ -914,8 +914,14 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                   {formData.voice && !isVoiceListOpen && (
                     <div className="space-y-3">
                       {(() => {
+                        // Find selected voice - check both id AND providerId (for VAPI ElevenLabs voices)
                         const selectedVoice = availableVoices.find(
-                          (v: VoiceOption | RetellVoice) => v.id === formData.voice
+                          (v: VoiceOption | RetellVoice) => {
+                            if (v.id === formData.voice) return true
+                            // For VAPI voices, also check the providerId (ElevenLabs ID)
+                            if ('providerId' in v && (v as VoiceOption).providerId === formData.voice) return true
+                            return false
+                          }
                         )
                         if (!selectedVoice) return null
                         const colors = getVoiceCardColor(selectedVoice.gender)
@@ -1901,7 +1907,11 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 <div>
                   <p className="text-muted-foreground">Voice</p>
                   <p className="font-medium">
-                    {availableVoices.find((v) => v.id === formData.voice)?.name || "-"}
+                    {availableVoices.find((v) => {
+                      if (v.id === formData.voice) return true
+                      if ('providerId' in v && (v as VoiceOption).providerId === formData.voice) return true
+                      return false
+                    })?.name || "-"}
                   </p>
                 </div>
                 <div>

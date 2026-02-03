@@ -65,32 +65,33 @@ export default function EditWorkspaceAgentPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="flex items-center gap-4 mb-6">
-        <Button variant="ghost" size="icon" asChild>
+    <div className="w-full max-w-4xl mx-auto px-0 sm:px-0">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-6">
+        <Button variant="ghost" size="icon" asChild className="w-fit">
           <Link href={`/w/${workspaceSlug}/agents`}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <div>
-          <h1 className="text-3xl font-bold">{agent.name}</h1>
-          <p className="text-muted-foreground mt-1">Manage agent settings and view appointments</p>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold truncate">{agent.name}</h1>
+          <p className="text-muted-foreground text-sm sm:text-base mt-1">Manage agent settings and view appointments</p>
         </div>
       </div>
 
-      <Tabs defaultValue="settings" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="settings" className="gap-2">
+      <Tabs defaultValue="settings" className="space-y-4 sm:space-y-6">
+        <TabsList className="w-full sm:w-auto flex overflow-x-auto">
+          <TabsTrigger value="settings" className="gap-2 flex-1 sm:flex-none">
             <Settings className="h-4 w-4" />
-            Settings
+            <span className="hidden xs:inline">Settings</span>
           </TabsTrigger>
-          <TabsTrigger value="calendar" className="gap-2">
+          <TabsTrigger value="calendar" className="gap-2 flex-1 sm:flex-none">
             <CalendarCog className="h-4 w-4" />
-            Calendar
+            <span className="hidden xs:inline">Calendar</span>
           </TabsTrigger>
-          <TabsTrigger value="appointments" className="gap-2">
+          <TabsTrigger value="appointments" className="gap-2 flex-1 sm:flex-none">
             <Calendar className="h-4 w-4" />
-            Appointments
+            <span className="hidden xs:inline">Appointments</span>
           </TabsTrigger>
         </TabsList>
 
