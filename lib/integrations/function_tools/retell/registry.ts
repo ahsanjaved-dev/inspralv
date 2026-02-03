@@ -62,27 +62,39 @@ export const RETELL_TOOL_REGISTRY: Record<string, BuiltInToolDefinition> = {
   },
 
   // ========================================
-  // CALENDAR INTEGRATION (Cal.com)
+  // CALENDAR INTEGRATION (Google Calendar - Custom via MCP)
+  // These tools use our custom Google Calendar integration
+  // executed via MCP server (same functionality as VAPI)
   // ========================================
-  check_availability_cal: {
-    key: "check_availability_cal",
-    displayName: "Check Availability (Cal.com)",
-    type: "check_availability_cal",
-    category: "api_integration",
-    providers: { vapi: false, retell: true },
-    isNative: true,
-    description: "Check calendar availability on Cal.com.",
-    icon: "CalendarSearch",
-  },
-  book_appointment_cal: {
-    key: "book_appointment_cal",
-    displayName: "Book Appointment (Cal.com)",
-    type: "book_appointment_cal",
-    category: "api_integration",
-    providers: { vapi: false, retell: true },
-    isNative: true,
-    description: "Book an appointment using Cal.com.",
+  book_appointment: {
+    key: "book_appointment",
+    displayName: "Book Appointment",
+    type: "book_appointment",
+    category: "calendar",
+    providers: { vapi: true, retell: true },
+    isNative: false,
+    description: "Book a new appointment on Google Calendar.",
     icon: "CalendarPlus",
+  },
+  cancel_appointment: {
+    key: "cancel_appointment",
+    displayName: "Cancel Appointment",
+    type: "cancel_appointment",
+    category: "calendar",
+    providers: { vapi: true, retell: true },
+    isNative: false,
+    description: "Cancel an existing appointment.",
+    icon: "CalendarX",
+  },
+  reschedule_appointment: {
+    key: "reschedule_appointment",
+    displayName: "Reschedule Appointment",
+    type: "reschedule_appointment",
+    category: "calendar",
+    providers: { vapi: true, retell: true },
+    isNative: false,
+    description: "Reschedule an appointment to a new time.",
+    icon: "CalendarClock",
   },
 
   // ========================================
@@ -153,11 +165,11 @@ export const RETELL_TOOL_CATEGORIES = {
     description: "Tools for managing call flow",
     icon: "Phone",
   },
-  api_integration: {
-    key: "api_integration",
-    displayName: "API Integration",
-    description: "Tools for external API integrations",
-    icon: "Plug",
+  calendar: {
+    key: "calendar",
+    displayName: "Calendar",
+    description: "Google Calendar appointment scheduling",
+    icon: "Calendar",
   },
   communication: {
     key: "communication",

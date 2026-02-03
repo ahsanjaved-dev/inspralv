@@ -29,7 +29,12 @@ import {
 } from "./config"
 import { processRetellResponse, processRetellDeleteResponse } from "./response"
 import { logger } from "@/lib/logger"
-import { mcpClient, convertToMCPTool, isMCPConfigured, type MCPToolInput } from "@/lib/integrations/mcp"
+import { mcpClient, convertToMCPTool, isMCPConfigured, getToolExecutionWebhookUrl, type MCPToolInput } from "@/lib/integrations/mcp"
+import { 
+  isCalendarTool, 
+  CALENDAR_TOOL_NAMES,
+  getEnabledCalendarToolsForMCP,
+} from "@/lib/integrations/calendar"
 
 const log = logger.child({ module: "RetellSync" })
 
@@ -135,29 +140,59 @@ async function getRetellApiKeyForAgent(
 // ============================================================================
 
 /**
- * Check if agent has custom function tools
+ * Check if agent has custom function tools (excluding calendar tools)
  */
 function hasCustomFunctionTools(agent: AIAgent): boolean {
   const tools = agent.config?.tools || []
   return tools.some(
     (t: FunctionTool) => t.enabled !== false && 
-    (t.tool_type === 'function' || t.tool_type === 'custom_function')
+    (t.tool_type === 'function' || t.tool_type === 'custom_function') &&
+    !isCalendarTool(t.name) // Exclude calendar tools from custom function check
   )
 }
 
 /**
- * Get custom function tools from agent
+ * Check if agent has calendar tools enabled
+ */
+function hasCalendarTools(agent: AIAgent): boolean {
+  const tools = agent.config?.tools || []
+  return tools.some(
+    (t: FunctionTool) => t.enabled !== false && isCalendarTool(t.name)
+  )
+}
+
+/**
+ * Get enabled calendar tool names from agent config
+ */
+function getEnabledCalendarToolNames(agent: AIAgent): string[] {
+  const tools = agent.config?.tools || []
+  return tools
+    .filter((t: FunctionTool) => t.enabled !== false && isCalendarTool(t.name))
+    .map((t: FunctionTool) => t.name)
+}
+
+/**
+ * Check if agent has any tools that need MCP registration (custom functions OR calendar tools)
+ */
+function hasToolsForMCP(agent: AIAgent): boolean {
+  return hasCustomFunctionTools(agent) || hasCalendarTools(agent)
+}
+
+/**
+ * Get custom function tools from agent (excluding calendar tools)
  */
 function getCustomFunctionTools(agent: AIAgent): FunctionTool[] {
   const tools = agent.config?.tools || []
   return tools.filter(
     (t: FunctionTool) => t.enabled !== false && 
-    (t.tool_type === 'function' || t.tool_type === 'custom_function')
+    (t.tool_type === 'function' || t.tool_type === 'custom_function') &&
+    !isCalendarTool(t.name) // Exclude calendar tools
   )
 }
 
 /**
- * Register agent's custom tools with MCP server
+ * Register agent's tools with MCP server
+ * This includes both custom function tools AND calendar tools
  * This must be called before syncing to Retell so the MCP server knows about the tools
  */
 async function registerToolsWithMCP(
@@ -171,51 +206,69 @@ async function registerToolsWithMCP(
     return { success: true } // Not an error, just not configured
   }
 
-  // Check if agent has custom function tools
-  if (!hasCustomFunctionTools(agent)) {
-    log.debug("Agent has no custom function tools, skipping MCP registration")
+  // Check if agent has any tools that need MCP registration
+  if (!hasToolsForMCP(agent)) {
+    log.debug("Agent has no tools for MCP, skipping registration")
     return { success: true }
   }
 
-  const customTools = getCustomFunctionTools(agent)
-  log.info("Registering custom tools with MCP", { 
-    agentId: agent.id, 
-    toolCount: customTools.length 
-  })
-
-  // Convert tools to MCP format
-  const defaultWebhookUrl = agent.config?.tools_server_url
   const mcpTools: MCPToolInput[] = []
+  const webhookUrl = getToolExecutionWebhookUrl()
 
-  // DEBUG: Log the tools being converted
-  log.info("DEBUG: Converting custom tools to MCP format", {
-    toolCount: customTools.length,
-    tools: customTools.map(t => ({
-      name: t.name,
-      parameters: t.parameters,
-      hasProperties: !!t.parameters?.properties,
-      propertyCount: t.parameters?.properties ? Object.keys(t.parameters.properties).length : 0,
-    }))
-  })
+  // ========================================================================
+  // 1. Add custom function tools (user-defined tools with external webhooks)
+  // ========================================================================
+  const customTools = getCustomFunctionTools(agent)
+  if (customTools.length > 0) {
+    log.info("Processing custom function tools", { 
+      agentId: agent.id, 
+      toolCount: customTools.length 
+    })
 
-  for (const tool of customTools) {
-    const mcpTool = convertToMCPTool(tool, defaultWebhookUrl)
-    if (mcpTool) {
-      mcpTools.push(mcpTool)
+    const defaultWebhookUrl = agent.config?.tools_server_url
+
+    for (const tool of customTools) {
+      const mcpTool = convertToMCPTool(tool, defaultWebhookUrl)
+      if (mcpTool) {
+        mcpTools.push(mcpTool)
+      }
     }
   }
 
-  // DEBUG: Log the converted MCP tools
-  log.info("DEBUG: Converted MCP tools", {
-    toolCount: mcpTools.length,
-    tools: mcpTools.map(t => ({
-      name: t.name,
-      parameters: t.parameters,
-    }))
+  // ========================================================================
+  // 2. Add calendar tools (built-in tools handled by MCP execute endpoint)
+  // ========================================================================
+  const enabledCalendarToolNames = getEnabledCalendarToolNames(agent)
+  if (enabledCalendarToolNames.length > 0) {
+    log.info("Processing calendar tools", { 
+      agentId: agent.id, 
+      calendarTools: enabledCalendarToolNames 
+    })
+
+    // Get calendar tools in MCP format
+    // These tools point to our MCP execute endpoint which handles them internally
+    const calendarMCPTools = getEnabledCalendarToolsForMCP(enabledCalendarToolNames, webhookUrl)
+    mcpTools.push(...calendarMCPTools)
+    
+    log.info("Added calendar tools to MCP registration", {
+      calendarToolCount: calendarMCPTools.length,
+      calendarToolNames: calendarMCPTools.map(t => t.name)
+    })
+  }
+
+  // ========================================================================
+  // 3. Register all tools with MCP server
+  // ========================================================================
+  log.info("Registering tools with MCP", {
+    agentId: agent.id,
+    totalToolCount: mcpTools.length,
+    customToolCount: customTools.length,
+    calendarToolCount: enabledCalendarToolNames.length,
+    toolNames: mcpTools.map(t => t.name)
   })
 
   if (mcpTools.length === 0) {
-    log.warn("No valid custom tools to register (missing webhook URLs?)")
+    log.warn("No valid tools to register")
     return { success: true }
   }
 
@@ -235,7 +288,8 @@ async function registerToolsWithMCP(
 
     log.info("Successfully registered tools with MCP", { 
       agentId: agent.id,
-      toolsCount: mcpTools.length 
+      toolsCount: mcpTools.length,
+      toolNames: mcpTools.map(t => t.name)
     })
     return { success: true }
   } catch (error) {
@@ -482,8 +536,8 @@ export async function safeRetellSync(
 
         log.info("Agent created successfully", { agentId: agentResponse.data.agent_id })
 
-        // Step 3: Fetch and add MCP tools (if MCP is configured)
-        if (hasCustomFunctionTools(agent)) {
+        // Step 3: Fetch and add MCP tools (if MCP is configured and agent has tools)
+        if (hasToolsForMCP(agent)) {
           await addMCPToolsToLLM(
             agentResponse.data.agent_id,
             llmId,
@@ -553,8 +607,8 @@ export async function safeRetellSync(
           return await safeRetellSync(agent, "create")
         }
 
-        // Step 3: Update MCP tools (if agent has custom function tools)
-        if (hasCustomFunctionTools(agent) && config.retell_llm_id) {
+        // Step 3: Update MCP tools (if agent has tools for MCP)
+        if (hasToolsForMCP(agent) && config.retell_llm_id) {
           await addMCPToolsToLLM(
             agent.external_agent_id,
             config.retell_llm_id,
@@ -638,7 +692,7 @@ export async function safeRetellSync(
         }
 
         // Step 3: Update MCP tools if agent has external_agent_id
-        if (hasCustomFunctionTools(agent) && agent.external_agent_id) {
+        if (hasToolsForMCP(agent) && agent.external_agent_id) {
           await addMCPToolsToLLM(
             agent.external_agent_id,
             toolsConfig.retell_llm_id,

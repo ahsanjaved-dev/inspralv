@@ -95,6 +95,28 @@ const SLOT_DURATIONS = [
   { value: 120, label: "2 hours" },
 ]
 
+const MIN_NOTICE_OPTIONS = [
+  { value: 0, label: "No minimum (allow immediate bookings)" },
+  { value: 1, label: "1 hour before" },
+  { value: 2, label: "2 hours before" },
+  { value: 4, label: "4 hours before" },
+  { value: 8, label: "8 hours before" },
+  { value: 12, label: "12 hours before" },
+  { value: 24, label: "24 hours (1 day) before" },
+  { value: 48, label: "48 hours (2 days) before" },
+  { value: 72, label: "72 hours (3 days) before" },
+]
+
+const MAX_ADVANCE_OPTIONS = [
+  { value: 7, label: "1 week" },
+  { value: 14, label: "2 weeks" },
+  { value: 30, label: "1 month" },
+  { value: 60, label: "2 months" },
+  { value: 90, label: "3 months" },
+  { value: 180, label: "6 months" },
+  { value: 365, label: "1 year" },
+]
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -196,7 +218,7 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
       preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
       preferred_hours_start: "09:00",
       preferred_hours_end: "17:00",
-      min_notice_hours: 1,
+      min_notice_hours: 0, // Allow immediate bookings by default
       max_advance_days: 60,
     },
   })
@@ -569,45 +591,68 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
           </div>
 
           {/* Booking Constraints */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Minimum Notice (hours)</Label>
-              <Controller
-                name="min_notice_hours"
-                control={form.control}
-                render={({ field }) => (
-                  <Input
-                    type="number"
-                    min={0}
-                    max={168}
-                    {...field}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
-                  />
-                )}
-              />
-              <p className="text-xs text-muted-foreground">
-                How far in advance appointments must be booked
-              </p>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Settings className="h-4 w-4" />
+              Booking Rules
             </div>
+            
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Minimum Advance Notice</Label>
+                <Controller
+                  name="min_notice_hours"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Select
+                      value={String(field.value)}
+                      onValueChange={(v) => field.onChange(Number(v))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MIN_NOTICE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={String(opt.value)}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Earliest time before an appointment can be booked
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <Label>Maximum Advance (days)</Label>
-              <Controller
-                name="max_advance_days"
-                control={form.control}
-                render={({ field }) => (
-                  <Input
-                    type="number"
-                    min={1}
-                    max={365}
-                    {...field}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
-                  />
-                )}
-              />
-              <p className="text-xs text-muted-foreground">
-                How far in advance appointments can be booked
-              </p>
+              <div className="space-y-2">
+                <Label>Maximum Advance Booking</Label>
+                <Controller
+                  name="max_advance_days"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Select
+                      value={String(field.value)}
+                      onValueChange={(v) => field.onChange(Number(v))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MAX_ADVANCE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={String(opt.value)}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Furthest time in advance an appointment can be booked
+                </p>
+              </div>
             </div>
           </div>
 

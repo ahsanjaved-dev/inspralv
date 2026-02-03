@@ -26,6 +26,120 @@ import type {
 } from './types'
 
 // =============================================================================
+// FLEXIBLE APPOINTMENT SEARCH
+// =============================================================================
+
+interface FlexibleSearchParams {
+  email?: string
+  name?: string
+  date?: string  // YYYY-MM-DD
+  time?: string  // HH:MM
+}
+
+/**
+ * Flexibly search for appointments matching 2+ of: email, date, time
+ * Status is always 'scheduled'
+ * Returns best matching appointment(s)
+ */
+async function findAppointmentFlexible(
+  supabase: ReturnType<typeof createAdminClient>,
+  params: FlexibleSearchParams
+): Promise<(Appointment & { agent_calendar_configs: AgentCalendarConfig & { google_calendar_credentials: GoogleCalendarCredential } })[]> {
+  const { email, name, date, time } = params
+  
+  // Get all scheduled appointments, we'll score them in memory
+  let query = supabase
+    .from('appointments')
+    .select('*, agent_calendar_configs!calendar_config_id(*, google_calendar_credentials!google_credential_id(*))')
+    .eq('status', 'scheduled')
+    .order('scheduled_start', { ascending: true })
+    .limit(50) // Reasonable limit
+  
+  // If email provided, filter by it (most reliable identifier)
+  if (email) {
+    query = query.eq('attendee_email', email)
+  }
+  
+  // If name provided, do fuzzy match
+  if (name) {
+    query = query.ilike('attendee_name', `%${name}%`)
+  }
+
+  const { data: appointments, error } = await query
+
+  if (error || !appointments || appointments.length === 0) {
+    return []
+  }
+
+  // Score each appointment based on how many criteria match
+  const scoredAppointments = appointments.map(apt => {
+    let score = 1 // Base score for status='scheduled' match
+    
+    // Email match
+    if (email && apt.attendee_email?.toLowerCase() === email.toLowerCase()) {
+      score += 2
+    }
+    
+    // Name match
+    if (name && apt.attendee_name?.toLowerCase().includes(name.toLowerCase())) {
+      score += 1
+    }
+    
+    // Date match (check if appointment falls on the given date)
+    if (date) {
+      const aptDate = new Date(apt.scheduled_start).toISOString().split('T')[0]
+      // Exact date match
+      if (aptDate === date) {
+        score += 2
+      }
+      // Same month/day different year (common AI mistake)
+      else if (aptDate?.slice(5) === date.slice(5)) {
+        score += 1 // Partial credit for month/day match
+      }
+    }
+    
+    // Time match (within 1 hour tolerance)
+    if (time && apt.scheduled_start) {
+      const aptTime = new Date(apt.scheduled_start)
+      const timeParts = time.split(':').map(Number)
+      const targetHour = timeParts[0] ?? 0
+      const targetMin = timeParts[1] ?? 0
+      const aptHour = aptTime.getHours()
+      const aptMin = aptTime.getMinutes()
+      
+      // Exact time match
+      if (aptHour === targetHour && aptMin === targetMin) {
+        score += 2
+      }
+      // Within 1 hour
+      else if (Math.abs(aptHour - targetHour) <= 1) {
+        score += 1
+      }
+    }
+    
+    return { appointment: apt, score }
+  })
+
+  // Filter to only those with score >= 3 (at least 2 criteria matched beyond status)
+  // Sort by score descending, then by date ascending
+  const filtered = scoredAppointments
+    .filter(s => s.score >= 3)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      return new Date(a.appointment.scheduled_start).getTime() - new Date(b.appointment.scheduled_start).getTime()
+    })
+    .map(s => s.appointment as Appointment & { 
+      agent_calendar_configs: AgentCalendarConfig & { 
+        google_calendar_credentials: GoogleCalendarCredential 
+      } 
+    })
+
+  console.log(`[AppointmentSearch] Found ${filtered.length} matching appointments (scored >= 3)`)
+  
+  return filtered
+}
+
+// =============================================================================
 // APPOINTMENT BOOKING
 // =============================================================================
 
@@ -185,30 +299,14 @@ export async function cancelAppointment(
   const supabase = createAdminClient()
 
   try {
-    // 1. Find the appointment
-    let query = supabase
-      .from('appointments')
-      .select('*, agent_calendar_configs!calendar_config_id(*, google_calendar_credentials!google_credential_id(*))')
-      .eq('agent_id', input.agentId)
-      .eq('status', 'scheduled')
-      .eq('attendee_email', input.attendeeEmail)
+    // 1. Find appointment using flexible search (matches 2+ of: email, date, time, name)
+    const appointments = await findAppointmentFlexible(supabase, {
+      email: input.attendeeEmail,
+      name: input.attendeeName,
+      date: input.appointmentDate,
+    })
 
-    if (input.attendeeName) {
-      query = query.ilike('attendee_name', `%${input.attendeeName}%`)
-    }
-
-    if (input.appointmentDate) {
-      const dateStart = new Date(input.appointmentDate + 'T00:00:00').toISOString()
-      const dateEnd = new Date(input.appointmentDate + 'T23:59:59').toISOString()
-      query = query.gte('scheduled_start', dateStart).lte('scheduled_start', dateEnd)
-    }
-
-    // Order by most recent first
-    query = query.order('scheduled_start', { ascending: true }).limit(1)
-
-    const { data: appointments, error: findError } = await query
-
-    if (findError || !appointments || appointments.length === 0) {
+    if (appointments.length === 0) {
       return {
         success: false,
         notFound: true,
@@ -216,11 +314,7 @@ export async function cancelAppointment(
       }
     }
 
-    const appointment = appointments[0] as Appointment & {
-      agent_calendar_configs: AgentCalendarConfig & {
-        google_calendar_credentials: GoogleCalendarCredential
-      }
-    }
+    const appointment = appointments[0]!
 
     const config = appointment.agent_calendar_configs
     const credential = config.google_calendar_credentials
@@ -307,29 +401,14 @@ export async function rescheduleAppointment(
   const supabase = createAdminClient()
 
   try {
-    // 1. Find the existing appointment
-    let query = supabase
-      .from('appointments')
-      .select('*, agent_calendar_configs!calendar_config_id(*, google_calendar_credentials!google_credential_id(*))')
-      .eq('agent_id', input.agentId)
-      .eq('status', 'scheduled')
-      .eq('attendee_email', input.attendeeEmail)
+    // 1. Find appointment using flexible search (matches 2+ of: email, date, time, name)
+    const appointments = await findAppointmentFlexible(supabase, {
+      email: input.attendeeEmail,
+      name: input.attendeeName,
+      date: input.currentAppointmentDate,
+    })
 
-    if (input.attendeeName) {
-      query = query.ilike('attendee_name', `%${input.attendeeName}%`)
-    }
-
-    if (input.currentAppointmentDate) {
-      const dateStart = new Date(input.currentAppointmentDate + 'T00:00:00').toISOString()
-      const dateEnd = new Date(input.currentAppointmentDate + 'T23:59:59').toISOString()
-      query = query.gte('scheduled_start', dateStart).lte('scheduled_start', dateEnd)
-    }
-
-    query = query.order('scheduled_start', { ascending: true }).limit(1)
-
-    const { data: appointments, error: findError } = await query
-
-    if (findError || !appointments || appointments.length === 0) {
+    if (appointments.length === 0) {
       return {
         success: false,
         notFound: true,
@@ -337,11 +416,7 @@ export async function rescheduleAppointment(
       }
     }
 
-    const originalAppointment = appointments[0] as Appointment & {
-      agent_calendar_configs: AgentCalendarConfig & {
-        google_calendar_credentials: GoogleCalendarCredential
-      }
-    }
+    const originalAppointment = appointments[0]!
 
     const config = originalAppointment.agent_calendar_configs
     const credential = config.google_calendar_credentials
