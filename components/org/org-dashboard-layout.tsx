@@ -161,7 +161,10 @@ export function OrgDashboardLayout({
             <nav className="space-y-1 px-3">
               {navigation.map((item) => {
                 const Icon = item.icon
-                const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+                // For /org (Overview), only match exact path to avoid highlighting when on sub-routes
+                const isActive = item.href === "/org" 
+                  ? pathname === "/org"
+                  : pathname === item.href || pathname.startsWith(item.href + "/")
 
                 return (
                   <Link
