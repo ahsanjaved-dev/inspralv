@@ -265,3 +265,59 @@ export function generateVapiCalendarTools(serverUrl: string): Array<{
   return CALENDAR_TOOLS.map((tool) => calendarToolToVapiFormat(tool, serverUrl))
 }
 
+// =============================================================================
+// RETELL/MCP TOOL FORMAT CONVERSION
+// =============================================================================
+
+import type { MCPToolInput, ToolParameters } from '@/lib/integrations/mcp'
+
+/**
+ * MCP Tool Input format for Retell integration
+ * Re-export for backwards compatibility
+ */
+export type MCPCalendarToolInput = MCPToolInput
+
+/**
+ * Convert calendar tool to MCP format for Retell
+ * These tools will be registered with the MCP server and executed via /api/webhooks/mcp/execute
+ */
+export function calendarToolToMCPFormat(
+  tool: Omit<FunctionTool, 'id'>,
+  webhookUrl: string
+): MCPToolInput {
+  return {
+    name: tool.name,
+    description: tool.description || '',
+    parameters: (tool.parameters as ToolParameters) || {
+      type: 'object',
+      properties: {},
+    },
+    webhook_url: webhookUrl,
+    enabled: true,
+  }
+}
+
+/**
+ * Generate all calendar tools in MCP format for Retell
+ * @param webhookUrl - The MCP execute webhook URL (e.g., /api/webhooks/mcp/execute)
+ * @returns Array of calendar tools in MCP format
+ */
+export function generateMCPCalendarTools(webhookUrl: string): MCPToolInput[] {
+  return CALENDAR_TOOLS.map((tool) => calendarToolToMCPFormat(tool, webhookUrl))
+}
+
+/**
+ * Get calendar tools for MCP registration based on enabled tool names
+ * @param enabledTools - Array of tool names that are enabled for this agent
+ * @param webhookUrl - The MCP execute webhook URL
+ * @returns Array of enabled calendar tools in MCP format
+ */
+export function getEnabledCalendarToolsForMCP(
+  enabledTools: string[],
+  webhookUrl: string
+): MCPToolInput[] {
+  return CALENDAR_TOOLS
+    .filter((tool) => enabledTools.includes(tool.name))
+    .map((tool) => calendarToolToMCPFormat(tool, webhookUrl))
+}
+

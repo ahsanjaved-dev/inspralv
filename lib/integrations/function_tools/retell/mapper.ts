@@ -12,8 +12,6 @@ import type {
   RetellEndCallTool,
   RetellTransferCallTool,
   RetellPressDigitsTool,
-  RetellCheckAvailabilityCalTool,
-  RetellBookAppointmentCalTool,
   RetellSendSmsTool,
 } from './types'
 
@@ -80,44 +78,6 @@ function mapToPressDigitsTool(tool: FunctionTool): RetellPressDigitsTool {
 }
 
 /**
- * Map to Check Availability Cal Tool
- */
-function mapToCheckAvailabilityCalTool(tool: FunctionTool): RetellCheckAvailabilityCalTool | null {
-  if (!tool.cal_api_key || !tool.event_type_id || !tool.timezone) {
-    console.warn('[RetellMapper] check_availability_cal requires cal_api_key, event_type_id, timezone')
-    return null
-  }
-
-  return {
-    type: 'check_availability_cal',
-    name: tool.name || 'check_availability',
-    description: tool.description || 'Check calendar availability.',
-    cal_api_key: tool.cal_api_key,
-    event_type_id: tool.event_type_id,
-    timezone: tool.timezone,
-  }
-}
-
-/**
- * Map to Book Appointment Cal Tool
- */
-function mapToBookAppointmentCalTool(tool: FunctionTool): RetellBookAppointmentCalTool | null {
-  if (!tool.cal_api_key || !tool.event_type_id || !tool.timezone) {
-    console.warn('[RetellMapper] book_appointment_cal requires cal_api_key, event_type_id, timezone')
-    return null
-  }
-
-  return {
-    type: 'book_appointment_cal',
-    name: tool.name || 'book_appointment',
-    description: tool.description || 'Book an appointment.',
-    cal_api_key: tool.cal_api_key,
-    event_type_id: tool.event_type_id,
-    timezone: tool.timezone,
-  }
-}
-
-/**
  * Map to Send SMS Tool
  */
 function mapToSendSmsTool(tool: FunctionTool): RetellSendSmsTool {
@@ -136,13 +96,14 @@ function mapToSendSmsTool(tool: FunctionTool): RetellSendSmsTool {
 /**
  * Maps an internal FunctionTool to Retell GeneralTool format.
  * 
- * Supports all Retell tool types:
+ * Supports Retell native tools:
  * - end_call: End the call
  * - transfer_call: Transfer to another number
  * - press_digit: Send DTMF tones
- * - check_availability_cal: Check Cal.com availability
- * - book_appointment_cal: Book on Cal.com
  * - send_sms: Send SMS message
+ * 
+ * Note: Calendar tools (book_appointment, cancel_appointment, reschedule_appointment)
+ * are handled via MCP server, not as native Retell tools.
  */
 export function mapFunctionToolToRetell(
   tool: FunctionTool,
@@ -171,20 +132,6 @@ export function mapFunctionToolToRetell(
   }
 
   // --------------------------------------------------------------------------
-  // Check Availability Cal
-  // --------------------------------------------------------------------------
-  if (toolType === 'check_availability_cal') {
-    return mapToCheckAvailabilityCalTool(tool)
-  }
-
-  // --------------------------------------------------------------------------
-  // Book Appointment Cal
-  // --------------------------------------------------------------------------
-  if (toolType === 'book_appointment_cal') {
-    return mapToBookAppointmentCalTool(tool)
-  }
-
-  // --------------------------------------------------------------------------
   // Send SMS
   // --------------------------------------------------------------------------
   if (toolType === 'send_sms' || toolType === 'smsSend') {
@@ -192,14 +139,16 @@ export function mapFunctionToolToRetell(
   }
 
   // --------------------------------------------------------------------------
-  // Unsupported tool type
+  // Unsupported tool type (skip silently for calendar tools handled via MCP)
   // --------------------------------------------------------------------------
-  console.warn(
-    `[RetellMapper] Tool type '${toolType}' is not supported by Retell. ` +
-    `Supported types: end_call, transfer_call, press_digit, check_availability_cal, ` +
-    `book_appointment_cal, send_sms. ` +
-    `Tool name: '${tool.name}'. Skipping.`
-  )
+  const calendarTools = ['book_appointment', 'cancel_appointment', 'reschedule_appointment']
+  if (!calendarTools.includes(toolType)) {
+    console.warn(
+      `[RetellMapper] Tool type '${toolType}' is not a native Retell tool. ` +
+      `Native types: end_call, transfer_call, press_digit, send_sms. ` +
+      `Tool name: '${tool.name}'. Skipping.`
+    )
+  }
   return null
 }
 
@@ -210,11 +159,11 @@ export function mapFunctionToolToRetell(
 /**
  * Maps an array of FunctionTools to Retell format.
  * 
- * Maps ALL supported tool types including:
- * - Native Retell tools: end_call, transfer_call, press_digit, check_availability_cal, 
- *   book_appointment_cal, send_sms
+ * Maps native Retell tool types:
+ * - end_call, transfer_call, press_digit, send_sms
  * 
  * Filters out disabled tools and null results.
+ * Note: Calendar tools are handled via MCP, not as native tools.
  */
 export function mapFunctionToolsToRetell(
   tools: FunctionTool[],
@@ -236,7 +185,7 @@ export function mapFunctionToolsToRetell(
 // ============================================================================
 
 /**
- * All supported Retell tool types
+ * All supported Retell native tool types
  */
 export const SUPPORTED_RETELL_TOOL_TYPES = [
   'end_call',
@@ -246,8 +195,6 @@ export const SUPPORTED_RETELL_TOOL_TYPES = [
   'press_digit',
   'press_digits',
   'dtmf',
-  'check_availability_cal',
-  'book_appointment_cal',
   'send_sms',
   'smsSend',
 ] as const
@@ -282,12 +229,6 @@ export function validateToolForRetell(tool: FunctionTool): {
     if (!tool.transfer_destination?.number) {
       errors.push('Transfer destination number is required')
     }
-  }
-
-  if (toolType === 'check_availability_cal' || toolType === 'book_appointment_cal') {
-    if (!tool.cal_api_key) errors.push('Cal.com API key is required')
-    if (!tool.event_type_id) errors.push('Event type ID is required')
-    if (!tool.timezone) errors.push('Timezone is required')
   }
 
   return {

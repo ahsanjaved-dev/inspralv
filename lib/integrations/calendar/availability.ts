@@ -19,6 +19,111 @@ import type {
 const DAYS_OF_WEEK = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'] as const
 
 // =============================================================================
+// HELPERS
+// =============================================================================
+
+/**
+ * Get timezone offset in minutes for a given timezone
+ * Returns the offset to ADD to UTC to get local time
+ */
+function getTimezoneOffsetMinutes(timezone: string): number {
+  const now = new Date()
+  // Get the time in UTC
+  const utcDate = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
+  // Get the time in target timezone  
+  const tzDate = new Date(now.toLocaleString('en-US', { timeZone: timezone }))
+  // Difference in minutes
+  return (tzDate.getTime() - utcDate.getTime()) / (1000 * 60)
+}
+
+/**
+ * Create a Date object for a specific date/time in a specific timezone
+ * This ensures the Date represents the correct moment in time
+ */
+function createDateInTimezone(
+  dateStr: string, // YYYY-MM-DD
+  hour: number,
+  minute: number,
+  timezone: string
+): Date {
+  // Create a date string in ISO format with the target timezone
+  // We'll create it as if it's in UTC, then adjust for timezone
+  const dateParts = dateStr.split('-').map(Number)
+  const year = dateParts[0] ?? 2000
+  const month = dateParts[1] ?? 1
+  const day = dateParts[2] ?? 1
+  
+  // Create a date object using the date formatter approach
+  // This is the most reliable way to handle timezones in vanilla JS
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  
+  // Start with a rough guess - create date in local time
+  const roughDate = new Date(year, month - 1, day, hour, minute, 0, 0)
+  
+  // Get what this date looks like in the target timezone
+  const parts = formatter.formatToParts(roughDate)
+  const getPart = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0')
+  
+  const tzHour = getPart('hour')
+  const tzMinute = getPart('minute')
+  const tzDay = getPart('day')
+  
+  // Calculate the difference and adjust
+  const hourDiff = hour - tzHour
+  const minuteDiff = minute - tzMinute
+  const dayDiff = day - tzDay
+  
+  // Adjust the rough date by the differences
+  const adjusted = new Date(roughDate)
+  adjusted.setDate(adjusted.getDate() + dayDiff)
+  adjusted.setHours(adjusted.getHours() + hourDiff)
+  adjusted.setMinutes(adjusted.getMinutes() + minuteDiff)
+  
+  return adjusted
+}
+
+/**
+ * Create start and end of day for a date string in a specific timezone
+ */
+function getDayBoundsInTimezone(date: string, timezone: string): { dayStart: Date; dayEnd: Date } {
+  return {
+    dayStart: createDateInTimezone(date, 0, 0, timezone),
+    dayEnd: createDateInTimezone(date, 23, 59, timezone),
+  }
+}
+
+// Legacy helpers for backwards compatibility
+function parseDateString(date: string): { year: number; month: number; day: number } {
+  const parts = date.split('-').map(Number)
+  const year = parts[0] ?? 2000
+  const month = parts[1] ?? 1
+  const day = parts[2] ?? 1
+  return { year, month: month - 1, day }
+}
+
+function createLocalDate(date: string, hour = 0, minute = 0): Date {
+  const { year, month, day } = parseDateString(date)
+  return new Date(year, month, day, hour, minute, 0, 0)
+}
+
+function getDayBounds(date: string): { dayStart: Date; dayEnd: Date } {
+  const { year, month, day } = parseDateString(date)
+  return {
+    dayStart: new Date(year, month, day, 0, 0, 0, 0),
+    dayEnd: new Date(year, month, day, 23, 59, 59, 999),
+  }
+}
+
+// =============================================================================
 // AVAILABILITY CHECKING
 // =============================================================================
 
@@ -31,7 +136,9 @@ export async function getAvailableSlots(
   date: string // YYYY-MM-DD
 ): Promise<AvailabilityResponse> {
   const timezone = config.timezone
-  const dateObj = new Date(date + 'T00:00:00')
+  
+  // Parse date in the config timezone
+  const dateObj = createDateInTimezone(date, 12, 0, timezone) // noon to avoid day boundary issues
   const dayOfWeek = DAYS_OF_WEEK[dateObj.getDay()]!
 
   // Check if this day is in preferred days
@@ -41,9 +148,8 @@ export async function getAvailableSlots(
   const [prefStartHour, prefStartMin] = parseTime(config.preferred_hours_start)
   const [prefEndHour, prefEndMin] = parseTime(config.preferred_hours_end)
 
-  // Create time range for the day
-  const dayStart = new Date(date + 'T00:00:00')
-  const dayEnd = new Date(date + 'T23:59:59')
+  // Create time range for the day (in config timezone)
+  const { dayStart, dayEnd } = getDayBoundsInTimezone(date, timezone)
 
   // Fetch existing events for this day
   const eventsResult = await getEvents(accessToken, config.calendar_id, {
@@ -55,16 +161,13 @@ export async function getAvailableSlots(
 
   const existingEvents = eventsResult.success ? eventsResult.data || [] : []
 
-  // Generate all possible slots
+  // Generate all possible slots (in config timezone)
   const allSlots: TimeSlot[] = []
   const preferredSlots: TimeSlot[] = []
 
-  // Start from preferred hours start or beginning of day
-  let currentTime = new Date(date)
-  currentTime.setHours(prefStartHour, prefStartMin, 0, 0)
-
-  const endOfPreferred = new Date(date)
-  endOfPreferred.setHours(prefEndHour, prefEndMin, 0, 0)
+  // Start from preferred hours start (in config timezone)
+  let currentTime = createDateInTimezone(date, prefStartHour, prefStartMin, timezone)
+  const endOfPreferred = createDateInTimezone(date, prefEndHour, prefEndMin, timezone)
 
   // Generate slots within preferred hours
   while (currentTime < endOfPreferred) {
@@ -74,7 +177,8 @@ export async function getAvailableSlots(
     if (slotEnd > endOfPreferred) break
 
     const isAvailable = !isSlotBooked(currentTime, slotEnd, existingEvents)
-    const isMinNoticeOk = checkMinNotice(currentTime, config.min_notice_hours)
+    // Skip min notice check if min_notice_hours is 0
+    const isMinNoticeOk = config.min_notice_hours === 0 || checkMinNotice(currentTime, config.min_notice_hours)
     
     const slot: TimeSlot = {
       start: new Date(currentTime),
@@ -111,15 +215,24 @@ export async function checkSlotAvailability(
 ): Promise<SlotCheckResponse> {
   const timezone = config.timezone
   
-  // Parse requested time
+  // Parse requested time and create slot start/end in config timezone
   const [reqHour, reqMin] = parseTime(time)
-  const slotStart = new Date(date)
-  slotStart.setHours(reqHour, reqMin, 0, 0)
-  
+  const slotStart = createDateInTimezone(date, reqHour, reqMin, timezone)
   const slotEnd = new Date(slotStart.getTime() + config.slot_duration_minutes * 60 * 1000)
 
-  // Validate against min notice
-  if (!checkMinNotice(slotStart, config.min_notice_hours)) {
+  // Check if date is in the past (more than 1 hour ago to avoid timezone edge cases)
+  const now = new Date()
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
+  if (slotStart < oneHourAgo) {
+    return {
+      available: false,
+      requestedSlot: { start: slotStart, end: slotEnd, available: false },
+      reason: `The requested date ${date} is in the past. Please provide a future date.`,
+    }
+  }
+
+  // Validate against min notice (only if min_notice_hours > 0)
+  if (config.min_notice_hours > 0 && !checkMinNotice(slotStart, config.min_notice_hours)) {
     // Get alternative slots
     const availability = await getAvailableSlots(accessToken, config, date)
     const alternativeSlots = availability.slots.filter(s => s.available).slice(0, 5)
@@ -158,15 +271,13 @@ export async function checkSlotAvailability(
     }
   }
 
-  // Check preferred hours
+  // Check preferred hours (must use timezone-aware comparison)
   const [prefStartHour, prefStartMin] = parseTime(config.preferred_hours_start)
   const [prefEndHour, prefEndMin] = parseTime(config.preferred_hours_end)
   
-  const prefStart = new Date(slotStart)
-  prefStart.setHours(prefStartHour, prefStartMin, 0, 0)
-  
-  const prefEnd = new Date(slotStart)
-  prefEnd.setHours(prefEndHour, prefEndMin, 0, 0)
+  // Create preferred time bounds in the agent's timezone
+  const prefStart = createDateInTimezone(date, prefStartHour, prefStartMin, timezone)
+  const prefEnd = createDateInTimezone(date, prefEndHour, prefEndMin, timezone)
 
   if (slotStart < prefStart || slotEnd > prefEnd) {
     const availability = await getAvailableSlots(accessToken, config, date)
@@ -181,8 +292,7 @@ export async function checkSlotAvailability(
   }
 
   // Check for conflicts with existing events
-  const dayStart = new Date(date + 'T00:00:00')
-  const dayEnd = new Date(date + 'T23:59:59')
+  const { dayStart, dayEnd } = getDayBoundsInTimezone(date, timezone)
 
   const eventsResult = await getEvents(accessToken, config.calendar_id, {
     timeMin: dayStart.toISOString(),

@@ -59,7 +59,18 @@ export function encrypt(plaintext: string): string {
 }
 
 /**
+ * Custom error for decryption failures (allows caller to handle appropriately)
+ */
+export class DecryptionError extends Error {
+  constructor(message: string, public readonly isKeyMismatch: boolean = false) {
+    super(message)
+    this.name = 'DecryptionError'
+  }
+}
+
+/**
  * Decrypt a string value
+ * @throws DecryptionError if decryption fails (e.g., key mismatch)
  */
 export function decrypt(encryptedValue: string): string {
   if (!encryptedValue) return ''
@@ -75,6 +86,12 @@ export function decrypt(encryptedValue: string): string {
     
     const [saltHex, ivHex, authTagHex, encrypted] = parts as [string, string, string, string]
     
+    // Validate hex strings before parsing
+    if (!saltHex || !ivHex || !authTagHex || !encrypted) {
+      console.warn('[CalendarEncryption] Malformed encrypted value')
+      throw new DecryptionError('Malformed encrypted value', false)
+    }
+    
     const key = getEncryptionKey()
     const iv = Buffer.from(ivHex, 'hex')
     const authTag = Buffer.from(authTagHex, 'hex')
@@ -87,8 +104,23 @@ export function decrypt(encryptedValue: string): string {
     
     return decrypted
   } catch (error) {
-    console.error('[CalendarEncryption] Decryption failed:', error)
-    throw new Error('Failed to decrypt value')
+    // Check if this is an auth tag / key mismatch error
+    const isKeyMismatch = error instanceof Error && 
+      (error.message.includes('Unsupported state or unable to authenticate data') ||
+       error.message.includes('auth tag'))
+    
+    if (isKeyMismatch) {
+      console.error('[CalendarEncryption] Decryption failed - encryption key mismatch. Credentials may need to be re-saved.')
+    } else {
+      console.error('[CalendarEncryption] Decryption failed:', error)
+    }
+    
+    throw new DecryptionError(
+      isKeyMismatch 
+        ? 'Encryption key mismatch - credentials need to be re-saved'
+        : 'Failed to decrypt value',
+      isKeyMismatch
+    )
   }
 }
 

@@ -58,11 +58,15 @@ const VAPI_AVAILABLE_TOOLS = [
 ]
 
 // Retell available tools
+// Note: book_appointment, cancel_appointment, reschedule_appointment are our custom calendar tools
+// that work via MCP integration (same as VAPI but executed through MCP server)
 const RETELL_AVAILABLE_TOOLS = [
-  "check_availability_cal",
-  "book_appointment_cal",
   "end_call",
   "transfer_call",
+  // Custom calendar tools (via MCP - Google Calendar)
+  "book_appointment",
+  "cancel_appointment",
+  "reschedule_appointment",
 ]
 
 // ============================================================================
@@ -123,10 +127,6 @@ function createToolFromDefinition(def: BuiltInToolDefinition): FunctionTool {
       return { ...baseTool, name: "end_call" }
     case "transfer_call":
       return { ...baseTool, transfer_destination: { type: "predefined", number: "" } }
-    case "book_appointment_cal":
-      return { ...baseTool, cal_api_key: "", event_type_id: undefined, timezone: "" }
-    case "check_availability_cal":
-      return { ...baseTool, cal_api_key: "", event_type_id: undefined, timezone: "" }
     case "transferCall":
       return { ...baseTool, destinations: [] }
     case "endCall":

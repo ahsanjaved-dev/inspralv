@@ -8,7 +8,8 @@ import {
   getValidAccessToken, 
   createCalendar,
   decrypt,
-  encrypt
+  encrypt,
+  DecryptionError
 } from './index'
 
 export interface SetupAgentCalendarParams {
@@ -55,7 +56,7 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
     preferred_days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'],
     preferred_hours_start = '09:00',
     preferred_hours_end = '17:00',
-    min_notice_hours = 1,
+    min_notice_hours = 0, // Allow immediate bookings by default
     max_advance_days = 60,
     usePrimaryCalendar = false,
   } = params
@@ -102,13 +103,37 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
       }
     }
 
-    // 3. Get valid access token
-    const tokenResult = await getValidAccessToken(
-      {
+    // 3. Decrypt credentials
+    let decryptedCredentials: {
+      access_token: string
+      refresh_token: string
+      client_secret: string
+    }
+
+    try {
+      decryptedCredentials = {
         access_token: credential.access_token ? decrypt(credential.access_token) : '',
         refresh_token: credential.refresh_token ? decrypt(credential.refresh_token) : '',
-        client_id: credential.client_id,
         client_secret: credential.client_secret ? decrypt(credential.client_secret) : '',
+      }
+    } catch (error) {
+      if (error instanceof DecryptionError && error.isKeyMismatch) {
+        console.error(`[CalendarSetup] Encryption key mismatch - credentials need to be re-saved`)
+        return {
+          success: false,
+          error: 'Google Calendar credentials are invalid. Please disconnect and reconnect Google Calendar in Organization > Integrations.'
+        }
+      }
+      throw error
+    }
+
+    // 4. Get valid access token
+    const tokenResult = await getValidAccessToken(
+      {
+        access_token: decryptedCredentials.access_token,
+        refresh_token: decryptedCredentials.refresh_token,
+        client_id: credential.client_id,
+        client_secret: decryptedCredentials.client_secret,
         token_expiry: credential.token_expiry,
       },
       async (newToken, expiry) => {
