@@ -27,13 +27,13 @@ import {
   useAddPartnerDomain,
   useDeletePartnerDomain,
 } from "@/lib/hooks/use-super-admin-partners"
+import { useWhiteLabelVariants } from "@/lib/hooks/use-white-label-variants"
 import {
   ArrowLeft,
   Loader2,
   Globe,
   Building2,
   Users,
-  Bot,
   Trash2,
   Plus,
   Check,
@@ -53,10 +53,29 @@ export default function PartnerDetailPage() {
 
   const { data: partner, isLoading, error } = useSuperAdminPartner(partnerId)
   const { data: workspacesData } = usePartnerWorkspaces(partnerId)
+  const { data: variants } = useWhiteLabelVariants(false)
   const updatePartner = useUpdatePartner()
   const deletePartner = useDeletePartner()
   const addDomain = useAddPartnerDomain()
   const deleteDomain = useDeletePartnerDomain()
+
+  // Helper to get plan display name from variant ID or plan_tier
+  const getPlanDisplayName = (variantId: string | null | undefined, planTier: string | null | undefined) => {
+    // First try to find by variant ID (preferred)
+    if (variantId) {
+      const variant = variants?.find((v) => v.id === variantId)
+      if (variant) return variant.name
+    }
+    // Fallback to plan_tier matching
+    if (planTier && planTier !== "partner") {
+      const variant = variants?.find(
+        (v) => v.slug.toLowerCase() === planTier.toLowerCase() || 
+               v.name.toLowerCase() === planTier.toLowerCase()
+      )
+      if (variant) return variant.name
+    }
+    return "No Plan"
+  }
 
   const [editMode, setEditMode] = useState(false)
   const [name, setName] = useState("")
@@ -164,7 +183,7 @@ export default function PartnerDetailPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">{partner.name}</h1>
             <p className="text-muted-foreground mt-1">
-              {partner.slug} • {partner.plan_tier}
+              {partner.slug} • {getPlanDisplayName(partner.white_label_variant_id, partner.plan_tier)}
               {partner.is_platform_partner && " • Platform Partner"}
             </p>
           </div>
@@ -173,14 +192,14 @@ export default function PartnerDetailPage() {
           {partner.is_platform_partner && (
             <Badge className="bg-primary/10 text-primary">Platform Partner</Badge>
           )}
-          <Badge variant="outline" className="text-foreground capitalize">
-            {partner.plan_tier}
+          <Badge variant="outline" className="text-foreground">
+            {getPlanDisplayName(partner.white_label_variant_id, partner.plan_tier)}
           </Badge>
         </div>
       </div>
 
-      {/* Stats Grid - Genius 4-column layout */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="bg-card border-border">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
@@ -202,8 +221,8 @@ export default function PartnerDetailPage() {
                 <p className="text-sm text-muted-foreground">Domains</p>
                 <p className="text-3xl font-bold tracking-tight text-foreground">{partner.partner_domains?.length || 0}</p>
               </div>
-              <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center">
-                <Globe className="w-6 h-6 text-secondary" />
+              <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <Globe className="w-6 h-6 text-emerald-500" />
               </div>
             </div>
           </CardContent>
@@ -218,24 +237,8 @@ export default function PartnerDetailPage() {
                   {workspaces.reduce((sum, w) => sum + (w.member_count || 0), 0)}
                 </p>
               </div>
-              <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
-                <Users className="w-6 h-6 text-accent-foreground" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Agents</p>
-                <p className="text-3xl font-bold tracking-tight text-foreground">
-                  {workspaces.reduce((sum, w) => sum + (w.agent_count || 0), 0)}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-full bg-chart-1/10 flex items-center justify-center">
-                <Bot className="w-6 h-6 text-chart-1" />
+              <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
+                <Users className="w-6 h-6 text-blue-500" />
               </div>
             </div>
           </CardContent>
@@ -445,8 +448,7 @@ export default function PartnerDetailPage() {
                 <thead>
                   <tr>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Workspace</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Members</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Agents</th>
+                    <th className="text-center py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Members</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Status</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Created</th>
                   </tr>
@@ -458,10 +460,9 @@ export default function PartnerDetailPage() {
                         <p className="text-foreground font-medium">{ws.name}</p>
                         <p className="text-xs text-muted-foreground">/{ws.slug}</p>
                       </td>
-                      <td className="py-3 px-4 text-foreground">{ws.member_count}</td>
-                      <td className="py-3 px-4 text-foreground">{ws.agent_count}</td>
+                      <td className="py-3 px-4 text-center text-foreground font-medium">{ws.member_count}</td>
                       <td className="py-3 px-4">
-                        <Badge variant="outline" className="text-secondary border-secondary/30">
+                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
                           {ws.status}
                         </Badge>
                       </td>

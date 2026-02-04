@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
@@ -11,43 +12,105 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { PartnerCard } from "@/components/super-admin/partner-card"
-import { CreatePartnerDialog } from "@/components/super-admin/create-partner-dialog"
 import { useSuperAdminPartners } from "@/lib/hooks/use-super-admin-partners"
-import { Plus, Search, Briefcase, Loader2 } from "lucide-react"
+import { useWhiteLabelVariants } from "@/lib/hooks/use-white-label-variants"
+import { Search, Briefcase, Loader2, Building2, Users, CheckCircle, Eye, FileText } from "lucide-react"
+import Link from "next/link"
 
 export default function SuperAdminPartnersPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [planFilter, setPlanFilter] = useState("all")
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
   const { data, isLoading, error } = useSuperAdminPartners({
     search: searchQuery || undefined,
     plan_tier: planFilter,
   })
 
+  // Fetch actual plan variants for filter dropdown
+  const { data: variants } = useWhiteLabelVariants(false)
+
   const partners = data?.data || []
+  const totalAgencies = data?.total || 0
+
+  // Calculate stats
+  const totalWorkspaces = partners.reduce((sum, p) => sum + (p.workspace_count || 0), 0)
+
+  // Helper to get plan display name from variant ID or plan_tier
+  const getPlanDisplayName = (variantId: string | null | undefined, planTier: string | null | undefined) => {
+    // First try to find by variant ID (preferred)
+    if (variantId) {
+      const variant = variants?.find((v) => v.id === variantId)
+      if (variant) return variant.name
+    }
+    // Fallback to plan_tier matching
+    if (planTier && planTier !== "partner") {
+      const variant = variants?.find(
+        (v) => v.slug.toLowerCase() === planTier.toLowerCase() || 
+               v.name.toLowerCase() === planTier.toLowerCase()
+      )
+      if (variant) return variant.name
+    }
+    return "No Plan"
+  }
 
   return (
     <div className="space-y-6">
-      {/* Page Header - Genius style */}
+      {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Agencies</h1>
           <p className="text-muted-foreground mt-1">
-            Create and manage agencies (organizations) requesting white label.
+            View and manage white-label agencies provisioned from partner requests.
           </p>
         </div>
-        <Button
-          onClick={() => setCreateDialogOpen(true)}
-          className="bg-primary hover:bg-primary/90"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Create Agency
+        <Button asChild variant="outline">
+          <Link href="/super-admin/partner-requests">
+            <FileText className="mr-2 h-4 w-4" />
+            Partner Requests
+          </Link>
         </Button>
       </div>
 
-      {/* Filters - Genius style */}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card className="bg-card border-border">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Agencies</p>
+                {isLoading ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mt-2" />
+                ) : (
+                  <p className="text-3xl font-bold tracking-tight text-foreground">{totalAgencies}</p>
+                )}
+              </div>
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                <Building2 className="w-6 h-6 text-primary" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border-border">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Workspaces</p>
+                {isLoading ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mt-2" />
+                ) : (
+                  <p className="text-3xl font-bold tracking-tight text-foreground">{totalWorkspaces}</p>
+                )}
+              </div>
+              <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <Users className="w-6 h-6 text-emerald-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
       <Card className="bg-card border-border">
         <CardContent className="p-4">
           <div className="flex flex-col md:flex-row gap-3 md:items-center">
@@ -61,22 +124,41 @@ export default function SuperAdminPartnersPage() {
               />
             </div>
             <Select value={planFilter} onValueChange={setPlanFilter}>
-              <SelectTrigger className="w-full md:w-40 bg-background border-input text-foreground">
+              <SelectTrigger className="w-full md:w-48 bg-background border-input text-foreground">
                 <SelectValue placeholder="All Plans" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Plans</SelectItem>
-                <SelectItem value="free">Free</SelectItem>
-                <SelectItem value="pro">Pro</SelectItem>
-                <SelectItem value="agency">Agency</SelectItem>
+                {variants?.map((variant) => (
+                  <SelectItem key={variant.id} value={variant.slug}>
+                    {variant.name}
+                  </SelectItem>
+                ))}
+                {/* Fallback if no variants loaded */}
+                {!variants?.length && (
+                  <>
+                    <SelectItem value="Partner">Partner</SelectItem>
+                    <SelectItem value="free">Free</SelectItem>
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* Partners Table - Genius style */}
+      {/* Agencies Table */}
       <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base font-semibold text-foreground">
+              Agency Directory
+            </CardTitle>
+            <span className="text-xs text-muted-foreground">
+              {partners.length} {partners.length === 1 ? "agency" : "agencies"}
+            </span>
+          </div>
+        </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -95,15 +177,18 @@ export default function SuperAdminPartnersPage() {
               <p className="text-muted-foreground text-center max-w-sm mt-2">
                 {searchQuery
                   ? "No agencies match your search. Try a different query."
-                  : "Create your first white-label partner to get started."}
+                  : "Agencies are created when partner requests are approved and provisioned."}
               </p>
               {!searchQuery && (
                 <Button
-                  className="mt-6 bg-primary hover:bg-primary/90"
-                  onClick={() => setCreateDialogOpen(true)}
+                  className="mt-6"
+                  variant="outline"
+                  asChild
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Partner
+                  <Link href="/super-admin/partner-requests">
+                    <FileText className="mr-2 h-4 w-4" />
+                    View Partner Requests
+                  </Link>
                 </Button>
               )}
             </div>
@@ -112,10 +197,10 @@ export default function SuperAdminPartnersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Partner</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Agency</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Status</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Plan</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Workspaces</th>
+                    <th className="text-center py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border">Workspaces</th>
                     <th className="text-right py-3 px-4 font-medium text-muted-foreground bg-muted/50 border-b border-border"></th>
                   </tr>
                 </thead>
@@ -123,24 +208,47 @@ export default function SuperAdminPartnersPage() {
                   {partners.map((partner) => (
                     <tr key={partner.id} className="border-b border-border hover:bg-muted/50 transition-colors">
                       <td className="py-3 px-4">
-                        <a href={`/super-admin/partners/${partner.id}`} className="text-primary hover:underline font-medium">
-                          {partner.name}
-                        </a>
-                        <p className="text-xs text-muted-foreground">
-                          {partner.slug}
-                          {partner.is_platform_partner && " • Platform Partner"}
-                        </p>
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-bold text-primary">
+                              {partner.name.slice(0, 2).toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            <Link href={`/super-admin/partners/${partner.id}`} className="text-primary hover:underline font-medium">
+                              {partner.name}
+                            </Link>
+                            <p className="text-xs text-muted-foreground">
+                              {partner.slug}
+                              {partner.is_platform_partner && (
+                                <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0 border-primary/30 text-primary">
+                                  Platform
+                                </Badge>
+                              )}
+                            </p>
+                          </div>
+                        </div>
                       </td>
                       <td className="py-3 px-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-                          active
-                        </span>
+                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Active
+                        </Badge>
                       </td>
-                      <td className="py-3 px-4 text-foreground capitalize">{partner.plan_tier}</td>
-                      <td className="py-3 px-4 text-foreground">{partner.workspace_count || 0}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant="secondary" className="font-medium">
+                          {getPlanDisplayName(partner.white_label_variant_id, partner.plan_tier)}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="text-foreground font-medium">{partner.workspace_count || 0}</span>
+                      </td>
                       <td className="py-3 px-4 text-right">
-                        <Button variant="ghost" size="sm" asChild>
-                          <a href={`/super-admin/partners/${partner.id}`}>View</a>
+                        <Button variant="ghost" size="sm" asChild className="text-primary hover:text-primary">
+                          <Link href={`/super-admin/partners/${partner.id}`}>
+                            <Eye className="h-4 w-4 mr-1" />
+                            View
+                          </Link>
                         </Button>
                       </td>
                     </tr>
@@ -151,9 +259,6 @@ export default function SuperAdminPartnersPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Create Dialog */}
-      <CreatePartnerDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
     </div>
   )
 }

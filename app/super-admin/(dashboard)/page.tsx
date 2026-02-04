@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useSuperAdminPartners } from "@/lib/hooks/use-super-admin-partners"
 import { usePartnerRequests } from "@/lib/hooks/use-partner-requests"
+import { useWhiteLabelVariants } from "@/lib/hooks/use-white-label-variants"
 import {
-  Briefcase,
   TrendingUp,
   ArrowRight,
   Loader2,
@@ -14,6 +14,10 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  Building2,
+  Users,
+  Layers,
+  CreditCard,
 } from "lucide-react"
 import Link from "next/link"
 import { formatDistanceToNow } from "date-fns"
@@ -32,11 +36,34 @@ export default function SuperAdminDashboard() {
     pageSize: 5,
   })
   const { data: allRequestsData } = usePartnerRequests({ pageSize: 5 })
+  const { data: variants } = useWhiteLabelVariants(false)
 
   const partners = partnersData?.data || []
   const totalPartners = partnersData?.total || 0
   const pendingCount = pendingRequestsData?.total || 0
   const recentRequests = allRequestsData?.data || []
+  
+  // Calculate aggregate stats
+  const totalWorkspaces = partners.reduce((sum, p) => sum + (p.workspace_count || 0), 0)
+  const activePlans = variants?.filter(v => v.isActive).length || 0
+
+  // Helper to get plan display name from variant ID or plan_tier
+  const getPlanDisplayName = (variantId: string | null | undefined, planTier: string | null | undefined) => {
+    // First try to find by variant ID (preferred)
+    if (variantId) {
+      const variant = variants?.find((v) => v.id === variantId)
+      if (variant) return variant.name
+    }
+    // Fallback to plan_tier matching
+    if (planTier && planTier !== "partner") {
+      const variant = variants?.find(
+        (v) => v.slug.toLowerCase() === planTier.toLowerCase() || 
+               v.name.toLowerCase() === planTier.toLowerCase()
+      )
+      if (variant) return variant.name
+    }
+    return "No Plan"
+  }
 
   const isLoading = partnersLoading || requestsLoading
 
@@ -46,10 +73,10 @@ export default function SuperAdminDashboard() {
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            Super Admin Dashboard
+            Platform Overview
           </h1>
           <p className="text-muted-foreground mt-1">
-            Organization rollups across agencies and workspaces.
+            Monitor agencies, workspaces, and plans at a glance.
           </p>
         </div>
         <div className="flex gap-2">
@@ -57,26 +84,26 @@ export default function SuperAdminDashboard() {
             <Button
               asChild
               variant="outline"
-              className="border-yellow-500/50 text-yellow-600 hover:bg-yellow-50"
+              className="border-yellow-500/50 text-yellow-600 hover:bg-yellow-500/10"
             >
               <Link href="/super-admin/partner-requests?status=pending">
                 <Clock className="mr-2 h-4 w-4" />
-                {pendingCount} Pending Request{pendingCount !== 1 ? "s" : ""}
+                {pendingCount} Pending
               </Link>
             </Button>
           )}
           <Button asChild className="bg-primary hover:bg-primary/90">
             <Link href="/super-admin/partners">
-              <Briefcase className="mr-2 h-4 w-4" />
+              <Building2 className="mr-2 h-4 w-4" />
               Manage Agencies
             </Link>
           </Button>
         </div>
       </div>
 
-      {/* Stats Grid - 3 columns */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Pending Requests - NEW */}
+      {/* Stats Grid - 4 columns */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Pending Requests */}
         <Card
           className={`bg-card border-border ${pendingCount > 0 ? "ring-2 ring-yellow-500/20" : ""}`}
         >
@@ -127,7 +154,7 @@ export default function SuperAdminDashboard() {
                 )}
               </div>
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <Briefcase className="w-6 h-6 text-primary" />
+                <Building2 className="w-6 h-6 text-primary" />
               </div>
             </div>
           </CardContent>
@@ -137,15 +164,37 @@ export default function SuperAdminDashboard() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Platform Partner</p>
+                <p className="text-sm text-muted-foreground">Total Workspaces</p>
                 {isLoading ? (
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mt-2" />
                 ) : (
-                  <p className="text-3xl font-bold tracking-tight text-foreground">Genius365</p>
+                  <p className="text-3xl font-bold tracking-tight text-foreground">
+                    {totalWorkspaces}
+                  </p>
                 )}
               </div>
-              <div className="w-12 h-12 rounded-full bg-chart-1/10 flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-chart-1" />
+              <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <Users className="w-6 h-6 text-emerald-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border-border">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Active Plans</p>
+                {isLoading ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mt-2" />
+                ) : (
+                  <p className="text-3xl font-bold tracking-tight text-foreground">
+                    {activePlans}
+                  </p>
+                )}
+              </div>
+              <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center">
+                <CreditCard className="w-6 h-6 text-amber-500" />
               </div>
             </div>
           </CardContent>
@@ -154,11 +203,11 @@ export default function SuperAdminDashboard() {
 
       {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Partners Table */}
+        {/* Agencies Table */}
         <Card className="lg:col-span-2 bg-card border-border">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold text-foreground">Agencies</CardTitle>
+              <CardTitle className="text-base font-semibold text-foreground">Recent Agencies</CardTitle>
               <Link href="/super-admin/partners" className="text-sm text-primary hover:underline">
                 View all
               </Link>
@@ -177,13 +226,10 @@ export default function SuperAdminDashboard() {
                   <thead>
                     <tr className="border-b border-border">
                       <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50">
-                        Partner
+                        Agency
                       </th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50">
+                      <th className="text-center py-3 px-4 font-medium text-muted-foreground bg-muted/50">
                         Workspaces
-                      </th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50">
-                        Agents
                       </th>
                       <th className="text-left py-3 px-4 font-medium text-muted-foreground bg-muted/50">
                         Plan
@@ -197,22 +243,30 @@ export default function SuperAdminDashboard() {
                         className="border-b border-border hover:bg-muted/50 transition-colors"
                       >
                         <td className="py-3 px-4">
-                          <Link
-                            href={`/super-admin/partners/${partner.id}`}
-                            className="text-primary hover:underline font-medium"
-                          >
-                            {partner.name}
-                          </Link>
-                          <p className="text-xs text-muted-foreground">{partner.slug}</p>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0">
+                              <span className="text-[10px] font-bold text-primary">
+                                {partner.name.slice(0, 2).toUpperCase()}
+                              </span>
+                            </div>
+                            <div>
+                              <Link
+                                href={`/super-admin/partners/${partner.id}`}
+                                className="text-primary hover:underline font-medium"
+                              >
+                                {partner.name}
+                              </Link>
+                              <p className="text-xs text-muted-foreground">{partner.slug}</p>
+                            </div>
+                          </div>
                         </td>
-                        <td className="py-3 px-4 text-foreground">
+                        <td className="py-3 px-4 text-center text-foreground font-medium">
                           {partner.workspace_count || 0}
                         </td>
-                        <td className="py-3 px-4 text-foreground">{partner.agent_count || 0}</td>
                         <td className="py-3 px-4">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground capitalize">
-                            {partner.plan_tier}
-                          </span>
+                          <Badge variant="secondary">
+                            {getPlanDisplayName(partner.white_label_variant_id, partner.plan_tier)}
+                          </Badge>
                         </td>
                       </tr>
                     ))}
@@ -225,7 +279,7 @@ export default function SuperAdminDashboard() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Recent Partner Requests - NEW */}
+          {/* Recent Partner Requests */}
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -301,7 +355,7 @@ export default function SuperAdminDashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* Review Requests - NEW (highlighted if pending) */}
+              {/* Review Requests (highlighted if pending) */}
               {pendingCount > 0 ? (
                 <Button
                   asChild
@@ -334,17 +388,38 @@ export default function SuperAdminDashboard() {
 
               <Button asChild className="w-full justify-between bg-primary hover:bg-primary/90">
                 <Link href="/super-admin/partners">
-                  Manage Agencies
+                  <span className="flex items-center">
+                    <Building2 className="mr-2 h-4 w-4" />
+                    Manage Agencies
+                  </span>
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
+
+              <Button
+                asChild
+                variant="outline"
+                className="w-full justify-between border-border text-foreground hover:bg-muted"
+              >
+                <Link href="/super-admin/plans">
+                  <span className="flex items-center">
+                    <Layers className="mr-2 h-4 w-4" />
+                    Agency Plans
+                  </span>
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+
               <Button
                 asChild
                 variant="outline"
                 className="w-full justify-between border-border text-foreground hover:bg-muted"
               >
                 <Link href="/super-admin/billing">
-                  View Billing
+                  <span className="flex items-center">
+                    <TrendingUp className="mr-2 h-4 w-4" />
+                    Billing Overview
+                  </span>
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
