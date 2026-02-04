@@ -1080,10 +1080,18 @@ model AgentCalendarConfig {
   minNoticeHours              Int       @default(24) @map("min_notice_hours")
   maxAdvanceDays              Int       @default(30) @map("max_advance_days")
   
-  // Reminder Settings
+  // Reminder Settings (Legacy)
   send24hReminder             Boolean   @default(true) @map("send_24h_reminder")
   send1hReminder              Boolean   @default(true) @map("send_1h_reminder")
   reminderEmailTemplate       String?   @map("reminder_email_template")
+  
+  // Email Notification Settings
+  enableOwnerEmail            Boolean   @default(false) @map("enable_owner_email")
+  ownerEmail                  String?   @map("owner_email") @db.VarChar(255)
+  
+  // Dynamic Reminder Settings
+  enableReminders             Boolean   @default(false) @map("enable_reminders")
+  reminders                   Json      @default("[]")
   
   // Status
   isActive                    Boolean   @default(true) @map("is_active")
