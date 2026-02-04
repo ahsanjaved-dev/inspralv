@@ -87,6 +87,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       preferred_hours_end = '17:00',
       min_notice_hours = 1,
       max_advance_days = 60,
+      // Email notification settings
+      enable_owner_email = false,
+      owner_email = null,
     } = body
 
     // Validate required fields
@@ -148,6 +151,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       preferred_hours_end,
       min_notice_hours,
       max_advance_days,
+      // Email notification settings
+      enable_owner_email,
+      owner_email: enable_owner_email ? owner_email : null,
       is_active: true,
       updated_at: new Date().toISOString(),
     }

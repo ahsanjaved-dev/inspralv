@@ -28,6 +28,9 @@ interface SetupRequestBody {
   preferred_hours_end?: string
   min_notice_hours?: number
   max_advance_days?: number
+  // Email notification settings
+  enable_owner_email?: boolean
+  owner_email?: string | null
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
@@ -49,6 +52,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       preferred_hours_end = '17:00',
       min_notice_hours = 1,
       max_advance_days = 60,
+      // Email notification settings
+      enable_owner_email = false,
+      owner_email = null,
     } = body
 
     if (!timezone) {
@@ -161,7 +167,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const newCalendarId = calendarResult.data.id
 
     // 6. Create agent_calendar_configs record
-    // Note: Only using columns that exist in the schema
     const configData = {
       agent_id: agentId,
       workspace_id: ctx.workspace.id,
@@ -175,6 +180,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       preferred_hours_end,
       min_notice_hours,
       max_advance_days,
+      // Email notification settings
+      enable_owner_email,
+      owner_email: enable_owner_email ? owner_email : null,
       is_active: true,
     }
 

@@ -5,6 +5,8 @@
  * 
  * Native tools go into general_tools array.
  * Custom functions are handled via MCP (Model Context Protocol).
+ * 
+ * NOTE: transfer_call has been intentionally excluded from the UI.
  */
 
 import type { BuiltInToolDefinition } from "@/lib/integrations/function_tools/types"
@@ -39,16 +41,6 @@ export const RETELL_TOOL_REGISTRY: Record<string, BuiltInToolDefinition> = {
     isNative: true,
     description: "End the call gracefully when the conversation is complete.",
     icon: "PhoneOff",
-  },
-  transfer_call: {
-    key: "transfer_call",
-    displayName: "Transfer Call",
-    type: "transfer_call",
-    category: "call_control",
-    providers: { vapi: false, retell: true },
-    isNative: true,
-    description: "Transfer the call to another phone number.",
-    icon: "PhoneForwarded",
   },
   press_digit: {
     key: "press_digit",
@@ -98,17 +90,41 @@ export const RETELL_TOOL_REGISTRY: Record<string, BuiltInToolDefinition> = {
   },
 
   // ========================================
-  // COMMUNICATION
+  // CAL.COM INTEGRATION (Coming Soon)
   // ========================================
-  send_sms: {
-    key: "send_sms",
-    displayName: "Send SMS",
-    type: "send_sms",
-    category: "communication",
-    providers: { vapi: false, retell: true },
-    isNative: true,
-    description: "Send an SMS message during the call.",
-    icon: "MessageSquare",
+  calcom_check_availability: {
+    key: "calcom_check_availability",
+    displayName: "Cal.com - Check Availability",
+    type: "calcom_check_availability",
+    category: "calendar",
+    providers: { vapi: true, retell: true },
+    isNative: false,
+    description: "Check available time slots on Cal.com.",
+    icon: "CalendarSearch",
+  },
+  calcom_book_appointment: {
+    key: "calcom_book_appointment",
+    displayName: "Cal.com - Book Appointment",
+    type: "calcom_book_appointment",
+    category: "calendar",
+    providers: { vapi: true, retell: true },
+    isNative: false,
+    description: "Book an appointment through Cal.com.",
+    icon: "CalendarPlus",
+  },
+
+  // ========================================
+  // GENERAL AVAILABILITY CHECK (Coming Soon)
+  // ========================================
+  check_availability: {
+    key: "check_availability",
+    displayName: "Check Availability",
+    type: "check_availability",
+    category: "calendar",
+    providers: { vapi: true, retell: true },
+    isNative: false,
+    description: "Check available time slots for scheduling.",
+    icon: "CalendarCheck",
   },
 }
 

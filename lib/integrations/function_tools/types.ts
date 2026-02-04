@@ -26,10 +26,15 @@ export type VapiToolType =
   | 'textEditor'
   // Data
   | 'query'
-  // Calendar (Custom Implementation)
+  // Calendar (Custom Implementation - Google Calendar)
   | 'book_appointment'
   | 'cancel_appointment'
   | 'reschedule_appointment'
+  // Calendar (Coming Soon - Cal.com)
+  | 'calcom_check_availability'
+  | 'calcom_book_appointment'
+  // Calendar (Coming Soon - General)
+  | 'check_availability'
   // Google (Other)
   | 'googleSheetsRowAppend'
   // Communication
@@ -76,6 +81,11 @@ export type RetellToolType =
   | 'book_appointment'
   | 'cancel_appointment'
   | 'reschedule_appointment'
+  // Calendar (Coming Soon - Cal.com)
+  | 'calcom_check_availability'
+  | 'calcom_book_appointment'
+  // Calendar (Coming Soon - General)
+  | 'check_availability'
   // Communication
   | 'send_sms'
   // Custom Integration
@@ -119,10 +129,15 @@ export const TOOL_CATEGORY_MAP: Record<VapiToolType, ToolCategory> = {
   textEditor: 'code_execution',
   // Data
   query: 'data',
-  // Calendar
+  // Calendar (Google Calendar)
   book_appointment: 'calendar',
   cancel_appointment: 'calendar',
   reschedule_appointment: 'calendar',
+  // Calendar (Cal.com - Coming Soon)
+  calcom_check_availability: 'calendar',
+  calcom_book_appointment: 'calendar',
+  // Calendar (General - Coming Soon)
+  check_availability: 'calendar',
   // Google (Other)
   googleSheetsRowAppend: 'google',
   // Communication

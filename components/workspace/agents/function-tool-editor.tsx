@@ -48,9 +48,9 @@ import { CalendarToolConfigDialog, isCalendarToolType, type CalendarToolSettings
 // ============================================================================
 
 // VAPI available tools (excluding "function" - custom functions have their own button)
+// Removed: transferCall, handoff, code, bash, computer, textEditor, googleSheetsRowAppend, mcp
 const VAPI_AVAILABLE_TOOLS = [
   "endCall",
-  "transferCall", 
   "apiRequest",
   "book_appointment",
   "cancel_appointment",
@@ -60,9 +60,9 @@ const VAPI_AVAILABLE_TOOLS = [
 // Retell available tools
 // Note: book_appointment, cancel_appointment, reschedule_appointment are our custom calendar tools
 // that work via MCP integration (same as VAPI but executed through MCP server)
+// Removed: transfer_call
 const RETELL_AVAILABLE_TOOLS = [
   "end_call",
-  "transfer_call",
   // Custom calendar tools (via MCP - Google Calendar)
   "book_appointment",
   "cancel_appointment",

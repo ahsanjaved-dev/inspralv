@@ -10,6 +10,7 @@ import {
   deleteEvent,
   getValidAccessToken,
   buildCalendarEvent,
+  buildEventDescription,
 } from './google-calendar'
 import { checkSlotAvailability, formatAvailableSlotsForLLM, findNextAvailableSlot } from './availability'
 import { decrypt } from './encryption'
@@ -152,10 +153,14 @@ export async function bookAppointment(
   const supabase = createAdminClient()
 
   try {
-    // 1. Get agent calendar configuration
+    // 1. Get agent calendar configuration with agent name
     const { data: calendarConfig, error: configError } = await supabase
       .from('agent_calendar_configs')
-      .select('*, google_calendar_credentials:google_calendar_credentials(*)')
+      .select(`
+        *,
+        google_calendar_credentials:google_calendar_credentials(*),
+        agent:ai_agents!agent_id(id, name)
+      `)
       .eq('agent_id', input.agentId)
       .eq('is_active', true)
       .single()
@@ -169,7 +174,10 @@ export async function bookAppointment(
 
     const config = calendarConfig as AgentCalendarConfig & {
       google_calendar_credentials: GoogleCalendarCredential
+      agent?: { id: string; name: string }
     }
+    
+    const agentName = config.agent?.name || 'AI Agent'
 
     // 2. Get valid access token
     const tokenResult = await getValidAccessToken(
@@ -212,18 +220,32 @@ export async function bookAppointment(
     }
 
     // 4. Create Google Calendar event
-    // Google Calendar will automatically send email reminders to attendees
+    // Google Calendar will automatically send email notifications to attendees when sendUpdates=all
     const eventStart = slotCheck.requestedSlot.start
     const eventEnd = slotCheck.requestedSlot.end
 
+    // Generate a unique booking ID for reference
+    const bookingId = `APT-${Date.now().toString(36).toUpperCase()}`
+    
     const calendarEvent = buildCalendarEvent({
       summary: `Appointment with ${input.attendeeName}`,
-      description: input.notes || `Appointment booked via AI agent`,
       startDateTime: eventStart,
       endDateTime: eventEnd,
       timezone: config.timezone,
+      // Attendee details
       attendeeEmail: input.attendeeEmail,
       attendeeName: input.attendeeName,
+      attendeePhone: input.attendeePhone,
+      // Additional context for rich description
+      agentName,
+      bookingId,
+      notes: input.notes,
+      // Pass owner email notification settings
+      enableOwnerEmail: config.enable_owner_email,
+      ownerEmail: config.owner_email || undefined,
+      // Pass reminder settings
+      enableReminders: config.enable_reminders,
+      reminders: config.reminders as any,
     })
 
     const eventResult = await createEvent(accessToken, config.calendar_id, calendarEvent)
@@ -473,6 +495,25 @@ export async function rescheduleAppointment(
           displayName: originalAppointment.attendee_name,
         },
       ]
+      
+      // Add owner email if enabled - ensures owner gets reschedule notification
+      if (config.enable_owner_email && config.owner_email) {
+        attendees.push({
+          email: config.owner_email,
+          displayName: 'Calendar Owner',
+        })
+      }
+
+      // Build enhanced description for reschedule with multi-timezone support
+      const description = buildEventDescription({
+        attendeeName: originalAppointment.attendee_name,
+        attendeeEmail: originalAppointment.attendee_email,
+        attendeePhone: originalAppointment.attendee_phone || undefined,
+        notes: `📅 RESCHEDULED\nOriginal time: ${new Date(originalAppointment.scheduled_start).toLocaleString()}\n\n${originalAppointment.notes || ''}`,
+        timezone: config.timezone,
+        startDateTime: newStart,
+        endDateTime: newEnd,
+      })
 
       const updateResult = await updateEvent(
         accessToken,
@@ -488,6 +529,7 @@ export async function rescheduleAppointment(
             timeZone: config.timezone,
           },
           summary: `Appointment with ${originalAppointment.attendee_name}`,
+          description,
           attendees,
         }
       )
