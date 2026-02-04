@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -46,6 +46,31 @@ import { useToast } from "@/lib/hooks/use-toast"
 
 interface AnalyticsPageProps {}
 
+// Safe default values for analytics data
+const defaultSummary = {
+  total_agents: 0,
+  total_calls: 0,
+  completed_calls: 0,
+  success_rate: 0,
+  total_minutes: 0,
+  total_cost: 0,
+  avg_cost_per_call: 0,
+  sentiment: { positive: 0, negative: 0, neutral: 0 },
+  sentiment_distribution: { positive_percent: 0, negative_percent: 0, neutral_percent: 0 },
+  avg_sentiment_score: 0,
+}
+
+const defaultTrends = {
+  calls_by_date: {},
+  duration_distribution: {
+    "0-1 min": 0,
+    "1-2 min": 0,
+    "2-5 min": 0,
+    "5-10 min": 0,
+    "10+ min": 0,
+  },
+}
+
 export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
@@ -63,19 +88,84 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
     agent: selectedAgent,
   })
 
-  // The API now handles filtering by agent and date range
-  // We just use the data directly from the API response
-  const filteredData = analyticsData
+  // Safely extract data with defaults to prevent undefined errors
+  // ALL hooks must be called before any conditional returns (Rules of Hooks)
+  const summary = useMemo(() => analyticsData?.summary ?? defaultSummary, [analyticsData])
+  const agents = useMemo(() => analyticsData?.agents ?? [], [analyticsData])
+  const trends = useMemo(() => analyticsData?.trends ?? defaultTrends, [analyticsData])
 
+  // Process calls by date with safe access
+  const callsByDate = useMemo(() => {
+    const callsData = trends.calls_by_date || {}
+    return Object.entries(callsData)
+      .sort(([a], [b]) => a.localeCompare(b)) // Sort by date ascending
+      .map(([label, data]) => ({
+        label,
+        // Format date label as MM/DD for display
+        displayLabel: new Date(label + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        count: data?.count ?? 0,
+        duration: data?.duration ?? 0,
+        cost: data?.cost ?? 0,
+      }))
+  }, [trends.calls_by_date])
+  
+  // Duration distribution data with safe defaults
+  const durationDistribution = useMemo(() => ({
+    "0-1 min": trends.duration_distribution?.["0-1 min"] ?? 0,
+    "1-2 min": trends.duration_distribution?.["1-2 min"] ?? 0,
+    "2-5 min": trends.duration_distribution?.["2-5 min"] ?? 0,
+    "5-10 min": trends.duration_distribution?.["5-10 min"] ?? 0,
+    "10+ min": trends.duration_distribution?.["10+ min"] ?? 0,
+  }), [trends.duration_distribution])
+
+  // Calculate sentiment percentages with safe access
+  const sentimentData = useMemo(() => {
+    const positive = summary.sentiment?.positive ?? 0
+    const negative = summary.sentiment?.negative ?? 0
+    const neutral = summary.sentiment?.neutral ?? 0
+    const total = positive + negative + neutral
+    
+    return {
+      positive,
+      negative,
+      neutral,
+      total,
+      positivePercent: total > 0 ? Math.round((positive / total) * 100) : 0,
+      neutralPercent: total > 0 ? Math.round((neutral / total) * 100) : 0,
+      negativePercent: total > 0 ? Math.round((negative / total) * 100) : 0,
+    }
+  }, [summary.sentiment])
+
+  // Get max for chart scaling with safe fallback
+  const chartScaling = useMemo(() => {
+    if (callsByDate.length === 0) {
+      return { maxCount: 1, maxDuration: 1, maxCost: 1 }
+    }
+    return {
+      maxCount: Math.max(...callsByDate.map((d) => d.count), 1),
+      maxDuration: Math.max(...callsByDate.map((d) => d.duration / 60), 1),
+      maxCost: Math.max(...callsByDate.map((d) => d.cost), 1),
+    }
+  }, [callsByDate])
+  
+  const { maxCount, maxDuration, maxCost } = chartScaling
+
+  // SVG gauge calculations (these are derived values, not hooks)
+  const circumference = 2 * Math.PI * 40
+  const positiveArc = (sentimentData.positivePercent / 100) * circumference
+  const neutralArc = (sentimentData.neutralPercent / 100) * circumference
+  const negativeArc = (sentimentData.negativePercent / 100) * circumference
+
+  // Early returns for loading and error states (AFTER all hooks)
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[50vh]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }
 
-  if (error || !analyticsData || !filteredData) {
+  if (error) {
     return (
       <div className="space-y-6">
         <div className="page-header">
@@ -94,51 +184,6 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
       </div>
     )
   }
-
-  const { summary, agents, trends } = filteredData
-  const callsByDate = Object.entries(trends.calls_by_date || {})
-    .sort(([a], [b]) => a.localeCompare(b)) // Sort by date ascending
-    .map(([label, data]) => ({
-      label,
-      // Format date label as MM/DD for display
-      displayLabel: new Date(label + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      count: data.count,
-      duration: data.duration,
-      cost: data.cost,
-    }))
-  
-  // Duration distribution data
-  const durationDistribution = trends.duration_distribution || {
-    "0-1 min": 0,
-    "1-2 min": 0,
-    "2-5 min": 0,
-    "5-10 min": 0,
-    "10+ min": 0,
-  }
-
-  // Calculate sentiment percentages
-  const sentimentTotal =
-    summary.sentiment.positive + summary.sentiment.negative + summary.sentiment.neutral
-  const sentimentPositivePercent = sentimentTotal > 0
-    ? Math.round((summary.sentiment.positive / sentimentTotal) * 100)
-    : 0
-  const sentimentNeutralPercent = sentimentTotal > 0
-    ? Math.round((summary.sentiment.neutral / sentimentTotal) * 100)
-    : 0
-  const sentimentNegativePercent = sentimentTotal > 0
-    ? Math.round((summary.sentiment.negative / sentimentTotal) * 100)
-    : 0
-
-  // SVG gauge calculations
-  const circumference = 2 * Math.PI * 40
-  const positiveArc = (sentimentPositivePercent / 100) * circumference
-  const neutralArc = (sentimentNeutralPercent / 100) * circumference
-  const negativeArc = (sentimentNegativePercent / 100) * circumference
-
-  // Get max for chart scaling
-  const maxCount = Math.max(...callsByDate.map((d) => d.count), 1)
-  const maxDuration = Math.max(...callsByDate.map((d) => d.duration / 60), 1)
-  const maxCost = Math.max(...callsByDate.map((d) => d.cost), 1)
 
   // Export to PDF with charts
   const handleExportPDF = async () => {
@@ -412,9 +457,9 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
 
       // Sentiment Donut Chart (right side of page 1)
       const sentimentChartData = [
-        { label: "Positive", value: summary.sentiment.positive, color: "#22c55e" },
-        { label: "Neutral", value: summary.sentiment.neutral, color: "#fbbf24" },
-        { label: "Negative", value: summary.sentiment.negative, color: "#ef4444" },
+        { label: "Positive", value: sentimentData.positive, color: "#22c55e" },
+        { label: "Neutral", value: sentimentData.neutral, color: "#fbbf24" },
+        { label: "Negative", value: sentimentData.negative, color: "#ef4444" },
       ]
       const donutImg = createDonutChartImage(sentimentChartData, "Sentiment Distribution")
       doc.addImage(donutImg, "PNG", pageWidth - 75, 42, 60, 72)
@@ -566,33 +611,34 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Analytics</h1>
-          <p className="text-muted-foreground mt-1">
-            Track and analyze your voice agent performance.
-          </p>
+    <TooltipProvider delayDuration={0}>
+      <div className="space-y-6">
+        {/* Page Header */}
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Analytics</h1>
+            <p className="text-muted-foreground mt-1">
+              Track and analyze your voice agent performance.
+            </p>
+          </div>
+          <Button 
+            variant="outline"
+            onClick={handleExportPDF}
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Export PDF
+              </>
+            )}
+          </Button>
         </div>
-        <Button 
-          variant="outline"
-          onClick={handleExportPDF}
-          disabled={isExporting}
-        >
-          {isExporting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Exporting...
-            </>
-          ) : (
-            <>
-              <Download className="mr-2 h-4 w-4" />
-              Export PDF
-            </>
-          )}
-        </Button>
-      </div>
 
       {/* Filters Row */}
       <Card>
@@ -848,7 +894,7 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
               <CardTitle className="text-base">Call Duration Distribution</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-72 flex flex-col justify-center gap-4 px-4">
+              <div className="h-72 flex flex-col justify-center gap-4 px-4 relative">
                 {Object.entries(durationDistribution).map(([bucket, count]) => {
                   const total = Object.values(durationDistribution).reduce((sum, c) => sum + c, 0)
                   const percentage = total > 0 ? (count / total) * 100 : 0
@@ -878,7 +924,7 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
                   )
                 })}
                 {Object.values(durationDistribution).reduce((sum, c) => sum + c, 0) === 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+                  <div className="absolute inset-0 flex items-center justify-center text-muted-foreground pointer-events-none">
                     No call data available
                   </div>
                 )}
@@ -943,54 +989,52 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
                 </div>
 
                 {/* Legend with Tooltips */}
-                <TooltipProvider>
-                  <div className="space-y-3">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center gap-3 cursor-help">
-                          <div className="w-3 h-3 rounded-full bg-green-500" />
-                          <div>
-                            <p className="text-sm font-medium">Positive</p>
-                            <p className="text-xs text-muted-foreground">{sentimentPositivePercent}% ({summary.sentiment.positive})</p>
-                          </div>
+                <div className="space-y-3">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-3 cursor-help">
+                        <div className="w-3 h-3 rounded-full bg-green-500" />
+                        <div>
+                          <p className="text-sm font-medium">Positive</p>
+                          <p className="text-xs text-muted-foreground">{sentimentData.positivePercent}% ({sentimentData.positive})</p>
                         </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Positive sentiment indicates satisfied customers</p>
-                      </TooltipContent>
-                    </Tooltip>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Positive sentiment indicates satisfied customers</p>
+                    </TooltipContent>
+                  </Tooltip>
 
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center gap-3 cursor-help">
-                          <div className="w-3 h-3 rounded-full bg-amber-500" />
-                          <div>
-                            <p className="text-sm font-medium">Neutral</p>
-                            <p className="text-xs text-muted-foreground">{sentimentNeutralPercent}% ({summary.sentiment.neutral})</p>
-                          </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-3 cursor-help">
+                        <div className="w-3 h-3 rounded-full bg-amber-500" />
+                        <div>
+                          <p className="text-sm font-medium">Neutral</p>
+                          <p className="text-xs text-muted-foreground">{sentimentData.neutralPercent}% ({sentimentData.neutral})</p>
                         </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Neutral sentiment indicates neither positive nor negative response</p>
-                      </TooltipContent>
-                    </Tooltip>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Neutral sentiment indicates neither positive nor negative response</p>
+                    </TooltipContent>
+                  </Tooltip>
 
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center gap-3 cursor-help">
-                          <div className="w-3 h-3 rounded-full bg-red-500" />
-                          <div>
-                            <p className="text-sm font-medium">Negative</p>
-                            <p className="text-xs text-muted-foreground">{sentimentNegativePercent}% ({summary.sentiment.negative})</p>
-                          </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-3 cursor-help">
+                        <div className="w-3 h-3 rounded-full bg-red-500" />
+                        <div>
+                          <p className="text-sm font-medium">Negative</p>
+                          <p className="text-xs text-muted-foreground">{sentimentData.negativePercent}% ({sentimentData.negative})</p>
                         </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Negative sentiment indicates dissatisfied customers</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </TooltipProvider>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Negative sentiment indicates dissatisfied customers</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1021,7 +1065,9 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
               </TableHeader>
               <TableBody>
                 {agents.map((agent) => {
-                  const totalSentiment = agent.sentiment.positive + agent.sentiment.negative + agent.sentiment.neutral
+                  // Safe access to sentiment data with defaults
+                  const agentSentiment = agent.sentiment ?? { positive: 0, negative: 0, neutral: 0 }
+                  const totalSentiment = agentSentiment.positive + agentSentiment.negative + agentSentiment.neutral
                   
                   return (
                     <TableRow key={agent.id}>
@@ -1033,60 +1079,58 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
                       </TableCell>
                       <TableCell>{agent.total_calls}</TableCell>
                       <TableCell>
-                        <span className={agent.success_rate >= 80 ? "text-green-600" : "text-amber-600"}>
-                          {agent.success_rate.toFixed(1)}%
+                        <span className={(agent.success_rate ?? 0) >= 80 ? "text-green-600" : "text-amber-600"}>
+                          {(agent.success_rate ?? 0).toFixed(1)}%
                         </span>
                       </TableCell>
                       <TableCell>
                         {totalSentiment > 0 ? (
-                          <TooltipProvider>
-                            <span className="flex items-center gap-2">
-                              {agent.sentiment.positive > 0 && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="inline-flex items-center gap-1 text-green-600 cursor-help">
-                                      <Smile className="w-4 h-4" />
-                                      {agent.sentiment.positive}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Positive sentiment calls</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                              {agent.sentiment.neutral > 0 && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="inline-flex items-center gap-1 text-amber-600 cursor-help">
-                                      <Meh className="w-4 h-4" />
-                                      {agent.sentiment.neutral}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Neutral sentiment calls</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                              {agent.sentiment.negative > 0 && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="inline-flex items-center gap-1 text-red-600 cursor-help">
-                                      <Frown className="w-4 h-4" />
-                                      {agent.sentiment.negative}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Negative sentiment calls</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                            </span>
-                          </TooltipProvider>
+                          <span className="flex items-center gap-2">
+                            {agentSentiment.positive > 0 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex items-center gap-1 text-green-600 cursor-help">
+                                    <Smile className="w-4 h-4" />
+                                    {agentSentiment.positive}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Positive sentiment calls</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {agentSentiment.neutral > 0 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex items-center gap-1 text-amber-600 cursor-help">
+                                    <Meh className="w-4 h-4" />
+                                    {agentSentiment.neutral}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Neutral sentiment calls</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {agentSentiment.negative > 0 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex items-center gap-1 text-red-600 cursor-help">
+                                    <Frown className="w-4 h-4" />
+                                    {agentSentiment.negative}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Negative sentiment calls</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </span>
                         ) : (
                           <span className="text-muted-foreground">N/A</span>
                         )}
                       </TableCell>
-                      <TableCell>${agent.total_cost.toFixed(2)}</TableCell>
+                      <TableCell>${(agent.total_cost ?? 0).toFixed(2)}</TableCell>
                     </TableRow>
                   )
                 })}
@@ -1096,5 +1140,6 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
         </CardContent>
       </Card>
     </div>
+    </TooltipProvider>
   )
 }
