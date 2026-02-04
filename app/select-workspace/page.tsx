@@ -4,8 +4,7 @@ import { getPartnerAuthCached } from "@/lib/api/get-auth-cached"
 import { getPartnerFromHost } from "@/lib/api/partner"
 import { WorkspaceSelector } from "@/components/workspace/workspace-selector"
 import { Button } from "@/components/ui/button"
-import { Mail, LogOut, Sparkles } from "lucide-react"
-import Link from "next/link"
+import { Mail, LogOut } from "lucide-react"
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
@@ -38,8 +37,8 @@ export default async function SelectWorkspacePage() {
   const companyName = branding.company_name || auth.partner.name
   const primaryColor = branding.primary_color || "#7c3aed"
 
-  // Check if user can create workspaces (partner admin or owner)
-  const canCreateWorkspace = auth.partnerRole === "owner" || auth.partnerRole === "admin"
+  // Check if user is a partner admin
+  const isPartnerAdmin = auth.partnerRole === "owner" || auth.partnerRole === "admin"
   const isPartnerMember = auth.partnerRole !== null
 
   // No workspaces - show appropriate message based on role
@@ -79,10 +78,12 @@ export default async function SelectWorkspacePage() {
                 </div>
               )}
 
-              {canCreateWorkspace ? (
+              {isPartnerAdmin ? (
                 <>
-                  <h1 className="text-2xl font-bold tracking-tight mb-2">Create Your First Workspace</h1>
-                  <p className="text-muted-foreground">Get started by creating a workspace for your team</p>
+                  <h1 className="text-2xl font-bold tracking-tight mb-2">No Workspaces Available</h1>
+                  <p className="text-muted-foreground">
+                    Workspaces are provisioned based on your subscription plan. Please check your billing or contact support.
+                  </p>
                 </>
               ) : isPartnerMember ? (
                 <>
@@ -101,24 +102,7 @@ export default async function SelectWorkspacePage() {
 
             {/* Content */}
             <div className="space-y-4">
-              {canCreateWorkspace ? (
-                <div className="space-y-4">
-                  <Button 
-                    asChild 
-                    className="w-full h-12 text-base rounded-xl shadow-lg shadow-primary/25" 
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    <Link href="/workspace-onboarding">
-                      <Sparkles className="mr-2 h-5 w-5" />
-                      Create Workspace
-                    </Link>
-                  </Button>
-
-                  <p className="text-xs text-center text-muted-foreground">
-                    As a {auth.partnerRole}, you can create and manage workspaces.
-                  </p>
-                </div>
-              ) : isPartnerMember ? (
+              {isPartnerMember ? (
                 <div className="space-y-4">
                   <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200/50 dark:border-blue-900/50 rounded-2xl p-4">
                     <div className="flex items-start gap-3">
@@ -127,10 +111,12 @@ export default async function SelectWorkspacePage() {
                       </div>
                       <div>
                         <p className="font-medium text-blue-900 dark:text-blue-100">
-                          Waiting for invitation
+                          {isPartnerAdmin ? "Subscription Required" : "Waiting for invitation"}
                         </p>
                         <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                          Ask your workspace administrator to invite you. You'll receive an email when added.
+                          {isPartnerAdmin 
+                            ? "Your workspace will be created when your subscription is activated." 
+                            : "Ask your workspace administrator to invite you. You'll receive an email when added."}
                         </p>
                       </div>
                     </div>
