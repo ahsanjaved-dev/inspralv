@@ -1,18 +1,34 @@
 "use client"
 
+/**
+ * @deprecated This component is deprecated and should not be used.
+ * 
+ * Workspaces are now created automatically based on subscription plans:
+ * - Free/Pro plans: One workspace created on subscription activation
+ * - Agency plans: Default workspace + client workspaces based on plan limits
+ * 
+ * The API endpoint POST /api/workspaces now rejects direct workspace creation.
+ * This component is kept for backwards compatibility but will show an error if used.
+ * 
+ * @see /api/webhooks/stripe for subscription-based workspace creation
+ */
+
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, Building2, ArrowRight, Sparkles } from "lucide-react"
+import { Loader2, Building2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 interface Props {
   primaryColor?: string
 }
 
+/**
+ * @deprecated Use subscription-based workspace creation instead.
+ */
 export function CreateWorkspaceForm({ primaryColor = "#7c3aed" }: Props) {
   const router = useRouter()
   const [submitting, setSubmitting] = useState(false)

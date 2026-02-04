@@ -76,10 +76,8 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
-  LayoutGrid,
   Bot,
   FolderPlus,
-  Plus,
   Eye,
   Plug,
 } from "lucide-react"
@@ -267,12 +265,6 @@ export default function OrgOverviewPage() {
             <Link href="/org/invitations">
               <UserPlus className="mr-2 h-4 w-4" />
               Invite Member
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link href="/workspace-onboarding">
-              <Plus className="mr-2 h-4 w-4" />
-              Create Workspace
             </Link>
           </Button>
         </div>
@@ -540,8 +532,7 @@ export default function OrgOverviewPage() {
         <TabsContent value="workspaces" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2">
                   <Building2 className="h-5 w-5" />
                   Workspaces
                   {searchQuery && (
@@ -549,13 +540,6 @@ export default function OrgOverviewPage() {
                       {filteredWorkspaces.length} results
                     </Badge>
                   )}
-                </div>
-                <Button asChild size="sm">
-                  <Link href="/workspace-onboarding">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Workspace
-                  </Link>
-                </Button>
               </CardTitle>
               <CardDescription>
                 All workspaces in your organization
@@ -585,9 +569,7 @@ export default function OrgOverviewPage() {
                 <div className="text-center py-8 text-muted-foreground">
                   <Building2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p>{searchQuery ? "No workspaces match your search" : "No workspaces yet"}</p>
-                  <Button asChild variant="link" className="mt-2">
-                    <Link href="/workspace-onboarding">Create your first workspace</Link>
-                  </Button>
+                  <p className="text-sm mt-2">Workspaces are created based on your subscription plan</p>
                 </div>
               )}
             </CardContent>

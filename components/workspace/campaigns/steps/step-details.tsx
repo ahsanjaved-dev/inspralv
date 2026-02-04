@@ -161,17 +161,6 @@ export const StepDetails = memo(function StepDetails({
                   </div>
                 )}
                 
-                {/* Show a preview of the agent's greeting if available */}
-                {(formData.selectedAgent.config as { greeting?: string })?.greeting && (
-                  <div className="mt-3 p-3 bg-background rounded border">
-                    <p className="text-xs font-medium text-muted-foreground mb-1">
-                      Agent Greeting Preview:
-                    </p>
-                    <p className="text-sm italic">
-                      "{(formData.selectedAgent.config as { greeting?: string }).greeting}"
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
           </div>

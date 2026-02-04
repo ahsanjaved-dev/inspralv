@@ -43,32 +43,27 @@ export function StepVariables({
       }))
   }, [formData.csvColumnHeaders, workspaceVariables])
 
-  // Get agent's greeting and system prompt for display
-  const agentGreeting = formData.selectedAgent
-    ? (formData.selectedAgent.config as { first_message?: string })?.first_message || 
-      (formData.selectedAgent.config as { greeting?: string })?.greeting || 
-      "No greeting configured"
-    : "Select an agent to see greeting"
-
+  // Get agent's system prompt for variable detection
+  // Note: For outbound campaigns, greeting/first_message is NOT used because
+  // the agent waits for the recipient to speak first (they say "Hello?")
   const agentSystemPrompt = formData.selectedAgent
     ? (formData.selectedAgent.config as { system_prompt?: string })?.system_prompt || ""
     : ""
 
-  // Find variables used in the agent's prompt
+  // Find variables used in the agent's system prompt
   const usedVariables = useMemo(() => {
     const regex = /\{\{([a-z_]+)\}\}/gi
     const matches = new Set<string>()
     
-    const promptText = agentSystemPrompt + " " + agentGreeting
     let match
-    while ((match = regex.exec(promptText)) !== null) {
+    while ((match = regex.exec(agentSystemPrompt)) !== null) {
       if (match[1]) {
         matches.add(match[1].toLowerCase())
       }
     }
     
     return matches
-  }, [agentSystemPrompt, agentGreeting])
+  }, [agentSystemPrompt])
 
   return (
     <div className="space-y-6">
@@ -165,26 +160,6 @@ export function StepVariables({
           </div>
         </div>
       )}
-
-      {/* Agent Greeting Preview */}
-      <div className="border-t pt-6">
-        <Label className="text-base font-medium mb-3 block">
-          Agent Greeting (Preview)
-        </Label>
-        <p className="text-sm text-muted-foreground mb-3">
-          This is the greeting configured for your selected agent. Variables highlighted with a check mark (✓) are used in the prompts.
-        </p>
-        
-        <div className="p-4 bg-muted/50 rounded-lg border">
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">
-            {agentGreeting}
-          </p>
-        </div>
-
-        <p className="text-xs text-muted-foreground mt-2">
-          💡 To change the greeting, edit your agent's configuration in the Agents section
-        </p>
-      </div>
 
       {/* Variable Usage Summary */}
       {usedVariables.size > 0 && (

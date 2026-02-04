@@ -145,9 +145,16 @@ export function WorkspaceSelector({
     })
   }, [workspaces, searchQuery, sortBy])
 
-  // Separate direct access vs partner admin access workspaces
-  const directWorkspaces = filteredWorkspaces.filter((ws) => !ws.is_partner_admin_access)
+  // Separate workspaces by ownership type
+  // - ownedWorkspaces: workspaces where user is the owner (their default workspace)
+  // - memberWorkspaces: workspaces where user has direct membership but is not owner
+  // - adminAccessWorkspaces: workspaces user can access via partner admin role
+  const ownedWorkspaces = filteredWorkspaces.filter((ws) => !ws.is_partner_admin_access && ws.role === "owner")
+  const memberWorkspaces = filteredWorkspaces.filter((ws) => !ws.is_partner_admin_access && ws.role !== "owner")
   const adminAccessWorkspaces = filteredWorkspaces.filter((ws) => ws.is_partner_admin_access)
+  
+  // Check if this is a white-label/agency setup (has admin access workspaces)
+  const isAgencyView = adminAccessWorkspaces.length > 0
 
   return (
     <div className={cn("w-full", showControls ? "max-w-3xl" : "max-w-xl")}>
@@ -235,23 +242,49 @@ export function WorkspaceSelector({
       {/* Workspace List/Grid */}
       <ScrollArea className={cn(showControls ? "h-[400px]" : "max-h-[500px]")}>
         <div className={cn("space-y-4 pr-2", showControls && "pb-2")}>
-          {/* Direct Access Workspaces */}
-          {directWorkspaces.length > 0 && (
+          {/* Owned Workspaces (Default Workspace for white-label users) */}
+          {ownedWorkspaces.length > 0 && (
             <div>
-              {adminAccessWorkspaces.length > 0 && (
+              {(memberWorkspaces.length > 0 || adminAccessWorkspaces.length > 0) && (
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Your Workspaces
+                    {isAgencyView ? "My Workspace" : "Your Workspace"}
                   </span>
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
-                    {directWorkspaces.length}
+                    {ownedWorkspaces.length}
                   </Badge>
                 </div>
               )}
               <div className={cn(
                 viewMode === "card" ? "space-y-2" : "space-y-1"
               )}>
-                {directWorkspaces.map((workspace) => (
+                {ownedWorkspaces.map((workspace) => (
+                  <WorkspaceItem
+                    key={workspace.id}
+                    workspace={workspace}
+                    viewMode={viewMode}
+                    isDefault={isAgencyView}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Member Workspaces (workspaces user is a member of but doesn't own) */}
+          {memberWorkspaces.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Shared Workspaces
+                </span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                  {memberWorkspaces.length}
+                </Badge>
+              </div>
+              <div className={cn(
+                viewMode === "card" ? "space-y-2" : "space-y-1"
+              )}>
+                {memberWorkspaces.map((workspace) => (
                   <WorkspaceItem
                     key={workspace.id}
                     workspace={workspace}
@@ -262,12 +295,12 @@ export function WorkspaceSelector({
             </div>
           )}
 
-          {/* Partner Admin Access Workspaces */}
+          {/* Client Workspaces (Partner Admin Access - for white-label agencies) */}
           {adminAccessWorkspaces.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Organization Workspaces
+                  Client Workspaces
                 </span>
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-purple-500/10 text-purple-600 border-purple-500/20">
                   Admin Access
@@ -336,9 +369,11 @@ export function WorkspaceSelector({
 function WorkspaceItem({
   workspace,
   viewMode,
+  isDefault = false,
 }: {
   workspace: AccessibleWorkspace
   viewMode: ViewMode
+  isDefault?: boolean
 }) {
   const roleInfo = roleConfig[workspace.role as keyof typeof roleConfig] || roleConfig.member
   const RoleIcon = roleInfo.icon
@@ -352,7 +387,8 @@ function WorkspaceItem({
           "group flex items-center gap-3 p-2.5 rounded-lg",
           "bg-card border border-border/50",
           "hover:border-primary/30 hover:bg-muted/50",
-          "transition-all duration-150"
+          "transition-all duration-150",
+          isDefault && "ring-1 ring-primary/20 bg-primary/5"
         )}
       >
         {/* Avatar */}
@@ -372,6 +408,11 @@ function WorkspaceItem({
               <span className="font-medium text-sm text-foreground truncate">
                 {workspace.name}
               </span>
+              {isDefault && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                  Default
+                </Badge>
+              )}
               {workspace.is_partner_admin_access && (
                 <ExternalLink className="h-3 w-3 text-purple-500 shrink-0" />
               )}
@@ -428,7 +469,8 @@ function WorkspaceItem({
         "bg-card border border-border/50",
         "hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5",
         "transition-all duration-200 ease-out",
-        "hover:-translate-y-0.5"
+        "hover:-translate-y-0.5",
+        isDefault && "ring-1 ring-primary/20 bg-primary/5"
       )}
     >
       {/* Workspace Avatar */}
@@ -448,6 +490,11 @@ function WorkspaceItem({
           <h3 className="font-semibold text-foreground truncate">
             {workspace.name}
           </h3>
+          {isDefault && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+              Default
+            </Badge>
+          )}
           {workspace.is_partner_admin_access && (
             <ExternalLink className="h-3.5 w-3.5 text-purple-500 shrink-0" />
           )}

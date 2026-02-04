@@ -5,15 +5,7 @@ import { useParams } from "next/navigation"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,22 +39,13 @@ import {
   Plus,
   Search,
   FileText,
-  HelpCircle,
-  ShoppingBag,
-  FileCheck,
-  Scroll,
-  FileQuestion,
   MoreVertical,
   Eye,
   Pencil,
   Trash2,
   Loader2,
   Clock,
-  Tags,
-  FolderOpen,
   AlertCircle,
-  CheckCircle2,
-  XCircle,
   RefreshCw,
   Upload,
   File,
@@ -73,35 +56,13 @@ import {
   useCreateKnowledgeDocument,
   useUpdateKnowledgeDocument,
   useDeleteKnowledgeDocument,
-  useKnowledgeBaseCategories,
 } from "@/lib/hooks/use-workspace-knowledge-base"
-import type {
-  KnowledgeDocument,
-  KnowledgeDocumentType,
-  KnowledgeDocumentStatus,
-} from "@/types/database.types"
+import type { KnowledgeDocument } from "@/types/database.types"
 import { formatDistanceToNow } from "date-fns"
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-
-const documentTypeConfig: Record<KnowledgeDocumentType, { icon: React.ComponentType<{ className?: string }>; label: string; color: string }> = {
-  document: { icon: FileText, label: "Document", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
-  faq: { icon: HelpCircle, label: "FAQ", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" },
-  product_info: { icon: ShoppingBag, label: "Product Info", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
-  policy: { icon: FileCheck, label: "Policy", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
-  script: { icon: Scroll, label: "Script", color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" },
-  other: { icon: FileQuestion, label: "Other", color: "bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400" },
-}
-
-const statusConfig: Record<KnowledgeDocumentStatus, { icon: React.ComponentType<{ className?: string }>; label: string; color: string }> = {
-  draft: { icon: Clock, label: "Draft", color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" },
-  processing: { icon: RefreshCw, label: "Processing", color: "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400" },
-  active: { icon: CheckCircle2, label: "Active", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
-  archived: { icon: FolderOpen, label: "Archived", color: "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400" },
-  error: { icon: XCircle, label: "Error", color: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400" },
-}
 
 const SUPPORTED_FILE_TYPES = {
   "text/plain": ".txt",
@@ -120,10 +81,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 interface FormData {
   title: string
   description: string
-  document_type: KnowledgeDocumentType
   content: string
-  category: string
-  tags: string[]
 }
 
 // ============================================================================
@@ -157,29 +115,24 @@ const DocumentCard = memo(function DocumentCard({
   onEdit: (doc: KnowledgeDocument) => void
   onDelete: (doc: KnowledgeDocument) => void
 }) {
-  const typeConf = documentTypeConfig[doc.document_type]
-  const statusConf = statusConfig[doc.status]
-  const TypeIcon = typeConf.icon
-  const StatusIcon = statusConf.icon
-
   return (
-    <Card className="group hover:shadow-md transition-shadow duration-200 border-border/60">
-      <CardHeader className="pb-3">
+    <Card className="group hover:shadow-md transition-all duration-200 border-border/60 hover:border-primary/30">
+      <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-start gap-3 min-w-0 flex-1">
-            <div className={`p-2 rounded-lg shrink-0 ${typeConf.color}`}>
-              <TypeIcon className="h-4 w-4" />
+            <div className="p-2.5 rounded-lg shrink-0 bg-primary/10">
+              <FileText className="h-5 w-5 text-primary" />
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="font-semibold text-base leading-tight truncate">{doc.title}</h3>
+              <h3 className="font-semibold text-base leading-tight line-clamp-1">{doc.title}</h3>
               {doc.description && (
-                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{doc.description}</p>
+                <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">{doc.description}</p>
               )}
             </div>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -204,45 +157,14 @@ const DocumentCard = memo(function DocumentCard({
           </DropdownMenu>
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary" className={`text-xs ${statusConf.color} border-0`}>
-            <StatusIcon className="h-3 w-3 mr-1" />
-            {statusConf.label}
-          </Badge>
-          <Badge variant="outline" className="text-xs">
-            {typeConf.label}
-          </Badge>
-          {doc.category && (
-            <Badge variant="outline" className="text-xs">
-              <FolderOpen className="h-3 w-3 mr-1" />
-              {doc.category}
-            </Badge>
-          )}
-        </div>
-        {doc.tags && doc.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-3">
-            {doc.tags.slice(0, 3).map((tag) => (
-              <span
-                key={tag}
-                className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground"
-              >
-                <Tags className="h-2.5 w-2.5 mr-1" />
-                {tag}
-              </span>
-            ))}
-            {doc.tags.length > 3 && (
-              <span className="text-xs text-muted-foreground">+{doc.tags.length - 3} more</span>
-            )}
-          </div>
-        )}
-        <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
+      <CardContent className="pt-2">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" />
             {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}
           </span>
           {doc.usage_count > 0 && (
-            <span>Used {doc.usage_count} times</span>
+            <span className="text-primary/70">Used {doc.usage_count}×</span>
           )}
         </div>
       </CardContent>
@@ -253,20 +175,12 @@ const DocumentCard = memo(function DocumentCard({
 // Form Fields Component
 const FormFields = memo(function FormFields({ 
   formData,
-  tagInput,
   showContent = true,
   onFormChange,
-  onTagInputChange,
-  onAddTag,
-  onRemoveTag,
 }: { 
   formData: FormData
-  tagInput: string
   showContent?: boolean
-  onFormChange: (field: keyof FormData, value: string | string[] | KnowledgeDocumentType) => void
-  onTagInputChange: (value: string) => void
-  onAddTag: () => void
-  onRemoveTag: (tag: string) => void
+  onFormChange: (field: keyof FormData, value: string) => void
 }) {
   return (
     <div className="space-y-4">
@@ -281,34 +195,10 @@ const FormFields = memo(function FormFields({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="form-document-type">Document Type</Label>
-        <Select
-          value={formData.document_type}
-          onValueChange={(v) => onFormChange("document_type", v as KnowledgeDocumentType)}
-        >
-          <SelectTrigger id="form-document-type">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(documentTypeConfig).map(([type, config]) => {
-              const Icon = config.icon
-              return (
-                <SelectItem key={type} value={type}>
-                  <div className="flex items-center gap-2">
-                    <Icon className="h-4 w-4" />
-                    {config.label}
-                  </div>
-                </SelectItem>
-              )
-            })}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
         <Label htmlFor="form-description">Description</Label>
         <Textarea
           id="form-description"
-          placeholder="Brief description of this document"
+          placeholder="Brief description of this document (optional)"
           value={formData.description}
           onChange={(e) => onFormChange("description", e.target.value)}
           rows={2}
@@ -325,54 +215,6 @@ const FormFields = memo(function FormFields({
             rows={8}
             className="font-mono text-sm"
           />
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="form-category">Category</Label>
-          <Input
-            id="form-category"
-            placeholder="e.g., Support, Sales"
-            value={formData.category}
-            onChange={(e) => onFormChange("category", e.target.value)}
-            autoComplete="off"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="form-tags">Tags</Label>
-          <div className="flex gap-2">
-            <Input
-              id="form-tags"
-              placeholder="Add tag"
-              value={tagInput}
-              onChange={(e) => onTagInputChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  onAddTag()
-                }
-              }}
-              autoComplete="off"
-            />
-            <Button type="button" variant="outline" size="icon" onClick={onAddTag}>
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-      {formData.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {formData.tags.map((tag) => (
-            <Badge
-              key={tag}
-              variant="secondary"
-              className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-colors"
-              onClick={() => onRemoveTag(tag)}
-            >
-              {tag} ×
-            </Badge>
-          ))}
         </div>
       )}
     </div>
@@ -480,26 +322,108 @@ const FileUploadArea = memo(function FileUploadArea({
 // Loading Skeleton Component
 const LoadingSkeleton = memo(function LoadingSkeleton() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {[...Array(6)].map((_, i) => (
-        <Card key={i}>
-          <CardHeader className="pb-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {[...Array(8)].map((_, i) => (
+        <Card key={i} className="overflow-hidden">
+          <CardHeader className="pb-2">
             <div className="flex items-start gap-3">
-              <Skeleton className="h-10 w-10 rounded-lg" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-5 w-3/4" />
+              <Skeleton className="h-11 w-11 rounded-lg shrink-0" />
+              <div className="flex-1 space-y-2 min-w-0">
+                <Skeleton className="h-5 w-4/5" />
                 <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="flex gap-2">
-              <Skeleton className="h-5 w-16" />
-              <Skeleton className="h-5 w-20" />
-            </div>
+          <CardContent className="pt-2">
+            <Skeleton className="h-4 w-24" />
           </CardContent>
         </Card>
       ))}
+    </div>
+  )
+})
+
+// Pagination Component
+const Pagination = memo(function Pagination({ 
+  currentPage, 
+  totalPages, 
+  onPageChange, 
+  isLoading 
+}: { 
+  currentPage: number
+  totalPages: number
+  onPageChange: (page: number) => void
+  isLoading: boolean
+}) {
+  if (totalPages <= 1) return null
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = []
+    const showEllipsis = totalPages > 7
+    
+    if (!showEllipsis) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) pages.push(i)
+        pages.push('...')
+        pages.push(totalPages)
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1)
+        pages.push('...')
+        for (let i = totalPages - 3; i <= totalPages; i++) pages.push(i)
+      } else {
+        pages.push(1)
+        pages.push('...')
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i)
+        pages.push('...')
+        pages.push(totalPages)
+      }
+    }
+    return pages
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1 mt-6">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1 || isLoading}
+        className="h-9 px-3"
+      >
+        Previous
+      </Button>
+      <div className="flex items-center gap-1 mx-2">
+        {getPageNumbers().map((page, idx) => (
+          typeof page === 'number' ? (
+            <Button
+              key={idx}
+              variant={currentPage === page ? "default" : "ghost"}
+              size="sm"
+              onClick={() => onPageChange(page)}
+              disabled={isLoading}
+              className="h-9 w-9"
+            >
+              {page}
+            </Button>
+          ) : (
+            <span key={idx} className="px-2 text-muted-foreground">
+              {page}
+            </span>
+          )
+        ))}
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages || isLoading}
+        className="h-9 px-3"
+      >
+        Next
+      </Button>
     </div>
   )
 })
@@ -514,12 +438,16 @@ export default function KnowledgeBasePage() {
 
   // State
   const [searchInput, setSearchInput] = useState("")
-  const [typeFilter, setTypeFilter] = useState<string>("all")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [categoryFilter, setCategoryFilter] = useState<string>("all")
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 12
 
   // Debounced search query
   const debouncedSearch = useDebounce(searchInput, 300)
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [debouncedSearch])
 
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -534,12 +462,8 @@ export default function KnowledgeBasePage() {
   const [formData, setFormData] = useState<FormData>({
     title: "",
     description: "",
-    document_type: "document",
     content: "",
-    category: "",
-    tags: [],
   })
-  const [tagInput, setTagInput] = useState("")
 
   // File upload state
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
@@ -549,13 +473,11 @@ export default function KnowledgeBasePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Data hooks
-  const { data, isLoading, error, refetch } = useWorkspaceKnowledgeBase({
+  const { data, isLoading, error, refetch, isFetching } = useWorkspaceKnowledgeBase({
     search: debouncedSearch || undefined,
-    documentType: typeFilter !== "all" ? (typeFilter as KnowledgeDocumentType) : undefined,
-    status: statusFilter !== "all" ? (statusFilter as KnowledgeDocumentStatus) : undefined,
-    category: categoryFilter !== "all" ? categoryFilter : undefined,
+    page: currentPage,
+    pageSize,
   })
-  const categories = useKnowledgeBaseCategories()
   const createMutation = useCreateKnowledgeDocument()
   const updateMutation = useUpdateKnowledgeDocument()
   const deleteMutation = useDeleteKnowledgeDocument()
@@ -565,35 +487,16 @@ export default function KnowledgeBasePage() {
     setFormData({
       title: "",
       description: "",
-      document_type: "document",
       content: "",
-      category: "",
-      tags: [],
     })
-    setTagInput("")
     setUploadedFile(null)
     setFileContent("")
     setFileError(null)
     setCreateTab("text")
   }, [])
 
-  const handleFormChange = useCallback((field: keyof FormData, value: string | string[] | KnowledgeDocumentType) => {
+  const handleFormChange = useCallback((field: keyof FormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-  }, [])
-
-  const handleTagInputChange = useCallback((value: string) => {
-    setTagInput(value)
-  }, [])
-
-  const handleAddTag = useCallback(() => {
-    if (tagInput.trim() && !formData.tags.includes(tagInput.trim())) {
-      setFormData((prev) => ({ ...prev, tags: [...prev.tags, tagInput.trim()] }))
-      setTagInput("")
-    }
-  }, [tagInput, formData.tags])
-
-  const handleRemoveTag = useCallback((tag: string) => {
-    setFormData((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tag) }))
   }, [])
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -661,10 +564,7 @@ export default function KnowledgeBasePage() {
     setFormData({
       title: doc.title,
       description: doc.description || "",
-      document_type: doc.document_type,
       content: doc.content || "",
-      category: doc.category || "",
-      tags: doc.tags || [],
     })
     setEditDocument(doc)
   }, [])
@@ -679,10 +579,9 @@ export default function KnowledgeBasePage() {
       await createMutation.mutateAsync({
         title: formData.title,
         description: formData.description || undefined,
-        document_type: formData.document_type,
+        document_type: "document", // Default to document type
         content: contentToSave || undefined,
-        category: formData.category || undefined,
-        tags: formData.tags,
+        tags: [], // Default empty tags
         file_name: uploadedFile?.name,
         file_type: uploadedFile?.type,
         file_size_bytes: uploadedFile?.size,
@@ -702,10 +601,7 @@ export default function KnowledgeBasePage() {
         data: {
           title: formData.title,
           description: formData.description || null,
-          document_type: formData.document_type,
           content: formData.content || null,
-          category: formData.category || null,
-          tags: formData.tags,
         },
       })
       setEditDocument(null)
@@ -741,58 +637,15 @@ export default function KnowledgeBasePage() {
         </Button>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search documents..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-full sm:w-[160px]">
-            <SelectValue placeholder="All Types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            {Object.entries(documentTypeConfig).map(([type, config]) => (
-              <SelectItem key={type} value={type}>
-                {config.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[140px]">
-            <SelectValue placeholder="All Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            {Object.entries(statusConfig).map(([status, config]) => (
-              <SelectItem key={status} value={status}>
-                {config.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {categories.length > 0 && (
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-full sm:w-[160px]">
-              <SelectValue placeholder="All Categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat} value={cat}>
-                  {cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search documents..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="pl-10"
+        />
       </div>
 
       {/* Loading State */}
@@ -823,19 +676,17 @@ export default function KnowledgeBasePage() {
               <BookOpen className="h-8 w-8 text-primary" />
             </div>
             <h3 className="text-lg font-semibold">
-              {searchInput || typeFilter !== "all" || statusFilter !== "all"
-                ? "No documents found"
-                : "No documents yet"}
+              {searchInput ? "No documents found" : "No documents yet"}
             </h3>
             <p className="text-muted-foreground text-center max-w-sm mt-2">
-              {searchInput || typeFilter !== "all" || statusFilter !== "all"
-                ? "Try adjusting your filters or search query."
-                : "Upload documents, FAQs, and product information to help your AI agents provide accurate answers."}
+              {searchInput
+                ? "Try adjusting your search query."
+                : "Add documents and information to help your AI agents provide accurate answers."}
             </p>
-            {!(searchInput || typeFilter !== "all" || statusFilter !== "all") && (
+            {!searchInput && (
               <Button className="mt-6" onClick={() => setCreateDialogOpen(true)}>
                 <FileText className="mr-2 h-4 w-4" />
-                Create Document
+                Add Document
               </Button>
             )}
           </CardContent>
@@ -844,96 +695,112 @@ export default function KnowledgeBasePage() {
 
       {/* Documents Grid */}
       {data?.data && data.data.length > 0 && (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.data.map((doc) => (
-              <DocumentCard 
-                key={doc.id} 
-                doc={doc} 
-                onView={handleView}
-                onEdit={handleEdit}
-                onDelete={handleDeleteClick}
-              />
-            ))}
+        <div className="space-y-4">
+          {/* Grid with loading overlay */}
+          <div className="relative">
+            {isFetching && !isLoading && (
+              <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10 rounded-lg">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {data.data.map((doc) => (
+                <DocumentCard 
+                  key={doc.id} 
+                  doc={doc} 
+                  onView={handleView}
+                  onEdit={handleEdit}
+                  onDelete={handleDeleteClick}
+                />
+              ))}
+            </div>
           </div>
-          <div className="text-center text-sm text-muted-foreground">
-            Showing {data.data.length} of {data.total} documents
+          
+          {/* Results info and pagination */}
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-sm text-muted-foreground">
+              Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, data.total)} of {data.total} documents
+            </p>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={data.totalPages || 1}
+              onPageChange={setCurrentPage}
+              isLoading={isFetching}
+            />
           </div>
-        </>
+        </div>
       )}
 
       {/* Create Document Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={(open) => {
+        if (createMutation.isPending) return
         setCreateDialogOpen(open)
         if (!open) resetForm()
       }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Document</DialogTitle>
+        <DialogContent className="sm:max-w-xl md:max-w-2xl flex flex-col max-h-[85vh]">
+          {createMutation.isPending && (
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground font-medium">Creating document...</p>
+              </div>
+            </div>
+          )}
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5 text-primary" />
+              Create Document
+            </DialogTitle>
             <DialogDescription>
               Add a new document to your knowledge base for AI agents to reference.
             </DialogDescription>
           </DialogHeader>
           
-          <Tabs value={createTab} onValueChange={(v) => setCreateTab(v as "text" | "upload")} className="mt-2">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="text" className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Write Content
-              </TabsTrigger>
-              <TabsTrigger value="upload" className="flex items-center gap-2">
-                <Upload className="h-4 w-4" />
-                Upload File
-              </TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="text" className="mt-4">
-              <FormFields
-                formData={formData}
-                tagInput={tagInput}
-                showContent={true}
-                onFormChange={handleFormChange}
-                onTagInputChange={handleTagInputChange}
-                onAddTag={handleAddTag}
-                onRemoveTag={handleRemoveTag}
-              />
-            </TabsContent>
-            
-            <TabsContent value="upload" className="mt-4 space-y-4">
-              <FileUploadArea
-                uploadedFile={uploadedFile}
-                fileContent={fileContent}
-                isReadingFile={isReadingFile}
-                fileError={fileError}
-                fileInputRef={fileInputRef}
-                onFileSelect={handleFileSelect}
-                onRemoveFile={handleRemoveFile}
-              />
-              <FormFields
-                formData={formData}
-                tagInput={tagInput}
-                showContent={false}
-                onFormChange={handleFormChange}
-                onTagInputChange={handleTagInputChange}
-                onAddTag={handleAddTag}
-                onRemoveTag={handleRemoveTag}
-              />
-              {fileContent && (
-                <div className="space-y-2">
-                  <Label>Extracted Content</Label>
-                  <div className="bg-muted/50 rounded-lg p-4 max-h-48 overflow-y-auto">
-                    <pre className="text-sm font-mono whitespace-pre-wrap">{fileContent}</pre>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
+          <div className="flex-1 overflow-y-auto py-4 -mx-6 px-6">
+            <Tabs value={createTab} onValueChange={(v) => setCreateTab(v as "text" | "upload")}>
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="text" className="flex items-center gap-2" disabled={createMutation.isPending}>
+                  <FileText className="h-4 w-4" />
+                  Write Content
+                </TabsTrigger>
+                <TabsTrigger value="upload" className="flex items-center gap-2" disabled={createMutation.isPending}>
+                  <Upload className="h-4 w-4" />
+                  Upload File
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="text" className="mt-0 space-y-4">
+                <FormFields
+                  formData={formData}
+                  showContent={true}
+                  onFormChange={handleFormChange}
+                />
+              </TabsContent>
+              
+              <TabsContent value="upload" className="mt-0 space-y-4">
+                <FileUploadArea
+                  uploadedFile={uploadedFile}
+                  fileContent={fileContent}
+                  isReadingFile={isReadingFile}
+                  fileError={fileError}
+                  fileInputRef={fileInputRef}
+                  onFileSelect={handleFileSelect}
+                  onRemoveFile={handleRemoveFile}
+                />
+                <FormFields
+                  formData={formData}
+                  showContent={false}
+                  onFormChange={handleFormChange}
+                />
+              </TabsContent>
+            </Tabs>
+          </div>
 
-          <DialogFooter className="mt-4">
+          <DialogFooter className="shrink-0 pt-4 border-t">
             <Button variant="outline" onClick={() => {
               setCreateDialogOpen(false)
               resetForm()
-            }}>
+            }} disabled={createMutation.isPending}>
               Cancel
             </Button>
             <Button
@@ -949,32 +816,42 @@ export default function KnowledgeBasePage() {
 
       {/* Edit Document Dialog */}
       <Dialog open={!!editDocument} onOpenChange={(open) => {
+        if (updateMutation.isPending) return
         if (!open) {
           setEditDocument(null)
           resetForm()
         }
       }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Document</DialogTitle>
+        <DialogContent className="sm:max-w-xl md:max-w-2xl flex flex-col max-h-[85vh]">
+          {updateMutation.isPending && (
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground font-medium">Saving changes...</p>
+              </div>
+            </div>
+          )}
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" />
+              Edit Document
+            </DialogTitle>
             <DialogDescription>
-              Update the document content and metadata.
+              Update the document title, description, or content.
             </DialogDescription>
           </DialogHeader>
-          <FormFields
-            formData={formData}
-            tagInput={tagInput}
-            showContent={true}
-            onFormChange={handleFormChange}
-            onTagInputChange={handleTagInputChange}
-            onAddTag={handleAddTag}
-            onRemoveTag={handleRemoveTag}
-          />
-          <DialogFooter>
+          <div className="flex-1 overflow-y-auto py-4 -mx-6 px-6">
+            <FormFields
+              formData={formData}
+              showContent={true}
+              onFormChange={handleFormChange}
+            />
+          </div>
+          <DialogFooter className="shrink-0 pt-4 border-t">
             <Button variant="outline" onClick={() => {
               setEditDocument(null)
               resetForm()
-            }}>
+            }} disabled={updateMutation.isPending}>
               Cancel
             </Button>
             <Button
@@ -990,21 +867,16 @@ export default function KnowledgeBasePage() {
 
       {/* View Document Dialog */}
       <Dialog open={!!viewDocument} onOpenChange={(open) => !open && setViewDocument(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-2xl md:max-w-3xl flex flex-col max-h-[85vh]">
+          <DialogHeader className="shrink-0">
             <div className="flex items-start gap-3">
-              {viewDocument && (
-                <div className={`p-2 rounded-lg ${documentTypeConfig[viewDocument.document_type].color}`}>
-                  {(() => {
-                    const Icon = documentTypeConfig[viewDocument.document_type].icon
-                    return <Icon className="h-5 w-5" />
-                  })()}
-                </div>
-              )}
-              <div>
+              <div className="p-2.5 rounded-lg bg-primary/10 shrink-0">
+                <FileText className="h-5 w-5 text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
                 <DialogTitle className="text-xl">{viewDocument?.title}</DialogTitle>
                 {viewDocument?.description && (
-                  <DialogDescription className="mt-1">
+                  <DialogDescription className="mt-1.5">
                     {viewDocument.description}
                   </DialogDescription>
                 )}
@@ -1012,58 +884,24 @@ export default function KnowledgeBasePage() {
             </div>
           </DialogHeader>
           {viewDocument && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary" className={statusConfig[viewDocument.status].color}>
-                  {(() => {
-                    const Icon = statusConfig[viewDocument.status].icon
-                    return <Icon className="h-3 w-3 mr-1" />
-                  })()}
-                  {statusConfig[viewDocument.status].label}
-                </Badge>
-                <Badge variant="outline">
-                  {documentTypeConfig[viewDocument.document_type].label}
-                </Badge>
-                {viewDocument.category && (
-                  <Badge variant="outline">
-                    <FolderOpen className="h-3 w-3 mr-1" />
-                    {viewDocument.category}
-                  </Badge>
-                )}
-                {viewDocument.file_name && (
-                  <Badge variant="outline">
-                    <File className="h-3 w-3 mr-1" />
-                    {viewDocument.file_name}
-                  </Badge>
-                )}
-              </div>
-              {viewDocument.tags && viewDocument.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {viewDocument.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-muted"
-                    >
-                      <Tags className="h-2.5 w-2.5 mr-1" />
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="bg-muted/50 rounded-lg p-4 max-h-[400px] overflow-y-auto">
+            <div className="flex-1 overflow-y-auto py-4 -mx-6 px-6 space-y-4">
+              <div className="bg-muted/50 rounded-lg p-4 border min-h-[200px] max-h-[400px] overflow-y-auto">
                 <pre className="whitespace-pre-wrap text-sm font-mono">
                   {viewDocument.content || "No content available"}
                 </pre>
               </div>
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <span>Created {formatDistanceToNow(new Date(viewDocument.created_at), { addSuffix: true })}</span>
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" />
+                  Created {formatDistanceToNow(new Date(viewDocument.created_at), { addSuffix: true })}
+                </span>
                 {viewDocument.usage_count > 0 && (
                   <span>• Used {viewDocument.usage_count} times</span>
                 )}
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="shrink-0 pt-4 border-t">
             <Button variant="outline" onClick={() => setViewDocument(null)}>
               Close
             </Button>
