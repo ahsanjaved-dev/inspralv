@@ -18,6 +18,7 @@ import {
   PanelLeft,
   Menu,
   FileText,
+  Layers,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import type { SuperAdmin } from "@/types/database.types"
@@ -30,6 +31,7 @@ const navigation = [
   { title: "Dashboard", href: "/super-admin", icon: LayoutDashboard },
   { title: "Agencies", href: "/super-admin/partners", icon: Briefcase },
   { title: "Partner Requests", href: "/super-admin/partner-requests", icon: FileText },
+  { title: "Plans", href: "/super-admin/plans", icon: Layers },
   { title: "Billing", href: "/super-admin/billing", icon: CreditCard },
 ]
 
