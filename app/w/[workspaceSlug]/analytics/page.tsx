@@ -99,14 +99,17 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
     const callsData = trends.calls_by_date || {}
     return Object.entries(callsData)
       .sort(([a], [b]) => a.localeCompare(b)) // Sort by date ascending
-      .map(([label, data]) => ({
-        label,
-        // Format date label as MM/DD for display
-        displayLabel: new Date(label + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        count: data?.count ?? 0,
-        duration: data?.duration ?? 0,
-        cost: data?.cost ?? 0,
-      }))
+      .map(([label, data]) => {
+        const dayData = data as { count?: number; duration?: number; cost?: number } | undefined
+        return {
+          label,
+          // Format date label as MM/DD for display
+          displayLabel: new Date(label + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          count: dayData?.count ?? 0,
+          duration: dayData?.duration ?? 0,
+          cost: dayData?.cost ?? 0,
+        }
+      })
   }, [trends.calls_by_date])
   
   // Duration distribution data with safe defaults
