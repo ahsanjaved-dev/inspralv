@@ -1,9 +1,12 @@
 /**
  * VAPI Tool Registry
- * Registry of all available VAPI tools with metadata for UI
+ * Registry of available VAPI tools with metadata for UI
+ * 
+ * NOTE: Some tools have been intentionally excluded from the UI:
+ * - handoff, transferCall, code, bash, computer, textEditor, googleSheetsRowAppend, mcp
  */
 
-import type { VapiToolType, ToolCategory, BuiltInToolDefinition } from '../types'
+import type { ToolCategory, BuiltInToolDefinition } from '../types'
 
 // Re-export for external use
 export type { BuiltInToolDefinition }
@@ -13,9 +16,9 @@ export type { BuiltInToolDefinition }
 // ============================================================================
 
 /**
- * Complete registry of all VAPI tool types
+ * Registry of VAPI tools shown in the UI
  */
-export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
+export const VAPI_TOOL_REGISTRY: Record<string, BuiltInToolDefinition> = {
   // ========================================
   // CALL CONTROL
   // ========================================
@@ -29,16 +32,6 @@ export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
     description: 'End the call gracefully when the conversation is complete.',
     icon: 'PhoneOff',
   },
-  transferCall: {
-    key: 'transferCall',
-    displayName: 'Transfer Call',
-    type: 'transferCall',
-    category: 'call_control',
-    providers: { vapi: true, retell: false },
-    isNative: true,
-    description: 'Transfer the call to another number or agent.',
-    icon: 'PhoneForwarded',
-  },
   dtmf: {
     key: 'dtmf',
     displayName: 'DTMF Tones',
@@ -48,16 +41,6 @@ export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
     isNative: true,
     description: 'Send dial-tone multi-frequency signals (keypad tones).',
     icon: 'Grid3X3',
-  },
-  handoff: {
-    key: 'handoff',
-    displayName: 'Handoff',
-    type: 'handoff',
-    category: 'call_control',
-    providers: { vapi: true, retell: false },
-    isNative: true,
-    description: 'Hand off to another AI assistant or squad member.',
-    icon: 'ArrowRightLeft',
   },
 
   // ========================================
@@ -85,65 +68,7 @@ export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
   },
 
   // ========================================
-  // CODE EXECUTION
-  // ========================================
-  code: {
-    key: 'code',
-    displayName: 'Code Execution',
-    type: 'code',
-    category: 'code_execution',
-    providers: { vapi: true, retell: false },
-    isNative: false,
-    description: 'Execute Node.js or Python code.',
-    icon: 'Terminal',
-  },
-  bash: {
-    key: 'bash',
-    displayName: 'Bash Command',
-    type: 'bash',
-    category: 'code_execution',
-    providers: { vapi: true, retell: false },
-    isNative: false,
-    description: 'Execute bash shell commands.',
-    icon: 'TerminalSquare',
-  },
-  computer: {
-    key: 'computer',
-    displayName: 'Computer Use',
-    type: 'computer',
-    category: 'code_execution',
-    providers: { vapi: true, retell: false },
-    isNative: false,
-    description: 'Computer automation and screen interaction.',
-    icon: 'Monitor',
-  },
-  textEditor: {
-    key: 'textEditor',
-    displayName: 'Text Editor',
-    type: 'textEditor',
-    category: 'code_execution',
-    providers: { vapi: true, retell: false },
-    isNative: false,
-    description: 'Edit text files using a code editor.',
-    icon: 'FileText',
-  },
-
-  // ========================================
-  // DATA
-  // ========================================
-  query: {
-    key: 'query',
-    displayName: 'Knowledge Query',
-    type: 'query',
-    category: 'data',
-    providers: { vapi: true, retell: false },
-    isNative: false,
-    description: 'Query knowledge bases for information.',
-    icon: 'Search',
-  },
-
-  // ========================================
-  // CALENDAR (Custom Implementation)
+  // CALENDAR (Custom Implementation - Google Calendar)
   // Calendar tools use our custom Google Calendar integration
   // Configured via CalendarToolsSelector component
   // Works with both VAPI and Retell (via MCP)
@@ -180,41 +105,41 @@ export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
   },
 
   // ========================================
-  // GOOGLE INTEGRATION (Other)
+  // CAL.COM INTEGRATION (Coming Soon)
   // ========================================
-  googleSheetsRowAppend: {
-    key: 'googleSheetsRowAppend',
-    displayName: 'Google Sheets - Append Row',
-    type: 'googleSheetsRowAppend',
-    category: 'google',
-    providers: { vapi: true, retell: false },
+  calcom_check_availability: {
+    key: 'calcom_check_availability',
+    displayName: 'Cal.com - Check Availability',
+    type: 'calcom_check_availability',
+    category: 'calendar',
+    providers: { vapi: true, retell: true },
     isNative: false,
-    description: 'Add rows to Google Sheets.',
-    icon: 'Table',
+    description: 'Check available time slots on Cal.com.',
+    icon: 'CalendarSearch',
+  },
+  calcom_book_appointment: {
+    key: 'calcom_book_appointment',
+    displayName: 'Cal.com - Book Appointment',
+    type: 'calcom_book_appointment',
+    category: 'calendar',
+    providers: { vapi: true, retell: true },
+    isNative: false,
+    description: 'Book an appointment through Cal.com.',
+    icon: 'CalendarPlus',
   },
 
   // ========================================
-  // COMMUNICATION
+  // GENERAL AVAILABILITY CHECK (Coming Soon)
   // ========================================
-  slackSendMessage: {
-    key: 'slackSendMessage',
-    displayName: 'Slack - Send Message',
-    type: 'slackSendMessage',
-    category: 'communication',
-    providers: { vapi: true, retell: false },
+  check_availability: {
+    key: 'check_availability',
+    displayName: 'Check Availability',
+    type: 'check_availability',
+    category: 'calendar',
+    providers: { vapi: true, retell: true },
     isNative: false,
-    description: 'Send messages to Slack channels.',
-    icon: 'MessageSquare',
-  },
-  smsSend: {
-    key: 'smsSend',
-    displayName: 'SMS - Send Message',
-    type: 'smsSend',
-    category: 'communication',
-    providers: { vapi: true, retell: false },
-    isNative: false,
-    description: 'Send SMS text messages.',
-    icon: 'MessageCircle',
+    description: 'Check available time slots for scheduling.',
+    icon: 'CalendarCheck',
   },
 
   // ========================================
@@ -260,20 +185,6 @@ export const VAPI_TOOL_REGISTRY: Record<VapiToolType, BuiltInToolDefinition> = {
     description: 'Lookup contacts in GoHighLevel CRM.',
     icon: 'UserSearch',
   },
-
-  // ========================================
-  // OTHER
-  // ========================================
-  mcp: {
-    key: 'mcp',
-    displayName: 'MCP Tool',
-    type: 'mcp',
-    category: 'other',
-    providers: { vapi: true, retell: false },
-    isNative: false,
-    description: 'Model Context Protocol integration.',
-    icon: 'Puzzle',
-  },
 }
 
 // ============================================================================
@@ -304,14 +215,14 @@ export function getIntegrationTools(): BuiltInToolDefinition[] {
 /**
  * Get tool definition by type
  */
-export function getToolDefinition(type: VapiToolType): BuiltInToolDefinition | undefined {
+export function getToolDefinition(type: string): BuiltInToolDefinition | undefined {
   return VAPI_TOOL_REGISTRY[type]
 }
 
 /**
- * Check if a tool type is valid
+ * Check if a tool type is valid (exists in registry)
  */
-export function isValidToolType(type: string): type is VapiToolType {
+export function isValidToolType(type: string): boolean {
   return type in VAPI_TOOL_REGISTRY
 }
 

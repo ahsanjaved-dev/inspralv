@@ -544,11 +544,143 @@ export function reminderToMinutes(reminder: ReminderSetting): number {
 }
 
 /**
+ * Format a date in a specific timezone for display
+ */
+function formatDateInTimezone(date: Date, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date)
+  } catch {
+    return date.toISOString()
+  }
+}
+
+/**
+ * Get timezone abbreviation and offset
+ */
+function getTimezoneInfo(timezone: string): { abbr: string; offset: string } {
+  try {
+    const now = new Date()
+    const shortFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      timeZoneName: 'short',
+    })
+    const offsetFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      timeZoneName: 'shortOffset',
+    })
+    
+    const shortParts = shortFormatter.formatToParts(now)
+    const offsetParts = offsetFormatter.formatToParts(now)
+    
+    const abbr = shortParts.find(p => p.type === 'timeZoneName')?.value || timezone
+    const offset = offsetParts.find(p => p.type === 'timeZoneName')?.value || ''
+    
+    return { abbr, offset }
+  } catch {
+    return { abbr: timezone, offset: '' }
+  }
+}
+
+/**
+ * Build a rich description for the calendar event
+ * This appears in the email notification and calendar event details
+ * Shows times in multiple timezones for clarity
+ */
+export function buildEventDescription(params: {
+  attendeeName: string
+  attendeeEmail: string
+  attendeePhone?: string
+  notes?: string
+  agentName?: string
+  bookingId?: string
+  timezone?: string
+  startDateTime?: Date
+  endDateTime?: Date
+  ownerTimezone?: string  // Owner's timezone for comparison
+}): string {
+  const lines: string[] = []
+  
+  lines.push('📅 APPOINTMENT DETAILS')
+  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+  lines.push('')
+  
+  // Time Information (if provided)
+  if (params.startDateTime && params.timezone) {
+    const meetingTz = getTimezoneInfo(params.timezone)
+    const meetingTime = formatDateInTimezone(params.startDateTime, params.timezone)
+    
+    lines.push('🕐 APPOINTMENT TIME')
+    lines.push(`   ${meetingTime}`)
+    lines.push(`   Timezone: ${params.timezone} (${meetingTz.abbr} ${meetingTz.offset})`)
+    
+    // Show in owner's timezone if different
+    if (params.ownerTimezone && params.ownerTimezone !== params.timezone) {
+      const ownerTz = getTimezoneInfo(params.ownerTimezone)
+      const ownerTime = formatDateInTimezone(params.startDateTime, params.ownerTimezone)
+      lines.push('')
+      lines.push(`   📍 In your timezone (${ownerTz.abbr} ${ownerTz.offset}):`)
+      lines.push(`   ${ownerTime}`)
+    }
+    
+    // Also show UTC for universal reference
+    const utcTime = formatDateInTimezone(params.startDateTime, 'UTC')
+    lines.push('')
+    lines.push(`   🌍 UTC: ${utcTime}`)
+    lines.push('')
+  }
+  
+  // Attendee Information
+  lines.push('👤 ATTENDEE INFORMATION')
+  lines.push(`   Name: ${params.attendeeName}`)
+  lines.push(`   Email: ${params.attendeeEmail}`)
+  if (params.attendeePhone) {
+    lines.push(`   Phone: ${params.attendeePhone}`)
+  }
+  lines.push('')
+  
+  // Booking Details
+  lines.push('📋 BOOKING DETAILS')
+  if (params.agentName) {
+    lines.push(`   Agent: ${params.agentName}`)
+  }
+  if (params.bookingId) {
+    lines.push(`   Booking ID: ${params.bookingId}`)
+  }
+  lines.push(`   Booked via: AI Voice Agent`)
+  lines.push('')
+  
+  // Notes
+  if (params.notes) {
+    lines.push('📝 NOTES')
+    lines.push(`   ${params.notes}`)
+    lines.push('')
+  }
+  
+  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+  lines.push('This appointment was booked via an AI voice agent.')
+  lines.push('To reschedule or cancel, please contact us.')
+  
+  return lines.join('\n')
+}
+
+/**
  * Build Google Calendar event from appointment data
  * Google Calendar will automatically send email notifications to attendees
  * 
  * IMPORTANT: Reminders are only set if email notifications are enabled AND email is provided.
  * This is because reminders are sent via email - no email = no reminders needed.
+ * 
+ * NOTE: Google Calendar does NOT send emails to the event organizer (the Google account
+ * that owns the calendar). Only external attendees receive invitation emails.
  */
 export function buildCalendarEvent(params: {
   summary: string
@@ -558,9 +690,14 @@ export function buildCalendarEvent(params: {
   timezone: string
   attendeeEmail: string
   attendeeName: string
+  attendeePhone?: string
+  agentName?: string
+  bookingId?: string
+  notes?: string
   // Owner email notification settings
   enableOwnerEmail?: boolean
   ownerEmail?: string
+  ownerTimezone?: string  // Owner's timezone for multi-timezone display in description
   // Legacy reminder settings (backwards compatible)
   send24hReminder?: boolean
   send1hReminder?: boolean
@@ -617,9 +754,23 @@ export function buildCalendarEvent(params: {
     })
   }
 
+  // Build rich description with all appointment details and multi-timezone support
+  const richDescription = buildEventDescription({
+    attendeeName: params.attendeeName,
+    attendeeEmail: params.attendeeEmail,
+    attendeePhone: params.attendeePhone,
+    notes: params.notes || params.description,
+    agentName: params.agentName,
+    bookingId: params.bookingId,
+    timezone: params.timezone,
+    startDateTime: params.startDateTime,
+    endDateTime: params.endDateTime,
+    ownerTimezone: params.ownerEmail ? params.ownerTimezone : undefined,
+  })
+
   return {
     summary: params.summary,
-    description: params.description,
+    description: richDescription,
     start: {
       dateTime: params.startDateTime.toISOString(),
       timeZone: params.timezone,

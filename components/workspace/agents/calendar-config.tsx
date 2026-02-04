@@ -37,44 +37,24 @@ import {
   Globe,
   Trash2,
   Save,
+  Mail,
+  Bell,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { 
+  ALL_TIMEZONES, 
+  TIMEZONE_REGIONS, 
+  getTimezoneOffset,
+  getUserTimezone 
+} from "@/lib/utils/timezones"
 
 // =============================================================================
 // CONSTANTS
 // =============================================================================
 
-// Common timezones organized by region
-const TIMEZONES = [
-  // US
-  { value: "America/New_York", label: "Eastern Time (ET)", region: "US" },
-  { value: "America/Chicago", label: "Central Time (CT)", region: "US" },
-  { value: "America/Denver", label: "Mountain Time (MT)", region: "US" },
-  { value: "America/Los_Angeles", label: "Pacific Time (PT)", region: "US" },
-  { value: "America/Anchorage", label: "Alaska Time", region: "US" },
-  { value: "Pacific/Honolulu", label: "Hawaii Time", region: "US" },
-  // Europe
-  { value: "Europe/London", label: "London (GMT/BST)", region: "Europe" },
-  { value: "Europe/Paris", label: "Paris (CET)", region: "Europe" },
-  { value: "Europe/Berlin", label: "Berlin (CET)", region: "Europe" },
-  { value: "Europe/Madrid", label: "Madrid (CET)", region: "Europe" },
-  { value: "Europe/Rome", label: "Rome (CET)", region: "Europe" },
-  { value: "Europe/Amsterdam", label: "Amsterdam (CET)", region: "Europe" },
-  { value: "Europe/Moscow", label: "Moscow (MSK)", region: "Europe" },
-  // Asia/Pacific
-  { value: "Asia/Dubai", label: "Dubai (GST)", region: "Asia" },
-  { value: "Asia/Kolkata", label: "India (IST)", region: "Asia" },
-  { value: "Asia/Singapore", label: "Singapore (SGT)", region: "Asia" },
-  { value: "Asia/Hong_Kong", label: "Hong Kong (HKT)", region: "Asia" },
-  { value: "Asia/Tokyo", label: "Tokyo (JST)", region: "Asia" },
-  { value: "Asia/Seoul", label: "Seoul (KST)", region: "Asia" },
-  { value: "Australia/Sydney", label: "Sydney (AEST)", region: "Pacific" },
-  { value: "Australia/Melbourne", label: "Melbourne (AEST)", region: "Pacific" },
-  { value: "Pacific/Auckland", label: "Auckland (NZST)", region: "Pacific" },
-  // Other
-  { value: "UTC", label: "UTC", region: "Other" },
-]
+// Use comprehensive timezone list from utility
+const TIMEZONES = ALL_TIMEZONES
 
 const DAYS_OF_WEEK = [
   { value: "MONDAY", label: "Monday" },
@@ -150,6 +130,9 @@ interface CalendarConfig {
   min_notice_hours: number
   max_advance_days: number
   is_active: boolean
+  // Email notification settings
+  enable_owner_email: boolean
+  owner_email: string | null
   google_credentials?: {
     id: string
     is_active: boolean
@@ -171,6 +154,9 @@ const calendarConfigSchema = z.object({
   preferred_hours_end: z.string().regex(/^\d{2}:\d{2}$/, "Invalid time format"),
   min_notice_hours: z.number().min(0).max(168),
   max_advance_days: z.number().min(1).max(365),
+  // Email notification settings
+  enable_owner_email: z.boolean().default(false),
+  owner_email: z.string().optional(),
 })
 
 type CalendarConfigFormData = z.infer<typeof calendarConfigSchema>
@@ -208,6 +194,7 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
 
   // Form setup
   const form = useForm<CalendarConfigFormData>({
+    // @ts-expect-error - Type mismatch between zod resolver versions
     resolver: zodResolver(calendarConfigSchema),
     defaultValues: {
       google_credential_id: "",
@@ -220,6 +207,8 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
       preferred_hours_end: "17:00",
       min_notice_hours: 0, // Allow immediate bookings by default
       max_advance_days: 60,
+      enable_owner_email: false,
+      owner_email: "",
     },
   })
 
@@ -237,6 +226,8 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
         preferred_hours_end: existingConfig.preferred_hours_end,
         min_notice_hours: existingConfig.min_notice_hours,
         max_advance_days: existingConfig.max_advance_days,
+        enable_owner_email: existingConfig.enable_owner_email || false,
+        owner_email: existingConfig.owner_email || "",
       })
     }
   }, [existingConfig, form])
@@ -299,9 +290,17 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
     const preferredHoursStart = form.getValues("preferred_hours_start")
     const preferredHoursEnd = form.getValues("preferred_hours_end")
     const slotDuration = form.getValues("slot_duration_minutes")
+    const enableOwnerEmail = form.getValues("enable_owner_email")
+    const ownerEmail = form.getValues("owner_email")
 
     if (!timezone) {
       toast.error("Please select a timezone first")
+      return
+    }
+
+    // Validate email if notifications are enabled
+    if (enableOwnerEmail && (!ownerEmail || ownerEmail === "")) {
+      toast.error("Please enter your email address to enable notifications")
       return
     }
 
@@ -316,6 +315,8 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
           preferred_days: preferredDays,
           preferred_hours_start: preferredHoursStart,
           preferred_hours_end: preferredHoursEnd,
+          enable_owner_email: enableOwnerEmail,
+          owner_email: enableOwnerEmail ? ownerEmail : null,
         }),
       })
 
@@ -337,7 +338,27 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
     }
   }
 
-  const onSubmit = form.handleSubmit((data) => {
+  const onSubmit = form.handleSubmit((formData) => {
+    const data = formData as unknown as CalendarConfigFormData
+    // Validate email if notifications are enabled
+    if (data.enable_owner_email && (!data.owner_email || data.owner_email === "")) {
+      form.setError("owner_email", {
+        type: "manual",
+        message: "Email address is required when email notifications are enabled",
+      })
+      return
+    }
+    // Validate email format if provided
+    if (data.enable_owner_email && data.owner_email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(data.owner_email)) {
+        form.setError("owner_email", {
+          type: "manual",
+          message: "Please enter a valid email address",
+        })
+        return
+      }
+    }
     saveMutation.mutate(data)
   })
 
@@ -449,27 +470,48 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select timezone" />
+                    <SelectValue placeholder="Select timezone">
+                      {field.value && (
+                        <span className="flex items-center gap-2">
+                          <span>{TIMEZONES.find(tz => tz.value === field.value)?.label || field.value}</span>
+                          <span className="text-muted-foreground text-xs">
+                            ({getTimezoneOffset(field.value)})
+                          </span>
+                        </span>
+                      )}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <ScrollArea className="h-[300px]">
-                      {["US", "Europe", "Asia", "Pacific", "Other"].map((region) => (
-                        <div key={region}>
-                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
-                            {region}
+                    <ScrollArea className="h-[400px]">
+                      {TIMEZONE_REGIONS.map((region) => {
+                        const regionTimezones = TIMEZONES.filter((tz) => tz.region === region)
+                        if (regionTimezones.length === 0) return null
+                        return (
+                          <div key={region}>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 sticky top-0">
+                              {region}
+                            </div>
+                            {regionTimezones.map((tz) => (
+                              <SelectItem key={tz.value} value={tz.value}>
+                                <span className="flex items-center justify-between w-full gap-2">
+                                  <span>{tz.label}</span>
+                                  <span className="text-muted-foreground text-xs">
+                                    {getTimezoneOffset(tz.value)}
+                                  </span>
+                                </span>
+                              </SelectItem>
+                            ))}
                           </div>
-                          {TIMEZONES.filter((tz) => tz.region === region).map((tz) => (
-                            <SelectItem key={tz.value} value={tz.value}>
-                              {tz.label}
-                            </SelectItem>
-                          ))}
-                        </div>
-                      ))}
+                        )
+                      })}
                     </ScrollArea>
                   </SelectContent>
                 </Select>
               )}
             />
+            <p className="text-xs text-muted-foreground">
+              Appointments will be booked in this timezone. Your browser timezone: {getUserTimezone()}
+            </p>
           </div>
 
           {/* Slot Configuration */}
@@ -653,6 +695,77 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
                   Furthest time in advance an appointment can be booked
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Email Notifications */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Mail className="h-4 w-4" />
+              Email Notifications
+            </div>
+            
+            <div className="rounded-lg border p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="enable_owner_email" className="text-sm font-medium">
+                    Enable Email Notifications
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Send email notifications when appointments are booked, rescheduled, or cancelled
+                  </p>
+                </div>
+                <Controller
+                  name="enable_owner_email"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Switch
+                      id="enable_owner_email"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
+                />
+              </div>
+
+              {form.watch("enable_owner_email") && (
+                <div className="space-y-3 pt-3 border-t">
+                  <Label htmlFor="owner_email">
+                    Owner Email Address
+                  </Label>
+                  <Controller
+                    name="owner_email"
+                    control={form.control}
+                    render={({ field }) => (
+                      <Input
+                        id="owner_email"
+                        type="email"
+                        placeholder="Enter your email address"
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    )}
+                  />
+                  {form.formState.errors.owner_email && (
+                    <p className="text-xs text-destructive">
+                      {form.formState.errors.owner_email.message}
+                    </p>
+                  )}
+                  <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 p-3 space-y-2">
+                    <p className="text-xs font-medium text-blue-800 dark:text-blue-200">
+                      📧 How Email Notifications Work
+                    </p>
+                    <ul className="text-xs text-blue-700 dark:text-blue-300 space-y-1 list-disc list-inside">
+                      <li><strong>Booking:</strong> Both you and the caller receive confirmation emails</li>
+                      <li><strong>Reschedule:</strong> Both parties receive update notifications</li>
+                      <li><strong>Cancellation:</strong> Both parties receive cancellation emails</li>
+                    </ul>
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                      ⚠️ <strong>Note:</strong> If the caller provides the same email as your Google Calendar account, they won&apos;t receive a separate notification (Google Calendar limitation for event organizers).
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -23,6 +23,7 @@ export {
   deleteEvent,
   getEvent,
   buildCalendarEvent,
+  buildEventDescription,
   parseEventDateTime,
   reminderToMinutes,
 } from './google-calendar'

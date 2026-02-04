@@ -275,6 +275,29 @@ export function AddIntegrationDialog({ open, onOpenChange, provider }: AddIntegr
                   </div>
                 </Button>
 
+                {/* Important Email Warning */}
+                <div className="rounded-lg border border-amber-500/50 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <div className="shrink-0 mt-0.5">
+                      <svg className="h-4 w-4 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                      </svg>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                        Important: Calendar Event Notifications
+                      </p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        The Google account used for OAuth authentication will <strong>not receive calendar event notifications</strong> created by agents. 
+                        This is the account that owns the calendar.
+                      </p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        To receive email notifications for appointments, configure a <strong>different email address</strong> in your agent's calendar settings as the attendee/notification recipient.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="google-client-id" className="flex items-center gap-2">
                     <Globe className="h-4 w-4" />
