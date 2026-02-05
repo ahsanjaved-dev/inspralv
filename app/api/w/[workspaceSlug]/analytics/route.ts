@@ -19,14 +19,19 @@ export async function GET(
 
     // Parse date range filter from query params
     const { searchParams } = new URL(request.url)
-    const days = parseInt(searchParams.get("days") || "7", 10)
+    const daysParam = searchParams.get("days")
+    // If days is not provided or is 0, fetch all data (no date filter)
+    const days = daysParam ? parseInt(daysParam, 10) : 0
     const agentFilter = searchParams.get("agent") || "all"
     
-    // Calculate the date range
+    // Calculate the date range (only if days > 0)
     const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - days)
-    const startDateISO = startDate.toISOString()
+    let startDateISO: string | null = null
+    if (days > 0) {
+      const startDate = new Date()
+      startDate.setDate(startDate.getDate() - days)
+      startDateISO = startDate.toISOString()
+    }
 
     // Get agent performance stats with sentiment
     const { data: agents } = await adminClient
@@ -35,15 +40,21 @@ export async function GET(
       .eq("workspace_id", workspace.id)
       .is("deleted_at", null)
 
-    // Get conversation stats per agent (filtered by date range)
+    // Get conversation stats per agent (filtered by date range if specified)
     const agentStats = await Promise.all(
       (agents || []).map(async (agent) => {
-        const { data: convs } = await adminClient
+        let agentQuery = adminClient
           .from("conversations")
           .select("status, duration_seconds, total_cost, sentiment")
           .eq("agent_id", agent.id)
           .is("deleted_at", null)
-          .gte("started_at", startDateISO)
+        
+        // Only apply date filter if days > 0
+        if (startDateISO) {
+          agentQuery = agentQuery.gte("started_at", startDateISO)
+        }
+        
+        const { data: convs } = await agentQuery
 
         const totalCalls = convs?.length || 0
         const completedCalls = convs?.filter((c) => c.status === "completed").length || 0
@@ -95,7 +106,11 @@ export async function GET(
       .select("status, duration_seconds, total_cost, sentiment, started_at")
       .eq("workspace_id", workspace.id)
       .is("deleted_at", null)
-      .gte("started_at", startDateISO)
+    
+    // Only apply date filter if days > 0
+    if (startDateISO) {
+      workspaceQuery = workspaceQuery.gte("started_at", startDateISO)
+    }
     
     if (agentFilter !== "all") {
       workspaceQuery = workspaceQuery.eq("agent_id", agentFilter)
@@ -139,12 +154,14 @@ export async function GET(
     // Calculate calls by date for trend data (using actual dates)
     const callsByDate: Record<string, { count: number; cost: number; duration: number }> = {}
     
-    // Initialize all dates in the range with zero values
-    for (let i = 0; i < days; i++) {
-      const date = new Date()
-      date.setDate(date.getDate() - (days - 1 - i))
-      const dateKey = date.toISOString().split("T")[0] as string // YYYY-MM-DD format
-      callsByDate[dateKey] = { count: 0, cost: 0, duration: 0 }
+    // Initialize dates in the range with zero values (only if specific date range is requested)
+    if (days > 0) {
+      for (let i = 0; i < days; i++) {
+        const date = new Date()
+        date.setDate(date.getDate() - (days - 1 - i))
+        const dateKey = date.toISOString().split("T")[0] as string // YYYY-MM-DD format
+        callsByDate[dateKey] = { count: 0, cost: 0, duration: 0 }
+      }
     }
 
     // Calculate duration distribution buckets
@@ -160,7 +177,11 @@ export async function GET(
       // Aggregate by actual date
       if (conv.started_at) {
         const dateKey = new Date(conv.started_at).toISOString().split("T")[0] as string
-        if (dateKey && callsByDate[dateKey]) {
+        if (dateKey) {
+          // Initialize date if not exists (for "all time" mode)
+          if (!callsByDate[dateKey]) {
+            callsByDate[dateKey] = { count: 0, cost: 0, duration: 0 }
+          }
           callsByDate[dateKey].count += 1
           callsByDate[dateKey].cost += conv.total_cost || 0
           callsByDate[dateKey].duration += conv.duration_seconds || 0

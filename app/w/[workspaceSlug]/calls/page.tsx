@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Select,
   SelectContent,
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/table"
 import { AlgoliaSearchPanel } from "@/components/workspace/calls/algolia-search-panel"
 import { FallbackSearchPanel, type FallbackFilters } from "@/components/workspace/calls/fallback-search-panel"
-import { useWorkspaceCalls, useWorkspaceCallsStats } from "@/lib/hooks/use-workspace-calls"
+import { useWorkspaceCalls } from "@/lib/hooks/use-workspace-calls"
 import { useWorkspaceAgents } from "@/lib/hooks/use-workspace-agents"
 import { useIsAlgoliaConfigured } from "@/lib/hooks/use-algolia-search"
 import { useWorkspaceCallsRealtime } from "@/lib/hooks/use-realtime-call-status"
@@ -48,7 +49,7 @@ import {
   ExternalLink,
   Mic,
 } from "lucide-react"
-import { formatDistanceToNow, format } from "date-fns"
+import { formatDistanceToNow, format, startOfDay, endOfDay } from "date-fns"
 import type { ConversationWithAgent, Conversation } from "@/types/database.types"
 import type { AlgoliaCallHit } from "@/lib/algolia/types"
 
@@ -70,6 +71,22 @@ const statusColors: Record<string, string> = {
 // PAGE COMPONENT
 // ============================================================================
 
+// Skeleton component for table rows
+function TableRowSkeleton() {
+  return (
+    <TableRow>
+      <TableCell><Skeleton className="h-10 w-32" /></TableCell>
+      <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+      <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+    </TableRow>
+  )
+}
+
 export default function CallsPage() {
   const router = useRouter()
   const params = useParams()
@@ -80,16 +97,25 @@ export default function CallsPage() {
   const [algoliaTotal, setAlgoliaTotal] = useState(0)
   const [algoliaHasSearched, setAlgoliaHasSearched] = useState(false) // Track if initial search completed
   const [algoliaSearchFailed, setAlgoliaSearchFailed] = useState(false) // Track if search failed
+  const [algoliaIsSearching, setAlgoliaIsSearching] = useState(false) // Track if currently searching
   
-  // Fallback/DB state
+  // Fallback/DB state - default to today's date
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const [dbFilters, setDbFilters] = useState<FallbackFilters>({
-    search: "",
-    status: "all",
-    direction: "all",
-    agentId: "all",
+  const [dbFilters, setDbFilters] = useState<FallbackFilters>(() => {
+    const today = new Date()
+    return {
+      search: "",
+      status: "all",
+      direction: "all",
+      agentId: "all",
+      startDate: startOfDay(today),
+      endDate: endOfDay(today),
+    }
   })
+  
+  // Track if filters are being changed (for showing skeleton)
+  const [isFilterChanging, setIsFilterChanging] = useState(false)
   
   // Shared state
   const [isExporting, setIsExporting] = useState(false)
@@ -137,13 +163,9 @@ export default function CallsPage() {
   const { data: workspaceData } = useWorkspaceSettings()
   const workspaceId = workspaceData?.id || ""
   
-  // Fetch calls from DB:
-  // - When Algolia is NOT configured: DB is the primary source
-  // - When Algolia IS configured: DB is a fallback (only used if Algolia returns empty or fails)
-  // We always fetch from DB to have fallback data ready, but use it conditionally
-  const shouldUseFallback = algoliaConfigured && algoliaHasSearched && (algoliaSearchFailed || algoliaResults.length === 0)
-  
-  const { data, isLoading, error } = useWorkspaceCalls({
+  // Fetch calls from DB - ONLY when Algolia is NOT configured
+  // DO NOT use DB as fallback for empty Algolia results (this was causing the bug)
+  const { data, isLoading, error, isFetching } = useWorkspaceCalls({
     page,
     pageSize,
     status: dbFilters.status !== "all" ? dbFilters.status : undefined,
@@ -152,10 +174,10 @@ export default function CallsPage() {
     callType: dbFilters.direction === "web" ? "web" : undefined,
     agentId: dbFilters.agentId !== "all" ? dbFilters.agentId : undefined,
     search: dbFilters.search || undefined,
-    // Enable DB fetch when:
-    // 1. Algolia is not configured (DB is primary)
-    // 2. OR Algolia is configured but we need fallback data
-    enabled: !algoliaLoading && (!algoliaConfigured || shouldUseFallback),
+    startDate: dbFilters.startDate?.toISOString(),
+    endDate: dbFilters.endDate?.toISOString(),
+    // Only enable DB fetch when Algolia is NOT configured
+    enabled: !algoliaLoading && !algoliaConfigured,
   })
   
   // Subscribe to real-time call status updates for this workspace
@@ -228,9 +250,6 @@ export default function CallsPage() {
     return direction === "inbound" ? "inbound" : "outbound"
   }
 
-  // Fetch stats
-  const { data: stats, isLoading: statsLoading } = useWorkspaceCallsStats()
-
   // Fetch agents for filter
   const { data: agentsData } = useWorkspaceAgents({})
   const agents = agentsData?.data || []
@@ -239,21 +258,34 @@ export default function CallsPage() {
   const totalPages = data?.totalPages || 1
 
   // Handle Algolia results
-  const handleAlgoliaResults = useCallback((results: AlgoliaCallHit[], totalHits: number, isSearching: boolean, searchFailed?: boolean) => {
-    setAlgoliaResults(results)
-    setAlgoliaTotal(totalHits)
+  const handleAlgoliaResults = useCallback((results: AlgoliaCallHit[], totalHits: number, isSearching: boolean, searchFailed?: boolean, isBackgroundRefresh?: boolean) => {
+    // For background refreshes, don't show loading state - just silently update when done
+    if (isBackgroundRefresh && isSearching) {
+      // Background refresh started - don't show skeleton, just wait for results
+      return
+    }
+    
+    setAlgoliaIsSearching(isSearching)
     
     // Track search completion and failure status
     if (!isSearching) {
+      // Update results when search completes
+      setAlgoliaResults(results)
+      setAlgoliaTotal(totalHits)
       setAlgoliaHasSearched(true)
       setAlgoliaSearchFailed(searchFailed ?? false)
+      setIsFilterChanging(false) // Clear filter changing state
       
       // Log for debugging
       if (searchFailed) {
-        console.log("[Calls] Algolia search failed, will fallback to DB")
+        console.log("[Calls] Algolia search failed")
       } else if (results.length === 0 && totalHits === 0) {
-        console.log("[Calls] Algolia returned 0 results, checking DB fallback")
+        console.log("[Calls] Algolia returned 0 results for current filters - this is expected, showing empty state")
       }
+    } else {
+      // When user-initiated search starts, mark as filter changing to show skeleton
+      // (background refreshes won't reach here due to early return above)
+      setIsFilterChanging(true)
     }
   }, [])
 
@@ -409,19 +441,37 @@ export default function CallsPage() {
   }
 
   // Determine which data source to use:
-  // 1. Algolia is configured AND has results → use Algolia
-  // 2. Algolia is configured BUT failed/empty → use DB as fallback
-  // 3. Algolia is NOT configured → use DB
-  const useAlgoliaData = algoliaConfigured && algoliaResults.length > 0 && !algoliaSearchFailed
-  const usingFallback = algoliaConfigured && (algoliaSearchFailed || (algoliaHasSearched && algoliaResults.length === 0))
+  // 1. Algolia is configured → ALWAYS use Algolia results (even if empty - that means filters match nothing)
+  // 2. Algolia is NOT configured → use DB
+  // NOTE: We no longer fallback to DB when Algolia returns empty - empty means the filter has no matches
+  const useAlgoliaData = algoliaConfigured && !algoliaSearchFailed
   
   const currentCalls = useAlgoliaData ? convertAlgoliaToConversation(algoliaResults) : dbCalls
   const currentTotal = useAlgoliaData ? algoliaTotal : (data?.total || 0)
-  // Only show loading spinner on INITIAL load, not during background refreshes
-  // This prevents the "flash" when auto-refresh happens
+  
+  // Show skeleton loading when:
+  // 1. Initial load (no data yet)
+  // 2. Filter is changing (user applied new filter)
   const isCurrentLoading = algoliaConfigured 
-    ? (!algoliaHasSearched) // Only loading until first search completes
-    : isLoading
+    ? (!algoliaHasSearched || isFilterChanging || algoliaIsSearching) 
+    : (isLoading || isFetching)
+  
+  // Calculate filtered stats from current data
+  const filteredStats = useMemo(() => {
+    const calls = currentCalls
+    const total = calls.length
+    const completed = calls.filter(c => c.status === "completed").length
+    const failed = calls.filter(c => c.status === "failed").length
+    const totalDuration = calls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0)
+    const avgDuration = total > 0 ? Math.round(totalDuration / total) : 0
+    
+    return {
+      total: currentTotal, // Use the total from search results (includes pagination)
+      completed,
+      failed,
+      avgDurationSeconds: avgDuration,
+    }
+  }, [currentCalls, currentTotal])
   
   // Debug logging
   useEffect(() => {
@@ -433,11 +483,11 @@ export default function CallsPage() {
         algoliaResultsCount: algoliaResults.length,
         dbCallsCount: dbCalls.length,
         useAlgoliaData,
-        usingFallback,
         currentCallsCount: currentCalls.length,
+        isFilterChanging,
       })
     }
-  }, [algoliaConfigured, algoliaHasSearched, algoliaSearchFailed, algoliaResults.length, dbCalls.length, useAlgoliaData, usingFallback, currentCalls.length])
+  }, [algoliaConfigured, algoliaHasSearched, algoliaSearchFailed, algoliaResults.length, dbCalls.length, useAlgoliaData, currentCalls.length, isFilterChanging])
 
   return (
     <div className="space-y-6">
@@ -485,17 +535,17 @@ export default function CallsPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - Shows stats for filtered data */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="stat-card">
           <div className="flex items-center justify-between">
             <div>
               <p className="stat-label">Total Calls</p>
               <p className="stat-value">
-                {statsLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                {isCurrentLoading ? (
+                  <Skeleton className="h-8 w-16" />
                 ) : (
-                  stats?.total ?? 0
+                  filteredStats.total
                 )}
               </p>
             </div>
@@ -510,10 +560,10 @@ export default function CallsPage() {
             <div>
               <p className="stat-label">Completed</p>
               <p className="stat-value">
-                {statsLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                {isCurrentLoading ? (
+                  <Skeleton className="h-8 w-16" />
                 ) : (
-                  stats?.completed ?? 0
+                  filteredStats.completed
                 )}
               </p>
             </div>
@@ -528,10 +578,10 @@ export default function CallsPage() {
             <div>
               <p className="stat-label">Failed</p>
               <p className="stat-value">
-                {statsLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                {isCurrentLoading ? (
+                  <Skeleton className="h-8 w-16" />
                 ) : (
-                  stats?.failed ?? 0
+                  filteredStats.failed
                 )}
               </p>
             </div>
@@ -546,10 +596,10 @@ export default function CallsPage() {
             <div>
               <p className="stat-label">Avg Duration</p>
               <p className="stat-value">
-                {statsLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                {isCurrentLoading ? (
+                  <Skeleton className="h-8 w-16" />
                 ) : (
-                  formatDurationDisplay(stats?.avgDurationSeconds ?? 0)
+                  formatDurationDisplay(filteredStats.avgDurationSeconds)
                 )}
               </p>
             </div>
@@ -576,14 +626,12 @@ export default function CallsPage() {
             onViewCallDetail={handleViewCallDetail}
             refreshTrigger={algoliaRefreshTrigger}
           />
-          {/* Fallback indicator when using DB instead of Algolia */}
-          {usingFallback && !isCurrentLoading && (
+          {/* Show error only when Algolia search actually failed (not when filters return empty) */}
+          {algoliaSearchFailed && !isCurrentLoading && (
             <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm">
               <Activity className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
               <span className="text-yellow-800 dark:text-yellow-200">
-                {algoliaSearchFailed 
-                  ? "Search service unavailable. Showing results from database."
-                  : "No indexed results found. Showing recent calls from database. New calls will be indexed automatically."}
+                Search service unavailable. Please try again later.
               </span>
             </div>
           )}
@@ -624,9 +672,25 @@ export default function CallsPage() {
         </CardHeader>
         <CardContent>
           {isCurrentLoading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Caller</TableHead>
+                  <TableHead>Agent</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Cost</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead className="w-20">Details</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <TableRowSkeleton key={i} />
+                ))}
+              </TableBody>
+            </Table>
           ) : currentCalls.length === 0 ? (
             <div className="text-center py-12">
               <Phone className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
