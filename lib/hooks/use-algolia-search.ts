@@ -36,6 +36,7 @@ export interface SearchParams {
     agentId?: string
     startDate?: Date
     endDate?: Date
+    excludeWebCalls?: boolean
   }
 }
 
@@ -86,6 +87,7 @@ async function proxySearch(
         agentId: params.filters?.agentId,
         startDate: params.filters?.startDate?.toISOString(),
         endDate: params.filters?.endDate?.toISOString(),
+        excludeWebCalls: params.filters?.excludeWebCalls,
       },
     }),
   })

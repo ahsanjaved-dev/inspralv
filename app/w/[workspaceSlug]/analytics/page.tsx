@@ -41,6 +41,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useWorkspaceAnalytics, formatDurationShort } from "@/lib/hooks/use-workspace-analytics"
 import { useToast } from "@/lib/hooks/use-toast"
 
@@ -78,13 +79,14 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
   const { success: showSuccess, error: showError } = useToast()
   const [isExporting, setIsExporting] = useState(false)
 
-  const [dateRange, setDateRange] = useState("7")
+  const [dateRange, setDateRange] = useState("1") // Default to current day
   const [selectedAgent, setSelectedAgent] = useState("all")
   const [chartType, setChartType] = useState<"calls" | "duration" | "cost">("calls")
 
   // Fetch real analytics data with filters
+  // days: 0 means "all time" (no date filter)
   const { data: analyticsData, isLoading, error } = useWorkspaceAnalytics({
-    days: parseInt(dateRange, 10),
+    days: dateRange === "all" ? 0 : parseInt(dateRange, 10),
     agent: selectedAgent,
   })
 
@@ -93,6 +95,14 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
   const summary = useMemo(() => analyticsData?.summary ?? defaultSummary, [analyticsData])
   const agents = useMemo(() => analyticsData?.agents ?? [], [analyticsData])
   const trends = useMemo(() => analyticsData?.trends ?? defaultTrends, [analyticsData])
+  
+  // Filter agents for the performance table based on selected agent
+  const filteredAgents = useMemo(() => {
+    if (selectedAgent === "all") {
+      return agents
+    }
+    return agents.filter(agent => agent.id === selectedAgent)
+  }, [agents, selectedAgent])
 
   // Process calls by date with safe access
   const callsByDate = useMemo(() => {
@@ -162,8 +172,146 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
   // Early returns for loading and error states (AFTER all hooks)
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="space-y-6">
+        {/* Page Header Skeleton */}
+        <div className="page-header">
+          <div>
+            <Skeleton className="h-8 w-32 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+
+        {/* Filters Skeleton */}
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+              <Skeleton className="h-10 w-44" />
+              <Skeleton className="h-10 w-48" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Stats Cards Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i} className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-8 w-24" />
+                </div>
+                <Skeleton className="h-10 w-10 rounded-full" />
+              </div>
+              <Skeleton className="h-4 w-32 mt-3" />
+            </Card>
+          ))}
+        </div>
+
+        {/* Charts Row 1 Skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-5 w-32" />
+                <Skeleton className="h-8 w-40" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-1 h-[200px] pt-8">
+                {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                  <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
+                    <Skeleton className="w-6 rounded-t-sm" style={{ height: `${Math.random() * 60 + 20}%` }} />
+                    <Skeleton className="h-3 w-8 mt-2" />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <Skeleton className="h-5 w-28" />
+            </CardHeader>
+            <CardContent>
+              <div className="h-72 flex items-center justify-center gap-8">
+                <Skeleton className="w-40 h-40 rounded-full" />
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="w-3 h-3 rounded-full" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="w-3 h-3 rounded-full" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Charts Row 2 Skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader className="pb-2">
+              <Skeleton className="h-5 w-44" />
+            </CardHeader>
+            <CardContent>
+              <div className="h-72 flex flex-col justify-center gap-4 px-4">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-6 flex-1 rounded-md" />
+                    <Skeleton className="h-4 w-8" />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <Skeleton className="h-5 w-36" />
+            </CardHeader>
+            <CardContent>
+              <div className="h-72 flex items-center justify-center gap-8">
+                <Skeleton className="w-40 h-40 rounded-full" />
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <Skeleton className="w-3 h-3 rounded-full" />
+                      <Skeleton className="h-4 w-24" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Agent Table Skeleton */}
+        <Card>
+          <CardHeader className="pb-2">
+            <Skeleton className="h-5 w-48" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex gap-4 pb-2 border-b">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <Skeleton key={i} className="h-4 flex-1" />
+                ))}
+              </div>
+              {[1, 2, 3].map((row) => (
+                <div key={row} className="flex gap-4 py-2">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <Skeleton key={i} className="h-4 flex-1" />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -654,10 +802,10 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="1">Today</SelectItem>
                 <SelectItem value="7">Last 7 days</SelectItem>
-                <SelectItem value="14">Last 14 days</SelectItem>
                 <SelectItem value="30">Last 30 days</SelectItem>
-                <SelectItem value="90">Last 90 days</SelectItem>
+                <SelectItem value="all">All time</SelectItem>
               </SelectContent>
             </Select>
 
@@ -1047,12 +1195,19 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
       {/* Agent Performance Table */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Agent Performance Summary</CardTitle>
+          <CardTitle className="text-base">
+            Agent Performance Summary
+            {selectedAgent !== "all" && filteredAgents.length > 0 && (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                (Filtered: {filteredAgents[0]?.name})
+              </span>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {agents.length === 0 ? (
+          {filteredAgents.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <p>No agents configured yet</p>
+              <p>{agents.length === 0 ? "No agents configured yet" : "No data for selected agent"}</p>
             </div>
           ) : (
             <Table>
@@ -1067,7 +1222,7 @@ export default function WorkspaceAnalyticsPage(props: AnalyticsPageProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {agents.map((agent) => {
+                {filteredAgents.map((agent) => {
                   // Safe access to sentiment data with defaults
                   const agentSentiment = agent.sentiment ?? { positive: 0, negative: 0, neutral: 0 }
                   const totalSentiment = agentSentiment.positive + agentSentiment.negative + agentSentiment.neutral

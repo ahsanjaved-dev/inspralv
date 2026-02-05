@@ -537,13 +537,13 @@ export default function CallDetailPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Left column */}
             <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Call ID</span>
-                <span className="font-mono text-sm">{currentCall?.id?.slice(0, 8)}...</span>
+              <div className="flex justify-between items-start gap-4">
+                <span className="text-muted-foreground shrink-0">Call ID</span>
+                <span className="font-mono text-sm text-right break-all">{currentCall?.id || "N/A"}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">External ID</span>
-                <span className="font-mono text-sm">{currentCall?.external_id?.slice(0, 12)}...</span>
+              <div className="flex justify-between items-start gap-4">
+                <span className="text-muted-foreground shrink-0">External ID</span>
+                <span className="font-mono text-sm text-right break-all">{currentCall?.external_id || "N/A"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Provider</span>
@@ -571,34 +571,8 @@ export default function CallDetailPage() {
                 <span className="text-muted-foreground">Created</span>
                 <span>{safeFormatDistance(currentCall?.created_at)}</span>
               </div>
-              {currentCall.agent?.model_provider && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">LLM Provider</span>
-                  <span className="capitalize">{currentCall.agent.model_provider}</span>
-                </div>
-              )}
             </div>
           </div>
-
-          {/* Cost breakdown if available */}
-          {currentCall.cost_breakdown && Object.keys(currentCall.cost_breakdown).length > 0 && (
-            <>
-              <Separator className="my-4" />
-              <div>
-                <h4 className="text-sm font-medium mb-3">Cost Breakdown</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {Object.entries(currentCall.cost_breakdown as Record<string, number>)
-                    .filter(([key, value]) => typeof value === "number" && key !== "total")
-                    .map(([key, value]) => (
-                      <div key={key} className="bg-muted rounded-lg p-3 text-center">
-                        <p className="text-lg font-semibold">${value.toFixed(3)}</p>
-                        <p className="text-xs text-muted-foreground capitalize">{key}</p>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </>
-          )}
 
           {/* Follow-up if required */}
           {currentCall.requires_follow_up && (

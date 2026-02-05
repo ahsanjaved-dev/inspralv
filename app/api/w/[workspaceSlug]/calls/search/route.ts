@@ -57,18 +57,35 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (filters.callType) {
       filterParts.push(`call_type:${filters.callType.toLowerCase()}`)
     }
+    // Exclude web calls when filtering for outbound (web calls are stored as direction=outbound)
+    if (filters.excludeWebCalls) {
+      filterParts.push(`NOT call_type:web`)
+    }
     if (filters.agentId) {
       filterParts.push(`agent_id:${filters.agentId}`)
     }
 
-    // Date filters
+    // Date filters - DEFAULT TO TODAY if no date filters provided
+    // This ensures we never return all historical data
     const numericFilters: string[] = []
-    if (filters.startDate) {
-      numericFilters.push(`created_at_timestamp >= ${new Date(filters.startDate).getTime()}`)
-    }
-    if (filters.endDate) {
-      numericFilters.push(`created_at_timestamp <= ${new Date(filters.endDate).getTime()}`)
-    }
+    
+    // Get today's date boundaries (server timezone)
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    
+    // Use provided dates or default to today
+    const startTimestamp = filters.startDate 
+      ? new Date(filters.startDate).getTime() 
+      : todayStart.getTime()
+    const endTimestamp = filters.endDate 
+      ? new Date(filters.endDate).getTime() 
+      : todayEnd.getTime()
+    
+    numericFilters.push(`created_at_timestamp >= ${startTimestamp}`)
+    numericFilters.push(`created_at_timestamp <= ${endTimestamp}`)
+    
+    console.log(`[Algolia Search] Applying date range: ${new Date(startTimestamp).toISOString()} to ${new Date(endTimestamp).toISOString()}`)
 
     // Make request to Algolia
     const algoliaUrl = `https://${config.appId}-dsn.algolia.net/1/indexes/${encodeURIComponent(config.callLogsIndex)}/query`
