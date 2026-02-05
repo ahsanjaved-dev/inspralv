@@ -34,6 +34,7 @@ import {
 } from "lucide-react"
 import type { AIAgent, FunctionTool, AgentDirection } from "@/types/database.types"
 import type { CreateWorkspaceAgentInput } from "@/types/api.types"
+import type { CalendarToolSettings } from "./calendar-tool-config"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useWorkspaceAssignedIntegration } from "@/lib/hooks/use-workspace-assigned-integration"
@@ -106,7 +107,7 @@ export function WorkspaceAgentForm({
   const [tools, setTools] = useState<FunctionTool[]>((initialData?.config as any)?.tools || [])
   
   // Calendar settings for calendar tools
-  const [calendarSettings, setCalendarSettings] = useState({
+  const [calendarSettings, setCalendarSettings] = useState<CalendarToolSettings>({
     slot_duration_minutes: (initialData?.config as any)?.calendar_settings?.slot_duration_minutes || 30,
     buffer_between_slots_minutes: (initialData?.config as any)?.calendar_settings?.buffer_between_slots_minutes || 0,
     preferred_days: (initialData?.config as any)?.calendar_settings?.preferred_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
@@ -115,6 +116,13 @@ export function WorkspaceAgentForm({
     timezone: (initialData?.config as any)?.calendar_settings?.timezone || "America/New_York",
     min_notice_hours: (initialData?.config as any)?.calendar_settings?.min_notice_hours || 1,
     max_advance_days: (initialData?.config as any)?.calendar_settings?.max_advance_days || 60,
+    // Email notification settings
+    enable_owner_email: (initialData?.config as any)?.calendar_settings?.enable_owner_email || false,
+    owner_email: (initialData?.config as any)?.calendar_settings?.owner_email || undefined,
+    // Calendar source settings (for using existing calendars)
+    calendar_source: (initialData?.config as any)?.calendar_settings?.calendar_source || 'new' as 'new' | 'existing',
+    existing_calendar_id: (initialData?.config as any)?.calendar_settings?.existing_calendar_id || undefined,
+    existing_calendar_name: (initialData?.config as any)?.calendar_settings?.existing_calendar_name || undefined,
   })
   
   // DEBUG: Wrapper to log tools changes
@@ -1327,6 +1335,8 @@ export function WorkspaceAgentForm({
             provider={selectedProvider}
             calendarSettings={calendarSettings}
             onCalendarSettingsChange={setCalendarSettings}
+            workspaceSlug={workspaceSlug}
+            currentAgentId={initialData?.id}
           />
         </CardContent>
       </Card>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -131,6 +132,13 @@ interface WizardFormData {
     timezone: string
     min_notice_hours: number
     max_advance_days: number
+    // Email notification settings
+    enable_owner_email: boolean
+    owner_email?: string
+    // Calendar source settings (for using existing calendars)
+    calendar_source: 'new' | 'existing'
+    existing_calendar_id?: string
+    existing_calendar_name?: string
   }
 }
 
@@ -227,6 +235,10 @@ Always verify the customer's identity and confirm appointment details before fin
 export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const totalSteps = 2
+  
+  // Get workspace slug from URL params
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
 
   // Get workspace settings to access workspace ID for webhook URL
   const { data: workspace } = useWorkspaceSettings()
@@ -263,6 +275,11 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       timezone: "America/New_York",
       min_notice_hours: 1,
       max_advance_days: 60,
+      enable_owner_email: false,
+      owner_email: undefined,
+      calendar_source: 'new',
+      existing_calendar_id: undefined,
+      existing_calendar_name: undefined,
     },
   })
 
@@ -605,6 +622,11 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       tags: [],
       // Include knowledge document IDs for linking
       knowledge_document_ids: formData.enableKnowledgeBase ? formData.knowledgeDocumentIds : [],
+    }
+
+    // Debug log calendar settings
+    if (hasCalendarTools) {
+      console.log('[AgentWizard] Submitting with calendarSettings:', JSON.stringify(formData.calendarSettings, null, 2))
     }
 
     await onSubmit(apiData)
@@ -1726,7 +1748,15 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 onChange={(tools) => updateFormData("tools", tools)}
                 provider={formData.provider}
                 calendarSettings={formData.calendarSettings}
-                onCalendarSettingsChange={(settings) => updateFormData("calendarSettings", settings)}
+                onCalendarSettingsChange={(settings) => {
+                  console.log('[AgentWizard] onCalendarSettingsChange called with:', {
+                    calendar_source: settings.calendar_source,
+                    existing_calendar_id: settings.existing_calendar_id,
+                    enable_owner_email: settings.enable_owner_email,
+                  })
+                  updateFormData("calendarSettings", settings)
+                }}
+                workspaceSlug={workspaceSlug}
               />
             </CardContent>
           </Card>

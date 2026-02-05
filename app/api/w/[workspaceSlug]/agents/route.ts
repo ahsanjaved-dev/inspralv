@@ -329,6 +329,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
             agentId: agent.id,
             agentName: agent.name,
             workspaceId: ctx.workspace.id,
+            workspaceName: ctx.workspace.name, // Required for calendar naming
             partnerId,
             timezone: calendarSettings.timezone,
             slot_duration_minutes: calendarSettings.slot_duration_minutes || 30,
@@ -338,6 +339,12 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
             preferred_hours_end: calendarSettings.preferred_hours_end || '17:00',
             min_notice_hours: calendarSettings.min_notice_hours || 1,
             max_advance_days: calendarSettings.max_advance_days || 60,
+            // Email notification settings
+            enable_owner_email: calendarSettings.enable_owner_email || false,
+            owner_email: calendarSettings.owner_email || undefined,
+            // Support for using existing calendar
+            existingCalendarId: calendarSettings.calendar_source === 'existing' ? calendarSettings.existing_calendar_id : undefined,
+            existingCalendarName: calendarSettings.calendar_source === 'existing' ? calendarSettings.existing_calendar_name : undefined,
           })
 
           if (setupResult.success) {

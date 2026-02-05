@@ -39,7 +39,10 @@ import {
   Save,
   Mail,
   Bell,
+  Plus,
+  Link2,
 } from "lucide-react"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { 
@@ -121,6 +124,7 @@ interface CalendarConfig {
   id: string
   google_credential_id: string
   calendar_id: string
+  calendar_name: string | null
   timezone: string
   slot_duration_minutes: number
   buffer_between_slots_minutes: number
@@ -137,6 +141,24 @@ interface CalendarConfig {
     id: string
     is_active: boolean
   }
+}
+
+interface WorkspaceCalendar {
+  calendar_id: string
+  calendar_name: string | null
+  agent_id: string
+  agent_name: string
+  timezone: string
+  slot_duration_minutes: number
+  buffer_between_slots_minutes: number
+  preferred_days: string[]
+  preferred_hours_start: string
+  preferred_hours_end: string
+  min_notice_hours: number
+  max_advance_days: number
+  is_active: boolean
+  created_at: string
+  agents_using?: { id: string; name: string }[]
 }
 
 // =============================================================================
@@ -168,6 +190,8 @@ type CalendarConfigFormData = z.infer<typeof calendarConfigSchema>
 export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) {
   const queryClient = useQueryClient()
   const [isCreatingCalendar, setIsCreatingCalendar] = useState(false)
+  const [calendarSource, setCalendarSource] = useState<'new' | 'existing'>('new')
+  const [selectedExistingCalendarId, setSelectedExistingCalendarId] = useState<string | null>(null)
 
   // Fetch existing config
   const { data: configData, isLoading: configLoading } = useQuery({
@@ -189,8 +213,22 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
     },
   })
 
+  // Fetch workspace calendars (for existing calendar selection)
+  const { data: workspaceCalendarsData, isLoading: calendarsLoading } = useQuery({
+    queryKey: ["workspace-calendars", workspaceSlug],
+    queryFn: async () => {
+      const res = await fetch(`/api/w/${workspaceSlug}/calendars`)
+      if (!res.ok) throw new Error("Failed to fetch workspace calendars")
+      return res.json()
+    },
+  })
+
   const existingConfig = configData?.data as CalendarConfig | null
   const credentials = (credentialsData?.data || []) as GoogleCredential[]
+  const workspaceCalendars = (workspaceCalendarsData?.data?.calendars || []) as WorkspaceCalendar[]
+  
+  // Filter out the current agent's calendar from the list of existing calendars
+  const availableCalendars = workspaceCalendars.filter(cal => cal.agent_id !== agentId)
 
   // Form setup
   const form = useForm<CalendarConfigFormData>({
@@ -215,6 +253,19 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
   // Update form when existing config loads
   useEffect(() => {
     if (existingConfig) {
+      console.log('[CalendarConfig] Loading existing config - ALL FIELDS:', {
+        timezone: existingConfig.timezone,
+        slot_duration_minutes: existingConfig.slot_duration_minutes,
+        buffer_between_slots_minutes: existingConfig.buffer_between_slots_minutes,
+        preferred_days: existingConfig.preferred_days,
+        preferred_hours_start: existingConfig.preferred_hours_start,
+        preferred_hours_end: existingConfig.preferred_hours_end,
+        min_notice_hours: existingConfig.min_notice_hours,
+        max_advance_days: existingConfig.max_advance_days,
+        enable_owner_email: existingConfig.enable_owner_email,
+        owner_email: existingConfig.owner_email,
+        calendar_name: existingConfig.calendar_name,
+      })
       form.reset({
         google_credential_id: existingConfig.google_credential_id,
         calendar_id: existingConfig.calendar_id,
@@ -283,13 +334,36 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
     },
   })
 
-  // Quick Setup - creates a new calendar automatically
+  // Load existing calendar config when one is selected
+  useEffect(() => {
+    if (selectedExistingCalendarId && calendarSource === 'existing') {
+      const selectedCalendar = availableCalendars.find(
+        cal => cal.calendar_id === selectedExistingCalendarId
+      )
+      if (selectedCalendar) {
+        // Load the selected calendar's configuration into the form
+        form.setValue("timezone", selectedCalendar.timezone)
+        form.setValue("slot_duration_minutes", selectedCalendar.slot_duration_minutes)
+        form.setValue("buffer_between_slots_minutes", selectedCalendar.buffer_between_slots_minutes)
+        form.setValue("preferred_days", selectedCalendar.preferred_days)
+        form.setValue("preferred_hours_start", selectedCalendar.preferred_hours_start)
+        form.setValue("preferred_hours_end", selectedCalendar.preferred_hours_end)
+        form.setValue("min_notice_hours", selectedCalendar.min_notice_hours)
+        form.setValue("max_advance_days", selectedCalendar.max_advance_days)
+      }
+    }
+  }, [selectedExistingCalendarId, calendarSource, availableCalendars, form])
+
+  // Quick Setup - creates a new calendar or uses existing one
   const handleQuickSetup = async () => {
     const timezone = form.getValues("timezone")
     const preferredDays = form.getValues("preferred_days")
     const preferredHoursStart = form.getValues("preferred_hours_start")
     const preferredHoursEnd = form.getValues("preferred_hours_end")
     const slotDuration = form.getValues("slot_duration_minutes")
+    const bufferBetweenSlots = form.getValues("buffer_between_slots_minutes")
+    const minNoticeHours = form.getValues("min_notice_hours")
+    const maxAdvanceDays = form.getValues("max_advance_days")
     const enableOwnerEmail = form.getValues("enable_owner_email")
     const ownerEmail = form.getValues("owner_email")
 
@@ -304,35 +378,56 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
       return
     }
 
+    // If using existing calendar, validate selection
+    if (calendarSource === 'existing' && !selectedExistingCalendarId) {
+      toast.error("Please select an existing calendar")
+      return
+    }
+
     setIsCreatingCalendar(true)
     try {
+      const selectedCalendar = calendarSource === 'existing' 
+        ? availableCalendars.find(cal => cal.calendar_id === selectedExistingCalendarId)
+        : null
+
       const res = await fetch(`/api/w/${workspaceSlug}/agents/${agentId}/calendar/setup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           timezone,
           slot_duration_minutes: slotDuration,
+          buffer_between_slots_minutes: bufferBetweenSlots,
           preferred_days: preferredDays,
           preferred_hours_start: preferredHoursStart,
           preferred_hours_end: preferredHoursEnd,
+          min_notice_hours: minNoticeHours,
+          max_advance_days: maxAdvanceDays,
           enable_owner_email: enableOwnerEmail,
           owner_email: enableOwnerEmail ? ownerEmail : null,
+          // Existing calendar options
+          use_existing_calendar: calendarSource === 'existing',
+          existing_calendar_id: selectedCalendar?.calendar_id,
+          existing_calendar_name: selectedCalendar?.calendar_name,
         }),
       })
 
       if (!res.ok) {
         const error = await res.json()
-        throw new Error(error.error || "Failed to create calendar")
+        throw new Error(error.error || "Failed to setup calendar")
       }
 
       const result = await res.json()
-      toast.success(`Calendar "${result.data?.calendar_name}" created successfully!`)
+      const message = calendarSource === 'existing' 
+        ? `Calendar linked successfully!`
+        : `Calendar "${result.data?.calendar_name}" created successfully!`
+      toast.success(message)
       
-      // Refresh the config
+      // Refresh the config and calendars list
       queryClient.invalidateQueries({ queryKey: ["agent-calendar-config", agentId] })
+      queryClient.invalidateQueries({ queryKey: ["workspace-calendars", workspaceSlug] })
       queryClient.invalidateQueries({ queryKey: ["google-credential-calendars"] })
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create calendar")
+      toast.error(error instanceof Error ? error.message : "Failed to setup calendar")
     } finally {
       setIsCreatingCalendar(false)
     }
@@ -362,7 +457,7 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
     saveMutation.mutate(data)
   })
 
-  if (configLoading || credentialsLoading) {
+  if (configLoading || credentialsLoading || calendarsLoading) {
     return (
       <Card>
         <CardHeader>
@@ -425,34 +520,170 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
       </CardHeader>
 
       <CardContent>
-        {/* Quick Setup Banner - show only when no config exists */}
-        {!existingConfig && credentials.length > 0 && (
-          <div className="mb-6 p-4 rounded-lg bg-primary/5 border border-primary/20">
-            <div className="flex items-start justify-between gap-4">
+        {/* Current Calendar Info - show when config exists */}
+        {existingConfig && (
+          <div className="mb-6 p-4 rounded-lg bg-muted/50 border">
+            <div className="flex items-center justify-between">
               <div>
-                <h4 className="font-medium text-sm mb-1">Quick Setup</h4>
-                <p className="text-sm text-muted-foreground">
-                  Automatically create a dedicated calendar for this agent. Configure the settings below, then click "Create Calendar".
+                <h4 className="font-medium text-sm flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  Current Calendar
+                </h4>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {existingConfig.calendar_name || 'Unnamed Calendar'}
                 </p>
               </div>
-              <Button
-                type="button"
-                onClick={handleQuickSetup}
-                disabled={isCreatingCalendar || !form.getValues("timezone")}
-                className="shrink-0"
+              <div className="text-right text-sm text-muted-foreground">
+                <div>Timezone: <span className="font-medium text-foreground">{existingConfig.timezone}</span></div>
+                <div>Slot: <span className="font-medium text-foreground">{existingConfig.slot_duration_minutes} min</span></div>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              Modify the settings below to update your calendar configuration.
+            </p>
+          </div>
+        )}
+
+        {/* Calendar Setup - show only when no config exists */}
+        {!existingConfig && credentials.length > 0 && (
+          <div className="mb-6 space-y-4">
+            {/* Calendar Source Selection */}
+            <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 space-y-4">
+              <div>
+                <h4 className="font-medium text-sm mb-2">Calendar Source</h4>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Choose whether to create a new calendar or use an existing one from this workspace.
+                </p>
+              </div>
+              
+              <RadioGroup
+                value={calendarSource}
+                onValueChange={(value: 'new' | 'existing') => {
+                  setCalendarSource(value)
+                  setSelectedExistingCalendarId(null)
+                }}
+                className="grid grid-cols-1 md:grid-cols-2 gap-3"
               >
-                {isCreatingCalendar ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Calendar className="mr-2 h-4 w-4" />
-                    Create Calendar
-                  </>
-                )}
-              </Button>
+                <Label
+                  htmlFor="new"
+                  className={cn(
+                    "flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all",
+                    calendarSource === 'new' 
+                      ? "border-primary bg-primary/5" 
+                      : "border-muted hover:border-muted-foreground/50"
+                  )}
+                >
+                  <RadioGroupItem value="new" id="new" className="mt-0.5" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 font-medium">
+                      <Plus className="h-4 w-4" />
+                      Create New Calendar
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      A new Google Calendar will be created specifically for this agent.
+                    </p>
+                  </div>
+                </Label>
+                
+                <Label
+                  htmlFor="existing"
+                  className={cn(
+                    "flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all",
+                    calendarSource === 'existing' 
+                      ? "border-primary bg-primary/5" 
+                      : "border-muted hover:border-muted-foreground/50",
+                    availableCalendars.length === 0 && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <RadioGroupItem 
+                    value="existing" 
+                    id="existing" 
+                    className="mt-0.5"
+                    disabled={availableCalendars.length === 0}
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 font-medium">
+                      <Link2 className="h-4 w-4" />
+                      Use Existing Calendar
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {availableCalendars.length > 0 
+                        ? `Share a calendar from another agent (${availableCalendars.length} available).`
+                        : "No existing calendars available in this workspace."
+                      }
+                    </p>
+                  </div>
+                </Label>
+              </RadioGroup>
+
+              {/* Existing Calendar Selection */}
+              {calendarSource === 'existing' && availableCalendars.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <Label>Select Calendar</Label>
+                  <Select
+                    value={selectedExistingCalendarId || ""}
+                    onValueChange={setSelectedExistingCalendarId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose an existing calendar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableCalendars.map((cal) => (
+                        <SelectItem key={cal.calendar_id} value={cal.calendar_id}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {cal.calendar_name || `Calendar - ${cal.agent_name}`}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              Used by: {cal.agents_using?.map(a => a.name).join(', ') || cal.agent_name}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedExistingCalendarId && (
+                    <p className="text-xs text-muted-foreground">
+                      The configuration below has been loaded from the selected calendar. You can modify it if needed.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Setup Button */}
+              <div className="pt-2">
+                <Button
+                  type="button"
+                  onClick={handleQuickSetup}
+                  disabled={
+                    isCreatingCalendar || 
+                    !form.getValues("timezone") ||
+                    (calendarSource === 'existing' && !selectedExistingCalendarId)
+                  }
+                  className="w-full md:w-auto"
+                >
+                  {isCreatingCalendar ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {calendarSource === 'existing' ? 'Linking...' : 'Creating...'}
+                    </>
+                  ) : (
+                    <>
+                      {calendarSource === 'existing' ? (
+                        <>
+                          <Link2 className="mr-2 h-4 w-4" />
+                          Link Calendar
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Create Calendar
+                        </>
+                      )}
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         )}
