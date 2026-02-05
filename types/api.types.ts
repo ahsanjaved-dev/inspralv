@@ -101,6 +101,8 @@ export const createWorkspaceAgentSchema = z.object({
       // Function tools configuration
       tools: functionToolsArraySchema.optional(),
       tools_server_url: z.string().url().optional(),
+      // CRM/Webhook URL for forwarding call data (transcript, summary, etc.)
+      crm_webhook_url: z.string().url().optional(),
       // Knowledge base configuration
       knowledge_base: agentKnowledgeBaseConfigSchema.optional(),
       // Agent-level custom variables (specific to this agent)

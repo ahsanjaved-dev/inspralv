@@ -30,25 +30,58 @@ const DEFAULT_ELEVENLABS_VOICE_ID = DEFAULT_VOICE.providerId || "21m00Tcm4TlvDq8
 /**
  * Gets the ElevenLabs voice ID for a given internal voice ID
  * Returns the providerId (ElevenLabs ID) for the voice, or default if not found
+ * 
+ * Supports two voice ID formats:
+ * 1. Short names from static VAPI_VOICES list (e.g., "rachel") - maps to providerId
+ * 2. Actual ElevenLabs voice IDs from dynamic API fetch (e.g., "21m00Tcm4TlvDq8ikWAM") - used directly
  */
 function getElevenLabsVoiceId(voiceId: string | undefined): string {
   if (!voiceId) return DEFAULT_ELEVENLABS_VOICE_ID
   
-  // Find the voice option by id (case-insensitive)
-  const voice = VAPI_VOICE_OPTIONS.find(
+  // First, check if this matches a static voice by short name (id)
+  const voiceByShortName = VAPI_VOICE_OPTIONS.find(
     (v) => v.id.toLowerCase() === voiceId.toLowerCase()
   )
+  if (voiceByShortName?.providerId) {
+    return voiceByShortName.providerId
+  }
   
-  // Return the providerId (ElevenLabs voice ID) or the default
-  return voice?.providerId || DEFAULT_ELEVENLABS_VOICE_ID
+  // Second, check if this matches a static voice by providerId (ElevenLabs ID)
+  // This handles cases where the voice_id is already an ElevenLabs ID from the static list
+  const voiceByProviderId = VAPI_VOICE_OPTIONS.find(
+    (v) => v.providerId?.toLowerCase() === voiceId.toLowerCase()
+  )
+  if (voiceByProviderId?.providerId) {
+    return voiceByProviderId.providerId
+  }
+  
+  // If not found in static list, assume it's a dynamically fetched ElevenLabs voice ID
+  // ElevenLabs voice IDs are alphanumeric strings (typically 20+ characters)
+  // Pass through directly to support voices from the dynamic ElevenLabs API
+  console.log("[VapiMapper] Using dynamic ElevenLabs voice ID:", voiceId)
+  return voiceId
 }
 
 /**
  * Validates if a voice ID is a valid voice option
+ * Accepts both short names from static list and actual ElevenLabs voice IDs
  */
 function isValidVoiceId(voiceId: string | undefined): boolean {
   if (!voiceId) return false
-  return VAPI_VOICE_IDS.some((id) => id.toLowerCase() === voiceId.toLowerCase())
+  
+  // Check static voice short names
+  if (VAPI_VOICE_IDS.some((id) => id.toLowerCase() === voiceId.toLowerCase())) {
+    return true
+  }
+  
+  // Check static voice providerIds
+  if (VAPI_VOICE_OPTIONS.some((v) => v.providerId?.toLowerCase() === voiceId.toLowerCase())) {
+    return true
+  }
+  
+  // For dynamic ElevenLabs voices, any non-empty string is considered valid
+  // ElevenLabs voice IDs are alphanumeric strings
+  return voiceId.length > 0
 }
 
 // ============================================================================

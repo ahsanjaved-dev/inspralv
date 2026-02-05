@@ -48,7 +48,9 @@ import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { getVoicesForProvider, getVoiceCardColor, type VoiceOption } from "@/lib/voice"
 import { useRetellVoices } from "@/lib/hooks/use-retell-voices"
+import { useElevenLabsVoices } from "@/lib/hooks/use-elevenlabs-voices"
 import type { RetellVoice } from "@/lib/integrations/retell/voices"
+import type { ElevenLabsVoice } from "@/lib/integrations/elevenlabs/voices"
 import { Play, Volume2, Search, Filter, RotateCcw } from "lucide-react"
 
 // ============================================================================
@@ -208,6 +210,13 @@ export function WorkspaceAgentForm({
     isLoading: isLoadingRetellVoices,
     error: retellVoicesError 
   } = useRetellVoices()
+
+  // Fetch ElevenLabs voices dynamically for VAPI
+  const {
+    data: elevenLabsVoicesData,
+    isLoading: isLoadingElevenLabsVoices,
+    error: elevenLabsVoicesError
+  } = useElevenLabsVoices()
 
   // Audio preview handlers
   const playVoicePreview = (voiceId: string, previewUrl: string | undefined) => {
@@ -767,10 +776,13 @@ export function WorkspaceAgentForm({
         <CardContent>
             {(() => {
               const selectedVoiceId = watch("config.voice_id")
-              // For Retell: use dynamically fetched voices, for VAPI: use static list
-              const allVoices: (VoiceOption | RetellVoice)[] = selectedProvider === "retell" 
+              // For Retell: use dynamically fetched Retell voices
+              // For VAPI: use dynamically fetched ElevenLabs voices, fall back to static list
+              const allVoices: (VoiceOption | RetellVoice | ElevenLabsVoice)[] = selectedProvider === "retell" 
                 ? (retellVoicesData?.voices || [])
-                : getVoicesForProvider(selectedProvider as "vapi" | "retell")
+                : selectedProvider === "vapi"
+                  ? (elevenLabsVoicesData?.voices || getVoicesForProvider("vapi"))
+                  : getVoicesForProvider(selectedProvider as "vapi" | "retell")
               
               // Apply filters to get filtered voices
               const availableVoices = filterVoices(allVoices)
@@ -804,8 +816,11 @@ export function WorkspaceAgentForm({
                       <div className="flex items-start gap-3">
                         {(() => {
                           const colors = getVoiceCardColor(selectedVoice.gender)
-                          const retellVoice = isRetellProvider ? (selectedVoice as RetellVoice) : null
-                          const vapiVoice = !isRetellProvider ? (selectedVoice as VoiceOption) : null
+                          const isRetellVoice = isRetellProvider
+                          const isElevenLabsVoice = !isRetellProvider && 'provider' in selectedVoice && (selectedVoice as ElevenLabsVoice).provider === "elevenlabs"
+                          const retellVoice = isRetellVoice ? (selectedVoice as RetellVoice) : null
+                          const elevenLabsVoice = isElevenLabsVoice ? (selectedVoice as ElevenLabsVoice) : null
+                          const vapiVoice = !isRetellVoice && !isElevenLabsVoice ? (selectedVoice as VoiceOption) : null
                           const isPlaying = playingVoiceId === selectedVoice.id
 
                           return (
@@ -829,14 +844,19 @@ export function WorkspaceAgentForm({
                                   <Check className="h-4 w-4 text-green-600 ml-auto" />
                                 </div>
                                 <p className="text-xs text-muted-foreground">
-                                  {selectedVoice.accent} • {isRetellProvider ? `Age: ${retellVoice?.age}` : `Age ${vapiVoice?.age}`}
+                                  {selectedVoice.accent} • {isRetellVoice ? `Age: ${retellVoice?.age}` : isElevenLabsVoice ? `Age: ${elevenLabsVoice?.age}` : `Age ${vapiVoice?.age}`}
                                 </p>
                                 {vapiVoice?.characteristics && (
                                   <p className="text-xs text-muted-foreground mt-1">
                                     {vapiVoice.characteristics}
                                   </p>
                                 )}
-                                {isRetellProvider && (
+                                {elevenLabsVoice?.description && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {elevenLabsVoice.description}
+                                  </p>
+                                )}
+                                {(isRetellVoice || isElevenLabsVoice) && (
                                   <p className="text-xs text-muted-foreground mt-2">
                                     Provider: ElevenLabs
                                   </p>
@@ -849,9 +869,12 @@ export function WorkspaceAgentForm({
                       <div className="mt-3 flex gap-2">
                         {/* Audio Preview Button for selected voice */}
                         {(() => {
+                          const isElevenLabsVoice = !isRetellProvider && 'provider' in selectedVoice && (selectedVoice as ElevenLabsVoice).provider === "elevenlabs"
                           const previewUrl = isRetellProvider 
                             ? (selectedVoice as RetellVoice)?.previewAudioUrl 
-                            : (selectedVoice as VoiceOption)?.previewUrl
+                            : isElevenLabsVoice
+                              ? (selectedVoice as ElevenLabsVoice)?.previewAudioUrl
+                              : (selectedVoice as VoiceOption)?.previewUrl
                           if (!previewUrl) return null
                           return (
                             <Button
@@ -995,8 +1018,8 @@ export function WorkspaceAgentForm({
                         </div>
                       </div>
 
-                      {/* Loading state for Retell voices */}
-                      {isRetellProvider && isLoadingRetellVoices && (
+                      {/* Loading state for voices */}
+                      {((isRetellProvider && isLoadingRetellVoices) || (!isRetellProvider && isLoadingElevenLabsVoices)) && (
                         <div className="space-y-2">
                           {[1, 2, 3].map((i) => (
                             <div key={i} className="p-3 rounded-lg border">
@@ -1014,24 +1037,28 @@ export function WorkspaceAgentForm({
                         </div>
                       )}
 
-                      {/* Error state for Retell voices */}
-                      {isRetellProvider && retellVoicesError && (
+                      {/* Error state for voices */}
+                      {((isRetellProvider && retellVoicesError) || (!isRetellProvider && elevenLabsVoicesError)) && (
                         <div className="p-4 rounded-lg border border-destructive/50 bg-destructive/10">
                           <div className="flex items-center gap-2 text-destructive">
                             <AlertCircle className="h-4 w-4" />
                             <p className="text-sm font-medium">Failed to load voices</p>
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {retellVoicesError instanceof Error 
-                              ? retellVoicesError.message 
-                              : "Please ensure a Retell integration is configured for this workspace."}
+                            {isRetellProvider
+                              ? (retellVoicesError instanceof Error 
+                                  ? retellVoicesError.message 
+                                  : "Please ensure a Retell integration is configured for this workspace.")
+                              : (elevenLabsVoicesError instanceof Error 
+                                  ? elevenLabsVoicesError.message 
+                                  : "Please ensure an ElevenLabs API key is configured for this workspace.")}
                           </p>
                         </div>
                       )}
 
                       {/* Voice list */}
-                      {!(isRetellProvider && isLoadingRetellVoices) && 
-                       !(isRetellProvider && retellVoicesError) && (
+                      {!((isRetellProvider && isLoadingRetellVoices) || (!isRetellProvider && isLoadingElevenLabsVoices)) && 
+                       !((isRetellProvider && retellVoicesError) || (!isRetellProvider && elevenLabsVoicesError)) && (
                         <>
                           {/* No results state */}
                           {availableVoices.length === 0 && hasActiveFilters && (
@@ -1064,10 +1091,13 @@ export function WorkspaceAgentForm({
                               )}
                             >
                               <div className="space-y-2">
-                                {availableVoices.map((voice) => {
+                                {availableVoices.map((voice: VoiceOption | RetellVoice | ElevenLabsVoice) => {
                                   const colors = getVoiceCardColor(voice.gender)
-                                  const retellVoice = isRetellProvider ? (voice as RetellVoice) : null
-                                  const vapiVoice = !isRetellProvider ? (voice as VoiceOption) : null
+                                  const isRetellVoice = isRetellProvider
+                                  const isElevenLabsVoice = !isRetellProvider && 'provider' in voice && (voice as ElevenLabsVoice).provider === "elevenlabs"
+                                  const retellVoice = isRetellVoice ? (voice as RetellVoice) : null
+                                  const elevenLabsVoice = isElevenLabsVoice ? (voice as ElevenLabsVoice) : null
+                                  const vapiVoice = !isRetellVoice && !isElevenLabsVoice ? (voice as VoiceOption) : null
                                   const isPlaying = playingVoiceId === voice.id
 
                                   return (
@@ -1097,20 +1127,27 @@ export function WorkspaceAgentForm({
                                             </Badge>
                                           </div>
                                           <p className="text-xs text-muted-foreground">
-                                            {isRetellProvider ? `Age: ${retellVoice?.age}` : `Age ${vapiVoice?.age}`}
+                                            {isRetellVoice ? `Age: ${retellVoice?.age}` : isElevenLabsVoice ? `Age: ${elevenLabsVoice?.age}` : `Age ${vapiVoice?.age}`}
                                           </p>
                                           {vapiVoice?.characteristics && (
                                             <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                                               {vapiVoice.characteristics}
                                             </p>
                                           )}
+                                          {elevenLabsVoice?.description && (
+                                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                              {elevenLabsVoice.description}
+                                            </p>
+                                          )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                           {/* Audio Preview Button */}
                                           {(() => {
-                                            const previewUrl = isRetellProvider 
+                                            const previewUrl = isRetellVoice 
                                               ? retellVoice?.previewAudioUrl 
-                                              : vapiVoice?.previewUrl
+                                              : isElevenLabsVoice
+                                                ? elevenLabsVoice?.previewAudioUrl
+                                                : vapiVoice?.previewUrl
                                             if (!previewUrl) return null
                                             return (
                                               <Button

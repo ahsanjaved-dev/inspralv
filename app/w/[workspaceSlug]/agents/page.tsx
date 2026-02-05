@@ -12,6 +12,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { WorkspaceAgentCard } from "@/components/workspace/agents/workspace-agent-card"
 import { DeleteAgentDialog } from "@/components/agents/delete-agent-dialog"
 import {
@@ -19,7 +25,8 @@ import {
   useDeleteWorkspaceAgent,
   useUpdateWorkspaceAgent,
 } from "@/lib/hooks/use-workspace-agents"
-import { Plus, Search, Bot, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
+import { useCanCreateAgent } from "@/lib/hooks/use-workspace-limits"
+import { Plus, Search, Bot, Loader2, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react"
 import type { AIAgent } from "@/types/database.types"
 
 const PAGE_SIZE = 9 // Show 9 agents per page (3x3 grid)
@@ -44,6 +51,9 @@ export default function WorkspaceAgentsPage() {
 
   const deleteMutation = useDeleteWorkspaceAgent()
   const updateMutation = useUpdateWorkspaceAgent()
+  
+  // Check agent limits
+  const { canCreate, usageText, limitReachedMessage, isLoading: isLoadingLimits } = useCanCreateAgent()
 
   // Filter agents based on search and direction
   const filteredAgents = useMemo(() => {
@@ -95,14 +105,41 @@ export default function WorkspaceAgentsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">AI Agents</h1>
-          <p className="text-muted-foreground mt-1">Create and manage your AI voice agents</p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-muted-foreground">Create and manage your AI voice agents</p>
+            {usageText && !isLoadingLimits && (
+              <span className="text-xs px-2 py-0.5 bg-muted rounded-full text-muted-foreground">
+                {usageText}
+              </span>
+            )}
+          </div>
         </div>
-        <Button asChild>
-          <Link href={`/w/${workspaceSlug}/agents/new`}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Agent
-          </Link>
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                {canCreate ? (
+                  <Button asChild>
+                    <Link href={`/w/${workspaceSlug}/agents/new`}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Agent
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button disabled className="cursor-not-allowed">
+                    <AlertCircle className="mr-2 h-4 w-4" />
+                    Create Agent
+                  </Button>
+                )}
+              </span>
+            </TooltipTrigger>
+            {!canCreate && limitReachedMessage && (
+              <TooltipContent side="bottom" className="max-w-xs">
+                <p>{limitReachedMessage}</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {/* Filters */}
@@ -231,13 +268,18 @@ export default function WorkspaceAgentsPage() {
               ? "No agents match your search. Try a different query."
               : "Get started by creating your first AI voice agent."}
           </p>
-          {!searchQuery && (
+          {!searchQuery && canCreate && (
             <Button asChild className="mt-4">
               <Link href={`/w/${workspaceSlug}/agents/new`}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Agent
               </Link>
             </Button>
+          )}
+          {!searchQuery && !canCreate && limitReachedMessage && (
+            <p className="text-sm text-amber-600 dark:text-amber-400 mt-4">
+              {limitReachedMessage}
+            </p>
           )}
         </div>
       )}

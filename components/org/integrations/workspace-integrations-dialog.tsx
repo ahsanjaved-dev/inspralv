@@ -40,7 +40,9 @@ interface WorkspaceIntegrationsDialogProps {
 const PROVIDERS = [
   { id: "vapi", name: "Vapi", icon: "🎙️" },
   { id: "retell", name: "Retell AI", icon: "🤖" },
+  { id: "elevenlabs", name: "ElevenLabs", icon: "🔊" },
   { id: "algolia", name: "Algolia", icon: "🔍" },
+  { id: "google_calendar", name: "Google Calendar", icon: "📅" },
 ]
 
 export function WorkspaceIntegrationsDialog({

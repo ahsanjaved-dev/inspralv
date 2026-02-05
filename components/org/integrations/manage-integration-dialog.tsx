@@ -34,6 +34,8 @@ const PROVIDER_LABELS = {
   vapi: "Vapi",
   retell: "Retell AI",
   algolia: "Algolia",
+  google_calendar: "Google Calendar",
+  elevenlabs: "ElevenLabs",
 }
 
 export function ManageIntegrationDialog({ open, onOpenChange, integration }: ManageIntegrationDialogProps) {
@@ -73,6 +75,8 @@ export function ManageIntegrationDialog({ open, onOpenChange, integration }: Man
   }, [integration])
 
   const isAlgolia = integration?.provider === "algolia"
+  const isElevenLabs = integration?.provider === "elevenlabs"
+  const isGoogleCalendar = integration?.provider === "google_calendar"
   const providerLabel = integration?.provider ? PROVIDER_LABELS[integration.provider as keyof typeof PROVIDER_LABELS] : ""
 
   const handleClose = () => {
@@ -101,6 +105,13 @@ export function ManageIntegrationDialog({ open, onOpenChange, integration }: Man
         payload.config = {
           app_id: algoliaAppId,
           call_logs_index: algoliaIndex,
+        }
+      } else if (isElevenLabs) {
+        if (secretKey) {
+          payload.default_secret_key = secretKey
+          payload.config = {
+            elevenlabs_api_key: secretKey,
+          }
         }
       } else {
         if (secretKey) {
@@ -224,13 +235,13 @@ export function ManageIntegrationDialog({ open, onOpenChange, integration }: Man
                     />
                   </div>
                 </>
-              ) : (
-                // VAPI / Retell fields
+              ) : isElevenLabs ? (
+                // ElevenLabs fields
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="edit-secret-key" className="flex items-center gap-2">
                       <Key className="h-4 w-4" />
-                      Secret API Key
+                      ElevenLabs API Key
                     </Label>
                     <div className="relative">
                       <Input
@@ -251,14 +262,56 @@ export function ManageIntegrationDialog({ open, onOpenChange, integration }: Man
                       </Button>
                     </div>
                     {integration.has_default_secret_key && (
-                      <p className="text-xs text-green-600">✓ Secret key configured</p>
+                      <p className="text-xs text-green-600">✓ API key configured</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Find your API key at{" "}
+                      <a
+                        href="https://elevenlabs.io/app/settings/api-keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary underline hover:no-underline"
+                      >
+                        ElevenLabs Settings → API Keys
+                      </a>
+                    </p>
+                  </div>
+                </>
+              ) : (
+                // VAPI / Retell / Google Calendar fields
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-secret-key" className="flex items-center gap-2">
+                      <Key className="h-4 w-4" />
+                      {isGoogleCalendar ? "Client Secret" : "Secret API Key"}
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="edit-secret-key"
+                        type={showSecretKey ? "text" : "password"}
+                        placeholder="Enter new key to update (leave empty to keep current)"
+                        value={secretKey}
+                        onChange={(e) => setSecretKey(e.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowSecretKey(!showSecretKey)}
+                      >
+                        {showSecretKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    {integration.has_default_secret_key && (
+                      <p className="text-xs text-green-600">✓ {isGoogleCalendar ? "Client secret" : "Secret key"} configured</p>
                     )}
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-public-key" className="flex items-center gap-2">
                       <Globe className="h-4 w-4" />
-                      Public API Key
+                      {isGoogleCalendar ? "Client ID" : "Public API Key"}
                     </Label>
                     <Input
                       id="edit-public-key"
@@ -267,7 +320,7 @@ export function ManageIntegrationDialog({ open, onOpenChange, integration }: Man
                       onChange={(e) => setPublicKey(e.target.value)}
                     />
                     {integration.has_default_public_key && (
-                      <p className="text-xs text-green-600">✓ Public key configured</p>
+                      <p className="text-xs text-green-600">✓ {isGoogleCalendar ? "Client ID" : "Public key"} configured</p>
                     )}
                   </div>
                 </>

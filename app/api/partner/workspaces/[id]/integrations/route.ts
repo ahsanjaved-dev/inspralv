@@ -17,7 +17,7 @@ interface RouteContext {
 
 // Validation schema for assigning integration
 const assignIntegrationSchema = z.object({
-  provider: z.enum(["vapi", "retell", "algolia", "google_calendar"]),
+  provider: z.enum(["vapi", "retell", "algolia", "google_calendar", "elevenlabs"]),
   partner_integration_id: z.string().uuid(),
 })
 

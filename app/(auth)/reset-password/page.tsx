@@ -23,7 +23,26 @@ function ResetPasswordContent() {
   useEffect(() => {
     const checkSession = async () => {
       const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
+      
+      // Check for error in URL hash (Supabase returns errors in hash)
+      const hashParams = new URLSearchParams(window.location.hash.substring(1))
+      const errorDescription = hashParams.get("error_description")
+      
+      if (errorDescription) {
+        setError(decodeURIComponent(errorDescription))
+        setChecking(false)
+        return
+      }
+      
+      // Try to get session - Supabase should have exchanged the token
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError) {
+        console.error("[ResetPassword] Session error:", sessionError)
+        setError(sessionError.message)
+        setChecking(false)
+        return
+      }
 
       if (session) {
         setValidSession(true)
@@ -90,8 +109,16 @@ function ResetPasswordContent() {
             <AlertCircle className="h-8 w-8 text-destructive" />
           </div>
           <h2 className="text-2xl font-bold mb-2">Invalid or expired link</h2>
-          <p className="text-muted-foreground mb-6">
+          <p className="text-muted-foreground mb-4">
             This password reset link is invalid or has expired.
+          </p>
+          {error && (
+            <p className="text-sm text-destructive mb-4 px-4 py-2 bg-destructive/10 rounded-lg">
+              {error}
+            </p>
+          )}
+          <p className="text-sm text-muted-foreground mb-6">
+            Password reset links expire after 1 hour. Please request a new link.
           </p>
           <Button asChild>
             <Link href="/forgot-password">Request new reset link</Link>

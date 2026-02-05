@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma"
 import { startBackgroundBulkSync } from "@/lib/algolia/sync"
 
 // Provider type enum
-const providerEnum = z.enum(["vapi", "retell", "algolia", "google_calendar"])
+const providerEnum = z.enum(["vapi", "retell", "algolia", "google_calendar", "elevenlabs"])
 
 // Additional key schema
 const additionalKeySchema = z.object({

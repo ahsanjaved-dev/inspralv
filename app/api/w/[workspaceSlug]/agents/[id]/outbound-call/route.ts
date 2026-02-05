@@ -313,21 +313,18 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     // BILLING CHECKS (common for both providers)
     // ============================================================================
 
-    // Only the platform partner's "default" workspace bypasses billing (for testing)
-    // All other workspaces (including platform partner's non-default workspaces) follow billing checks
+    // Check if workspace is billing exempt (uses partner credits)
+    const isBillingExempt = ctx.workspace.is_billing_exempt
     const isPlatformPartner = ctx.partner.is_platform_partner
-    const isDefaultWorkspace = ctx.workspace.slug === "default"
-    const isPlatformTestingWorkspace = isPlatformPartner && isDefaultWorkspace
-    
-    if (isPlatformTestingWorkspace) {
-      console.log("[OutboundCall] Billing checks bypassed (platform partner testing workspace)")
-    } else {
-      // Check if workspace is billing exempt (uses partner credits)
-      const isBillingExempt = ctx.workspace.is_billing_exempt
-      const estimatedMinutes = 5
+    const estimatedMinutes = 5
 
-      if (isBillingExempt) {
-        // Billing-exempt workspaces use partner credits
+    if (isBillingExempt) {
+      // Platform partner's billing-exempt workspaces skip credit checks entirely
+      // (Platform partner owns the platform and doesn't use the credit system)
+      if (isPlatformPartner) {
+        console.log("[OutboundCall] Billing checks skipped (platform partner billing-exempt workspace)")
+      } else {
+        // Non-platform partner billing-exempt workspaces use partner credits
         const hasPartnerCredits = await hasSufficientCredits(ctx.partner.id, estimatedMinutes)
 
         if (!hasPartnerCredits) {
@@ -338,33 +335,34 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         }
 
         console.log("[OutboundCall] Billing checks passed (billing-exempt, using partner credits)")
+      }
+    } else {
+      // Non-billing-exempt workspaces: Check subscription and workspace credits
+      
+      // 1. Check if workspace has an active subscription with available minutes
+      const postpaidCheck = await canMakePostpaidCall(ctx.workspace.id)
+      
+      if (postpaidCheck.billingType === "postpaid") {
+        // Postpaid subscription - check against usage limit
+        if (!postpaidCheck.allowed) {
+          return apiError(
+            `Monthly minutes limit reached. You have used ${postpaidCheck.currentUsage} of ${postpaidCheck.limitMinutes} minutes. Please upgrade your plan or wait until next billing period.`,
+            429 // Too Many Requests
+          )
+        }
+        console.log("[OutboundCall] Billing checks passed (postpaid subscription):", {
+          remainingMinutes: postpaidCheck.remainingMinutes,
+        })
+      } else if (postpaidCheck.billingType === "prepaid") {
+        // Prepaid subscription - has included minutes, overage uses workspace credits
+        // The subscription has included minutes, so we allow the call
+        // Overage will be handled at call completion via workspace credits
+        console.log("[OutboundCall] Billing checks passed (prepaid subscription):", {
+          remainingIncludedMinutes: postpaidCheck.remainingMinutes,
+        })
       } else {
-        // Non-billing-exempt workspaces: Check subscription and workspace credits
-        
-        // 1. Check if workspace has an active subscription with available minutes
-        const postpaidCheck = await canMakePostpaidCall(ctx.workspace.id)
-        
-        if (postpaidCheck.billingType === "postpaid") {
-          // Postpaid subscription - check against usage limit
-          if (!postpaidCheck.allowed) {
-            return apiError(
-              `Monthly minutes limit reached. You have used ${postpaidCheck.currentUsage} of ${postpaidCheck.limitMinutes} minutes. Please upgrade your plan or wait until next billing period.`,
-              429 // Too Many Requests
-            )
-          }
-          console.log("[OutboundCall] Billing checks passed (postpaid subscription):", {
-            remainingMinutes: postpaidCheck.remainingMinutes,
-          })
-        } else if (postpaidCheck.billingType === "prepaid") {
-          // Prepaid subscription - has included minutes, overage uses workspace credits
-          // The subscription has included minutes, so we allow the call
-          // Overage will be handled at call completion via workspace credits
-          console.log("[OutboundCall] Billing checks passed (prepaid subscription):", {
-            remainingIncludedMinutes: postpaidCheck.remainingMinutes,
-          })
-        } else {
-          // No subscription - check workspace prepaid credits
-          const hasWorkspaceCredits = await hasSufficientWorkspaceCredits(ctx.workspace.id, estimatedMinutes)
+        // No subscription - check workspace prepaid credits
+        const hasWorkspaceCredits = await hasSufficientWorkspaceCredits(ctx.workspace.id, estimatedMinutes)
 
           if (!hasWorkspaceCredits) {
             return apiError(
@@ -378,12 +376,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         // 2. Also check workspace monthly minutes limit (plan-level limit)
         const minutesCheck = await checkMonthlyMinutesLimit(ctx.workspace.id)
 
-        if (!minutesCheck.allowed) {
-          return apiError(
-            `Monthly minutes limit reached. You have used ${minutesCheck.currentUsage} of ${minutesCheck.limit} minutes this month. Please upgrade your plan or wait until next month.`,
-            429 // Too Many Requests
-          )
-        }
+      if (!minutesCheck.allowed) {
+        return apiError(
+          `Monthly minutes limit reached. You have used ${minutesCheck.currentUsage} of ${minutesCheck.limit} minutes this month. Please upgrade your plan or wait until next month.`,
+          429 // Too Many Requests
+        )
       }
     }
 

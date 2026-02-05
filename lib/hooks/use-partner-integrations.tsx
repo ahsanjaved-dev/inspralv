@@ -9,7 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 export interface PartnerIntegration {
   id: string
   partner_id: string
-  provider: "vapi" | "retell" | "algolia" | "google_calendar"
+  provider: "vapi" | "retell" | "algolia" | "google_calendar" | "elevenlabs"
   name: string
   has_default_secret_key: boolean
   has_default_public_key: boolean
@@ -54,7 +54,7 @@ export interface AvailableIntegration {
 }
 
 export interface CreatePartnerIntegrationInput {
-  provider: "vapi" | "retell" | "algolia" | "google_calendar"
+  provider: "vapi" | "retell" | "algolia" | "google_calendar" | "elevenlabs"
   name: string
   default_secret_key: string
   default_public_key?: string
