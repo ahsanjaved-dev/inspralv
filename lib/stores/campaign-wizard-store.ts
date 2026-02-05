@@ -411,6 +411,10 @@ export const useCampaignWizardStore = create<CampaignWizardStore>()(
           if (formData.scheduleType === "scheduled" && !formData.scheduledStartAt) {
             newErrors.scheduledStartAt = "Please select a start date/time"
           }
+          // Expiry date is required for ALL schedule types
+          if (!formData.scheduledExpiresAt) {
+            newErrors.scheduledExpiresAt = "Please select an expiry date/time"
+          }
         }
 
         // Only update state if errors actually changed
@@ -443,6 +447,10 @@ export const useCampaignWizardStore = create<CampaignWizardStore>()(
         // Step 4: Schedule validation
         if (formData.scheduleType === "scheduled" && !formData.scheduledStartAt) {
           allErrors.scheduledStartAt = "Please select a start date/time"
+        }
+        // Expiry date is required for ALL schedule types
+        if (!formData.scheduledExpiresAt) {
+          allErrors.scheduledExpiresAt = "Please select an expiry date/time"
         }
 
         set({ errors: allErrors })

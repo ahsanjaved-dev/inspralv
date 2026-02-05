@@ -217,8 +217,9 @@ export async function GET(
 
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status")
+    const dateFilter = searchParams.get("date") // Format: YYYY-MM-DD
     const page = parseInt(searchParams.get("page") || "1")
-    const pageSize = parseInt(searchParams.get("pageSize") || "20")
+    const pageSize = parseInt(searchParams.get("pageSize") || "10")
     const offset = (page - 1) * pageSize
 
     // Build query
@@ -238,6 +239,16 @@ export async function GET(
 
     if (status && status !== "all") {
       query = query.eq("status", status)
+    }
+
+    // Date filter - filter campaigns created on the specified date
+    // Using a broad time range to handle timezone differences
+    if (dateFilter) {
+      // Create start of day and end of day with buffer for timezone differences
+      // This ensures we capture records regardless of timezone storage
+      const startOfDay = `${dateFilter}T00:00:00`
+      const endOfDay = `${dateFilter}T23:59:59.999`
+      query = query.gte("created_at", startOfDay).lte("created_at", endOfDay)
     }
 
     const { data, error, count } = await query

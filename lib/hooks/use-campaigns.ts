@@ -53,10 +53,24 @@ interface UseCampaignsOptions {
   status?: CampaignStatus | "all"
   page?: number
   pageSize?: number
+  /** Date filter in YYYY-MM-DD format (default: today) */
+  date?: string | null
   /** Enable auto-polling when there are active campaigns (default: false) */
   enablePolling?: boolean
   /** Polling interval in milliseconds (default: 5000ms) */
   pollingInterval?: number
+}
+
+/**
+ * Get today's date in YYYY-MM-DD format (local timezone)
+ * This avoids timezone issues with toISOString() which converts to UTC
+ */
+function getTodayDateString(): string {
+  const today = new Date()
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, "0")
+  const day = String(today.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
 }
 
 export function useCampaigns(options: UseCampaignsOptions = {}) {
@@ -65,19 +79,21 @@ export function useCampaigns(options: UseCampaignsOptions = {}) {
   const { 
     status = "all", 
     page = 1, 
-    pageSize = 20,
+    pageSize = 10,
+    date = getTodayDateString(), // Default to today
     enablePolling = false,
     pollingInterval = 5000,
   } = options
 
   const query = useQuery<CampaignsResponse>({
-    queryKey: ["campaigns", workspaceSlug, { status, page, pageSize }],
+    queryKey: ["campaigns", workspaceSlug, { status, page, pageSize, date }],
     queryFn: async () => {
       const searchParams = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
       })
       if (status !== "all") searchParams.set("status", status)
+      if (date) searchParams.set("date", date)
 
       const response = await fetch(
         `/api/w/${workspaceSlug}/campaigns?${searchParams}`
@@ -275,6 +291,8 @@ interface UseRecipientsOptions {
   status?: RecipientCallStatus | "all"
   page?: number
   pageSize?: number
+  /** Date filter in YYYY-MM-DD format (default: today) */
+  date?: string | null
   /** Enable auto-polling for active campaigns (default: true) */
   enablePolling?: boolean
   /** Polling interval in milliseconds (default: 5000ms = 5 seconds) */
@@ -292,20 +310,22 @@ export function useCampaignRecipients(
   const { 
     status = "all", 
     page = 1, 
-    pageSize = 50,
+    pageSize = 10,
+    date = getTodayDateString(), // Default to today
     enablePolling = true,
     pollingInterval = 5000,
     campaignActive = false,
   } = options
 
   return useQuery<RecipientsResponse>({
-    queryKey: ["campaign-recipients", workspaceSlug, campaignId, { status, page, pageSize }],
+    queryKey: ["campaign-recipients", workspaceSlug, campaignId, { status, page, pageSize, date }],
     queryFn: async () => {
       const searchParams = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
       })
       if (status !== "all") searchParams.set("status", status)
+      if (date) searchParams.set("date", date)
 
       const response = await fetch(
         `/api/w/${workspaceSlug}/campaigns/${campaignId}/recipients?${searchParams}`

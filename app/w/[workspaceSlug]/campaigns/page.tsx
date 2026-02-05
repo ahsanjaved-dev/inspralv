@@ -3,9 +3,16 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
+import { format } from "date-fns"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Calendar } from "@/components/ui/calendar"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { 
   Select, 
   SelectContent, 
@@ -43,11 +50,33 @@ import {
   RefreshCw,
   Filter,
   Search,
+  CalendarIcon,
+  X,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 import type { CallCampaignWithAgent, CampaignStatus } from "@/types/database.types"
+
+/**
+ * Get today's date in YYYY-MM-DD format (local timezone)
+ */
+function getTodayDateString(): string {
+  const today = new Date()
+  return formatDateToLocal(today)
+}
+
+/**
+ * Format a Date object to YYYY-MM-DD in local timezone
+ * This avoids timezone issues with toISOString() which converts to UTC
+ */
+function formatDateToLocal(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
 
 const statusOptions = [
   { value: "all", label: "All Status" },
@@ -65,8 +94,10 @@ export default function CampaignsPage() {
   const workspaceSlug = params.workspaceSlug as string
 
   const [statusFilter, setStatusFilter] = useState<CampaignStatus | "all">("all")
+  const [dateFilter, setDateFilter] = useState<string | null>(getTodayDateString()) // Default to today
+  const [datePickerOpen, setDatePickerOpen] = useState(false) // Control popover
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10) // Default 10
   const [deleteTarget, setDeleteTarget] = useState<CallCampaignWithAgent | null>(null)
   const [isCreatingCampaign, setIsCreatingCampaign] = useState(false)
   const [startingCampaignId, setStartingCampaignId] = useState<string | null>(null)
@@ -83,9 +114,13 @@ export default function CampaignsPage() {
     router.push(`/w/${workspaceSlug}/campaigns/new`)
   }
 
+  // Parse date filter for calendar component (use noon to avoid timezone edge cases)
+  const selectedDate = dateFilter ? new Date(dateFilter + "T12:00:00") : undefined
+
   // Fetch campaigns - this also returns workspaceId for realtime subscription
   const { data, isLoading, refetch, hasActiveCampaigns, workspaceId } = useCampaigns({ 
     status: statusFilter, 
+    date: dateFilter,
     page,
     pageSize,
     // Enable auto-polling every 5 seconds when there are active campaigns
@@ -116,13 +151,8 @@ export default function CampaignsPage() {
   const totalCampaigns = data?.total || 0
   const totalPages = data?.totalPages || 1
 
-  // Calculate stats
+  // Calculate stats (only scalable aggregate counts)
   const activeCampaigns = campaigns.filter(c => c.status === "active").length
-  const draftCampaigns = campaigns.filter(c => c.status === "draft").length
-  const totalRecipients = campaigns.reduce((sum, c) => sum + c.total_recipients, 0)
-  const completedCalls = campaigns.reduce((sum, c) => sum + c.completed_calls, 0)
-  const successfulCalls = campaigns.reduce((sum, c) => sum + (c.successful_calls || 0), 0)
-  const successRate = completedCalls > 0 ? Math.round((successfulCalls / completedCalls) * 100) : 0
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("")
@@ -251,13 +281,10 @@ export default function CampaignsPage() {
       {/* Draft Recovery Card - shows if user has unsaved wizard progress */}
       <WizardDraftCard />
 
-      {/* Hero Stats Cards */}
+      {/* Hero Stats Cards - Only showing scalable aggregate stats */}
       <CampaignHeroStats
         totalCampaigns={totalCampaigns}
         activeCampaigns={activeCampaigns}
-        totalRecipients={totalRecipients}
-        processedCalls={completedCalls}
-        successRate={successRate}
         isLoading={isLoading}
       />
 
@@ -274,6 +301,70 @@ export default function CampaignsPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
               />
+            </div>
+            
+            {/* Date filter */}
+            <div className="flex items-center gap-2">
+              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-[200px] justify-start text-left font-normal",
+                      !dateFilter && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFilter ? format(selectedDate!, "PPP") : "All dates"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={(date) => {
+                      if (date) {
+                        // Use local date formatting to avoid timezone issues
+                        setDateFilter(formatDateToLocal(date))
+                        setPage(1)
+                        setDatePickerOpen(false) // Close popover after selection
+                      }
+                    }}
+                    initialFocus
+                  />
+                  {dateFilter && (
+                    <div className="p-2 border-t">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => {
+                          setDateFilter(null)
+                          setPage(1)
+                          setDatePickerOpen(false)
+                        }}
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Clear date filter
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+              {dateFilter && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={() => {
+                    setDateFilter(getTodayDateString())
+                    setPage(1)
+                  }}
+                  title="Reset to today"
+                >
+                  <CalendarIcon className="h-4 w-4" />
+                </Button>
+              )}
             </div>
             
             {/* Status filter */}
@@ -312,7 +403,10 @@ export default function CampaignsPage() {
                     </Button>
                   </>
                 ) : (
-                  <span>{totalCampaigns} campaign{totalCampaigns !== 1 ? 's' : ''} total</span>
+                  <span>
+                    {totalCampaigns} campaign{totalCampaigns !== 1 ? 's' : ''}
+                    {dateFilter ? ` on ${format(selectedDate!, "MMM d, yyyy")}` : ' total'}
+                  </span>
                 )}
               </div>
             )}
@@ -328,7 +422,7 @@ export default function CampaignsPage() {
                 pageSize={pageSize}
                 onPageChange={setPage}
                 onPageSizeChange={setPageSize}
-                pageSizeOptions={[10, 20, 50, 100]}
+                pageSizeOptions={[10, 20, 30, 50]}
                 isLoading={isLoading}
               />
             </div>
@@ -370,8 +464,16 @@ export default function CampaignsPage() {
         <CampaignEmptyState 
           onCreateCampaign={handleNewCampaign} 
           isCreating={isCreatingCampaign}
-          title={statusFilter !== "all" ? "No campaigns match your filter" : undefined}
-          description={statusFilter !== "all" ? "Try adjusting your filter selection to see more campaigns." : undefined}
+          title={
+            dateFilter || statusFilter !== "all" 
+              ? "No campaigns match your filters" 
+              : undefined
+          }
+          description={
+            dateFilter || statusFilter !== "all" 
+              ? `Try adjusting your ${dateFilter ? 'date' : ''}${dateFilter && statusFilter !== 'all' ? ' or ' : ''}${statusFilter !== 'all' ? 'status' : ''} filter to see more campaigns.` 
+              : undefined
+          }
         />
       ) : filteredCampaigns.length === 0 ? (
         <Card className="border-dashed">
