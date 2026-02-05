@@ -47,6 +47,13 @@ export const calendarSettingsSchema = z.object({
   timezone: z.string().optional().default("America/New_York"),
   min_notice_hours: z.number().min(0).max(168).optional().default(0),
   max_advance_days: z.number().min(1).max(365).optional().default(60),
+  // Email notification settings
+  enable_owner_email: z.boolean().optional().default(false),
+  owner_email: z.string().email().optional().nullable(),
+  // Calendar source settings (for using existing calendars)
+  calendar_source: z.enum(["new", "existing"]).optional().default("new"),
+  existing_calendar_id: z.string().optional(),
+  existing_calendar_name: z.string().optional(),
 })
 
 // Agent schema for workspace context (workspace comes from URL)
@@ -94,6 +101,8 @@ export const createWorkspaceAgentSchema = z.object({
       // Function tools configuration
       tools: functionToolsArraySchema.optional(),
       tools_server_url: z.string().url().optional(),
+      // CRM/Webhook URL for forwarding call data (transcript, summary, etc.)
+      crm_webhook_url: z.string().url().optional(),
       // Knowledge base configuration
       knowledge_base: agentKnowledgeBaseConfigSchema.optional(),
       // Agent-level custom variables (specific to this agent)

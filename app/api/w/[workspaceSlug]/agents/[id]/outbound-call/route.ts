@@ -315,20 +315,27 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     // Check if workspace is billing exempt (uses partner credits)
     const isBillingExempt = ctx.workspace.is_billing_exempt
+    const isPlatformPartner = ctx.partner.is_platform_partner
     const estimatedMinutes = 5
 
     if (isBillingExempt) {
-      // Billing-exempt workspaces use partner credits
-      const hasPartnerCredits = await hasSufficientCredits(ctx.partner.id, estimatedMinutes)
+      // Platform partner's billing-exempt workspaces skip credit checks entirely
+      // (Platform partner owns the platform and doesn't use the credit system)
+      if (isPlatformPartner) {
+        console.log("[OutboundCall] Billing checks skipped (platform partner billing-exempt workspace)")
+      } else {
+        // Non-platform partner billing-exempt workspaces use partner credits
+        const hasPartnerCredits = await hasSufficientCredits(ctx.partner.id, estimatedMinutes)
 
-      if (!hasPartnerCredits) {
-        return apiError(
-          "Insufficient organization credits. Please contact your organization admin to top up credits.",
-          402 // Payment Required
-        )
+        if (!hasPartnerCredits) {
+          return apiError(
+            "Insufficient organization credits. Please contact your organization admin to top up credits.",
+            402 // Payment Required
+          )
+        }
+
+        console.log("[OutboundCall] Billing checks passed (billing-exempt, using partner credits)")
       }
-
-      console.log("[OutboundCall] Billing checks passed (billing-exempt, using partner credits)")
     } else {
       // Non-billing-exempt workspaces: Check subscription and workspace credits
       
@@ -357,17 +364,17 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         // No subscription - check workspace prepaid credits
         const hasWorkspaceCredits = await hasSufficientWorkspaceCredits(ctx.workspace.id, estimatedMinutes)
 
-        if (!hasWorkspaceCredits) {
-          return apiError(
-            "Insufficient credits. Please top up your account before making outbound calls.",
-            402 // Payment Required
-          )
+          if (!hasWorkspaceCredits) {
+            return apiError(
+              "Insufficient credits. Please top up your account before making outbound calls.",
+              402 // Payment Required
+            )
+          }
+          console.log("[OutboundCall] Billing checks passed (workspace credits)")
         }
-        console.log("[OutboundCall] Billing checks passed (workspace credits)")
-      }
 
-      // 2. Also check workspace monthly minutes limit (plan-level limit)
-      const minutesCheck = await checkMonthlyMinutesLimit(ctx.workspace.id)
+        // 2. Also check workspace monthly minutes limit (plan-level limit)
+        const minutesCheck = await checkMonthlyMinutesLimit(ctx.workspace.id)
 
       if (!minutesCheck.allowed) {
         return apiError(
@@ -394,10 +401,14 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       const { secretKey, config: vapiConfig } = integrationDetails
 
       // Determine which phone number to use for outbound calls:
-      // 1. Prefer shared outbound phone number (configured at workspace level)
-      // 2. Fall back to agent's config telephony phone number
-      // 3. Fall back to agent's assigned_phone_number_id (fetch VAPI ID from DB)
-      const sharedOutboundPhoneNumberId = vapiConfig.shared_outbound_phone_number_id
+      // IMPORTANT: For outbound agents, we require an AGENT-LEVEL phone number.
+      // The shared outbound number should NOT be used as automatic fallback
+      // because users expect explicit phone number selection for outbound agents.
+      // 
+      // Priority:
+      // 1. Agent's config telephony phone number (vapi_phone_number_id)
+      // 2. Agent's assigned_phone_number_id (fetch VAPI ID from DB)
+      // 3. If none configured, return error (do NOT fallback to shared outbound)
       let agentPhoneNumberId = typedAgent.config?.telephony?.vapi_phone_number_id
       
       // If no phone number in config, check assigned_phone_number_id
@@ -419,20 +430,25 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         }
       }
       
-      const outboundPhoneNumberId = sharedOutboundPhoneNumberId || agentPhoneNumberId
-
-      if (!outboundPhoneNumberId) {
+      // Agent must have its own phone number configured for outbound calls
+      if (!agentPhoneNumberId) {
         return apiError(
-          "No outbound phone number configured. Set up a shared outbound number in integration settings, or assign a synced phone number to the agent.",
+          "No phone number configured for this agent. Please assign a phone number to the agent before making outbound calls.",
           400
         )
       }
+      
+      const outboundPhoneNumberId = agentPhoneNumberId
+      
+      // Log for debugging (shared outbound is available but NOT used)
+      const sharedOutboundPhoneNumberId = vapiConfig.shared_outbound_phone_number_id
 
-      console.log("[OutboundCall] VAPI - Using phone number:", {
-        shared: sharedOutboundPhoneNumberId,
-        agent: agentPhoneNumberId,
+      console.log("[OutboundCall] VAPI - Using agent phone number:", {
+        agentPhoneNumberId,
         assignedPhoneNumberId: typedAgent.assigned_phone_number_id,
-        selected: outboundPhoneNumberId,
+        externalPhoneNumber: typedAgent.external_phone_number,
+        // Note: shared outbound available but not used for outbound agents
+        sharedAvailable: !!sharedOutboundPhoneNumberId,
       })
 
       // Create the outbound call via VAPI
@@ -453,19 +469,14 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
       const call = callResult.data
 
-      // Determine display number for response
-      const fromNumber = sharedOutboundPhoneNumberId
-        ? vapiConfig.shared_outbound_phone_number || "Shared outbound number"
-        : typedAgent.external_phone_number
-
       return apiResponse({
         success: true,
         provider: "vapi",
         callId: call.id,
         status: call.status,
         customerNumber,
-        fromNumber,
-        usedSharedOutbound: !!sharedOutboundPhoneNumberId,
+        fromNumber: typedAgent.external_phone_number || "Agent phone number",
+        usedSharedOutbound: false,
         message: "Outbound call initiated successfully",
       })
     }
@@ -487,13 +498,14 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       const { secretKey, config: retellConfig } = integrationDetails
 
       // Determine which phone number to use for outbound calls:
-      // 1. Prefer shared outbound phone number (configured at workspace level)
-      // 2. Fall back to agent's assigned_phone_number_id (fetch phone number from DB)
-      const sharedOutboundPhoneNumber = retellConfig.shared_outbound_phone_number
+      // IMPORTANT: For outbound agents, we require an AGENT-LEVEL phone number.
+      // The shared outbound number should NOT be used as automatic fallback.
+      // 
+      // Check: Agent's assigned_phone_number_id (fetch phone number from DB)
       let agentPhoneNumber: string | undefined = undefined
       
       // Check assigned_phone_number_id for agent-specific phone number
-      if (!agentPhoneNumber && typedAgent.assigned_phone_number_id) {
+      if (typedAgent.assigned_phone_number_id) {
         console.log("[OutboundCall] Checking assigned_phone_number_id for Retell:", typedAgent.assigned_phone_number_id)
         
         // Fetch the phone number from DB
@@ -511,20 +523,30 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         }
       }
       
-      const outboundPhoneNumber = sharedOutboundPhoneNumber || agentPhoneNumber
+      // Also check external_phone_number as fallback
+      if (!agentPhoneNumber && typedAgent.external_phone_number) {
+        agentPhoneNumber = typedAgent.external_phone_number
+      }
 
-      if (!outboundPhoneNumber) {
+      // Agent must have its own phone number configured for outbound calls
+      if (!agentPhoneNumber) {
         return apiError(
-          "No outbound phone number configured. Set up a shared outbound number in integration settings, or assign a phone number to the agent.",
+          "No phone number configured for this agent. Please assign a phone number to the agent before making outbound calls.",
           400
         )
       }
+      
+      const outboundPhoneNumber = agentPhoneNumber
+      
+      // Note: shared outbound is available but NOT used for outbound agents
+      const sharedOutboundPhoneNumber = retellConfig.shared_outbound_phone_number
 
-      console.log("[OutboundCall] Retell - Using phone number:", {
-        shared: sharedOutboundPhoneNumber,
-        agent: agentPhoneNumber,
+      console.log("[OutboundCall] Retell - Using agent phone number:", {
+        agentPhoneNumber,
         assignedPhoneNumberId: typedAgent.assigned_phone_number_id,
-        selected: outboundPhoneNumber,
+        externalPhoneNumber: typedAgent.external_phone_number,
+        // Note: shared outbound available but not used for outbound agents
+        sharedAvailable: !!sharedOutboundPhoneNumber,
       })
 
       // Create the outbound call via Retell
@@ -557,7 +579,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         status: call.call_status,
         customerNumber,
         fromNumber: outboundPhoneNumber,
-        usedSharedOutbound: !!sharedOutboundPhoneNumber,
+        usedSharedOutbound: false,
         message: "Outbound call initiated successfully",
       })
     }

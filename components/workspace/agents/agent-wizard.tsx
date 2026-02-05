@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -77,6 +78,8 @@ import {
   type VoiceOption,
 } from "@/lib/voice"
 import { useRetellVoices } from "@/lib/hooks/use-retell-voices"
+import { useElevenLabsVoices } from "@/lib/hooks/use-elevenlabs-voices"
+import type { ElevenLabsVoice } from "@/lib/integrations/elevenlabs/voices"
 import type { RetellVoice } from "@/lib/integrations/retell/voices"
 
 // ============================================================================
@@ -114,6 +117,8 @@ interface WizardFormData {
   enableVoice: boolean
   voice: string
   voiceSpeed: number
+  // CRM/Webhook URL for call data forwarding
+  crmWebhookUrl: string
   // Step 2: Prompts & Tools
   systemPrompt: string
   greeting: string
@@ -131,6 +136,13 @@ interface WizardFormData {
     timezone: string
     min_notice_hours: number
     max_advance_days: number
+    // Email notification settings
+    enable_owner_email: boolean
+    owner_email?: string
+    // Calendar source settings (for using existing calendars)
+    calendar_source: 'new' | 'existing'
+    existing_calendar_id?: string
+    existing_calendar_name?: string
   }
 }
 
@@ -227,6 +239,10 @@ Always verify the customer's identity and confirm appointment details before fin
 export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const totalSteps = 2
+  
+  // Get workspace slug from URL params
+  const params = useParams()
+  const workspaceSlug = params.workspaceSlug as string
 
   // Get workspace settings to access workspace ID for webhook URL
   const { data: workspace } = useWorkspaceSettings()
@@ -249,6 +265,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     enableVoice: true, // Voice is always enabled - shown directly
     voice: "", // Empty until user selects
     voiceSpeed: 1,
+    crmWebhookUrl: "", // CRM/Webhook URL for call data forwarding
     systemPrompt: "",
     greeting: "Hello! Thank you for calling. How can I help you today?",
     style: "friendly",
@@ -263,6 +280,11 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       timezone: "America/New_York",
       min_notice_hours: 1,
       max_advance_days: 60,
+      enable_owner_email: false,
+      owner_email: undefined,
+      calendar_source: 'new',
+      existing_calendar_id: undefined,
+      existing_calendar_name: undefined,
     },
   })
 
@@ -273,11 +295,35 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     error: retellVoicesError 
   } = useRetellVoices()
 
+  // Fetch ElevenLabs voices dynamically for VAPI
+  const {
+    data: elevenLabsVoicesData,
+    isLoading: isLoadingElevenLabsVoices,
+    error: elevenLabsVoicesError
+  } = useElevenLabsVoices()
+
   // Get available voices based on selected provider
-  // For Retell: use dynamically fetched voices, for VAPI: use static list
+  // For Retell: use dynamically fetched Retell voices
+  // For VAPI: use dynamically fetched ElevenLabs voices, fall back to static list
   const availableVoices = formData.provider === "retell" 
     ? (retellVoicesData?.voices || [])
-    : getVoicesForProvider(formData.provider)
+    : formData.provider === "vapi"
+      ? (elevenLabsVoicesData?.voices || getVoicesForProvider(formData.provider))
+      : getVoicesForProvider(formData.provider)
+  
+  // Track if voices are loading for the current provider
+  const isLoadingVoices = formData.provider === "retell" 
+    ? isLoadingRetellVoices 
+    : formData.provider === "vapi" 
+      ? isLoadingElevenLabsVoices 
+      : false
+  
+  // Track voice loading errors for the current provider
+  const voicesError = formData.provider === "retell"
+    ? retellVoicesError
+    : formData.provider === "vapi"
+      ? elevenLabsVoicesError
+      : null
 
   // State for audio preview
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null)
@@ -330,7 +376,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   }
 
   // Filter voices based on search and gender only (for accent dropdown)
-  const filterVoicesForAccentDropdown = (voices: (VoiceOption | RetellVoice)[]): (VoiceOption | RetellVoice)[] => {
+  const filterVoicesForAccentDropdown = (voices: (VoiceOption | ElevenLabsVoice | RetellVoice)[]): (VoiceOption | ElevenLabsVoice | RetellVoice)[] => {
     return voices.filter((voice) => {
       // Search filter - check name, accent, and characteristics
       if (voiceFilters.search) {
@@ -356,7 +402,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   }
 
   // Filter voices based on all filters (for display)
-  const filterVoices = (voices: (VoiceOption | RetellVoice)[]): (VoiceOption | RetellVoice)[] => {
+  const filterVoices = (voices: (VoiceOption | ElevenLabsVoice | RetellVoice)[]): (VoiceOption | ElevenLabsVoice | RetellVoice)[] => {
     return voices.filter((voice) => {
       // Search filter - check name, accent, and characteristics
       if (voiceFilters.search) {
@@ -387,7 +433,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   }
 
   // Get unique accents from voices that match search and gender filters
-  const getAvailableAccents = (voices: (VoiceOption | RetellVoice)[]): string[] => {
+  const getAvailableAccents = (voices: (VoiceOption | ElevenLabsVoice | RetellVoice)[]): string[] => {
     const filteredForAccents = filterVoicesForAccentDropdown(voices)
     const accents = new Set<string>()
     filteredForAccents.forEach((voice) => {
@@ -468,6 +514,10 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       } else if (!formData.voice) {
         newErrors.voice = "Please select a voice for your agent"
       }
+      // Phone number is required for inbound agents to receive calls
+      if (formData.agentDirection === "inbound" && !formData.phoneNumberId) {
+        newErrors.phoneNumber = "Phone number is required for inbound agents to receive calls"
+      }
     }
 
     if (step === 2) {
@@ -535,10 +585,21 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
       return updated
     })
+    
+    // Clear related errors
     if (errors[key]) {
       setErrors((prev) => {
         const next = { ...prev }
         delete next[key]
+        return next
+      })
+    }
+    
+    // Clear phoneNumber error when phoneNumberId is updated
+    if (key === "phoneNumberId" && errors.phoneNumber) {
+      setErrors((prev) => {
+        const next = { ...prev }
+        delete next.phoneNumber
         return next
       })
     }
@@ -598,6 +659,8 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
           : undefined,
         // Include calendar settings if agent has calendar tools (for auto-setup)
         calendar_settings: hasCalendarTools ? formData.calendarSettings : undefined,
+        // Include CRM webhook URL if provided
+        crm_webhook_url: formData.crmWebhookUrl || undefined,
       },
       agent_secret_api_key: [],
       agent_public_api_key: [],
@@ -605,6 +668,11 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       tags: [],
       // Include knowledge document IDs for linking
       knowledge_document_ids: formData.enableKnowledgeBase ? formData.knowledgeDocumentIds : [],
+    }
+
+    // Debug log calendar settings
+    if (hasCalendarTools) {
+      console.log('[AgentWizard] Submitting with calendarSettings:', JSON.stringify(formData.calendarSettings, null, 2))
     }
 
     await onSubmit(apiData)
@@ -916,7 +984,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                       {(() => {
                         // Find selected voice - check both id AND providerId (for VAPI ElevenLabs voices)
                         const selectedVoice = availableVoices.find(
-                          (v: VoiceOption | RetellVoice) => {
+                          (v: VoiceOption | ElevenLabsVoice | RetellVoice) => {
                             if (v.id === formData.voice) return true
                             // For VAPI voices, also check the providerId (ElevenLabs ID)
                             if ('providerId' in v && (v as VoiceOption).providerId === formData.voice) return true
@@ -924,7 +992,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                           }
                         )
                         if (!selectedVoice) return null
-                        const colors = getVoiceCardColor(selectedVoice.gender)
+                        // Handle "Unknown" gender safely for getVoiceCardColor
+                        const voiceGender = selectedVoice.gender === "Unknown" ? "Male" : selectedVoice.gender
+                        const colors = getVoiceCardColor(voiceGender)
                         const isRetellVoice = formData.provider === "retell"
                         const retellVoice = isRetellVoice ? (selectedVoice as RetellVoice) : null
                         const vapiVoice = !isRetellVoice ? (selectedVoice as VoiceOption) : null
@@ -1139,8 +1209,8 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                         </div>
                       </div>
 
-                      {/* Loading state for Retell voices */}
-                      {formData.provider === "retell" && isLoadingRetellVoices && (
+                      {/* Loading state for voices (Retell or ElevenLabs) */}
+                      {isLoadingVoices && (
                         <div className="space-y-2">
                           {[1, 2, 3].map((i) => (
                             <div key={i} className="p-3 rounded-lg border">
@@ -1158,24 +1228,25 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                         </div>
                       )}
 
-                      {/* Error state for Retell voices */}
-                      {formData.provider === "retell" && retellVoicesError && (
+                      {/* Error state for voices */}
+                      {voicesError && !isLoadingVoices && (
                         <div className="p-4 rounded-lg border border-destructive/50 bg-destructive/10">
                           <div className="flex items-center gap-2 text-destructive">
                             <AlertCircle className="h-4 w-4" />
                             <p className="text-sm font-medium">Failed to load voices</p>
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {retellVoicesError instanceof Error 
-                              ? retellVoicesError.message 
-                              : "Please ensure a Retell integration is configured for this workspace."}
+                            {voicesError instanceof Error 
+                              ? voicesError.message 
+                              : formData.provider === "retell"
+                                ? "Please ensure a Retell integration is configured for this workspace."
+                                : "Please ensure an ElevenLabs API key is configured for this workspace."}
                           </p>
                         </div>
                       )}
 
                       {/* Voice list */}
-                      {!(formData.provider === "retell" && isLoadingRetellVoices) && 
-                       !(formData.provider === "retell" && retellVoicesError) && (
+                      {!isLoadingVoices && !voicesError && (
                         <>
                           {/* No results state */}
                           {filteredVoices.length === 0 && hasActiveFilters && (
@@ -1208,11 +1279,15 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                               )}
                             >
                               <div className="space-y-2">
-                                {filteredVoices.map((voice: VoiceOption | RetellVoice) => {
-                                  const colors = getVoiceCardColor(voice.gender)
+                                {filteredVoices.map((voice: VoiceOption | RetellVoice | ElevenLabsVoice) => {
+                                  // Handle "Unknown" gender safely for getVoiceCardColor
+                                  const voiceGender = voice.gender === "Unknown" ? "Male" : voice.gender
+                                  const colors = getVoiceCardColor(voiceGender)
                                   const isRetellVoice = formData.provider === "retell"
+                                  const isElevenLabsVoice = formData.provider === "vapi" && 'provider' in voice && voice.provider === "elevenlabs"
                                   const retellVoice = isRetellVoice ? (voice as RetellVoice) : null
-                                  const vapiVoice = !isRetellVoice ? (voice as VoiceOption) : null
+                                  const elevenLabsVoice = isElevenLabsVoice ? (voice as ElevenLabsVoice) : null
+                                  const vapiVoice = !isRetellVoice && !isElevenLabsVoice ? (voice as VoiceOption) : null
                                   const isPlaying = playingVoiceId === voice.id
 
                                   return (
@@ -1242,11 +1317,20 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                                             </Badge>
                                           </div>
                                           <p className="text-xs text-muted-foreground">
-                                            {isRetellVoice ? `Age: ${retellVoice?.age}` : `Age ${vapiVoice?.age}`}
+                                            {isRetellVoice 
+                                              ? `Age: ${retellVoice?.age}` 
+                                              : isElevenLabsVoice 
+                                                ? `Age: ${elevenLabsVoice?.age}` 
+                                                : `Age ${vapiVoice?.age}`}
                                           </p>
                                           {vapiVoice?.characteristics && (
                                             <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                                               {vapiVoice.characteristics}
+                                            </p>
+                                          )}
+                                          {elevenLabsVoice?.description && (
+                                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                              {elevenLabsVoice.description}
                                             </p>
                                           )}
                                         </div>
@@ -1255,7 +1339,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                                           {(() => {
                                             const previewUrl = isRetellVoice 
                                               ? retellVoice?.previewAudioUrl 
-                                              : vapiVoice?.previewUrl
+                                              : isElevenLabsVoice
+                                                ? elevenLabsVoice?.previewAudioUrl
+                                                : vapiVoice?.previewUrl
                                             if (!previewUrl) return null
                                             return (
                                               <Button
@@ -1443,18 +1529,34 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
             {(formData.agentDirection === "inbound" || formData.agentDirection === "outbound") && (
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                    <Phone className="w-5 h-5 text-green-600" />
+                  <div className={cn(
+                    "w-10 h-10 rounded-lg flex items-center justify-center",
+                    errors.phoneNumber ? "bg-destructive/10" : "bg-green-500/10"
+                  )}>
+                    <Phone className={cn(
+                      "w-5 h-5",
+                      errors.phoneNumber ? "text-destructive" : "text-green-600"
+                    )} />
                   </div>
                   <div>
-                    <Label className="mb-0">Phone Number</Label>
+                    <Label className="mb-0">
+                      Phone Number {formData.agentDirection === "inbound" && <span className="text-destructive">*</span>}
+                    </Label>
                     <p className="text-xs text-muted-foreground">
                       {formData.agentDirection === "outbound"
                         ? "Select caller ID for outbound calls (optional)"
-                        : "Assign a phone number for inbound calls (optional)"}
+                        : "Assign a phone number to receive inbound calls"}
                     </p>
                   </div>
                 </div>
+
+                {/* Phone Number Error */}
+                {errors.phoneNumber && (
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-destructive/10 text-destructive text-sm">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.phoneNumber}
+                  </div>
+                )}
 
                 {/* Phone Number Selection - Always visible */}
                 <div className="space-y-2">
@@ -1476,31 +1578,33 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                         availablePhoneNumbers.length <= 3 ? "h-auto" : "h-[200px]"
                       )}>
                         <div className="space-y-2">
-                          {/* None option */}
-                          <div
-                            onClick={() => updateFormData("phoneNumberId", null)}
-                            className={cn(
-                              "p-3 rounded-lg cursor-pointer transition-all border",
-                              !formData.phoneNumberId
-                                ? "border-primary bg-primary/5"
-                                : "border-transparent hover:bg-muted hover:border-border"
-                            )}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                                <Phone className="h-4 w-4 text-muted-foreground" />
-                              </div>
-                              <div className="flex-1">
-                                <p className="font-medium text-sm">No phone number</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Skip phone number assignment
-                                </p>
-                              </div>
-                              {!formData.phoneNumberId && (
-                                <Check className="h-4 w-4 text-primary" />
+                          {/* None option - only show for outbound agents */}
+                          {formData.agentDirection === "outbound" && (
+                            <div
+                              onClick={() => updateFormData("phoneNumberId", null)}
+                              className={cn(
+                                "p-3 rounded-lg cursor-pointer transition-all border",
+                                !formData.phoneNumberId
+                                  ? "border-primary bg-primary/5"
+                                  : "border-transparent hover:bg-muted hover:border-border"
                               )}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                                  <Phone className="h-4 w-4 text-muted-foreground" />
+                                </div>
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">No phone number</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Skip phone number assignment
+                                  </p>
+                                </div>
+                                {!formData.phoneNumberId && (
+                                  <Check className="h-4 w-4 text-primary" />
+                                )}
+                              </div>
                             </div>
-                          </div>
+                          )}
                           
                           {availablePhoneNumbers.map((number) => {
                             const isSelected = formData.phoneNumberId === number.id
@@ -1569,11 +1673,27 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                       </p>
                     </>
                   ) : (
-                    <div className="text-center p-4 rounded-lg bg-muted/50">
-                      <Phone className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                      <p className="text-sm text-muted-foreground">
+                    <div className={cn(
+                      "text-center p-4 rounded-lg",
+                      formData.agentDirection === "inbound" 
+                        ? "bg-destructive/10 border border-destructive/30" 
+                        : "bg-muted/50"
+                    )}>
+                      <Phone className={cn(
+                        "h-8 w-8 mx-auto mb-2",
+                        formData.agentDirection === "inbound" ? "text-destructive" : "text-muted-foreground"
+                      )} />
+                      <p className={cn(
+                        "text-sm",
+                        formData.agentDirection === "inbound" ? "text-destructive font-medium" : "text-muted-foreground"
+                      )}>
                         No {formData.provider.toUpperCase()} phone numbers available
                       </p>
+                      {formData.agentDirection === "inbound" && (
+                        <p className="text-xs text-destructive mt-1">
+                          A phone number is required for inbound agents to receive calls
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground mt-1">
                         {formData.provider === "retell" 
                           ? "Sync phone numbers to Retell in Organization → Telephony, or use a Retell-purchased number"
@@ -1711,6 +1831,54 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
             </Card>
           )}
 
+          {/* CRM/Webhook URL for Call Data */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="w-5 h-5" />
+                CRM / Webhook URL
+                <Badge variant="outline" className="text-xs font-normal">Optional</Badge>
+              </CardTitle>
+              <CardDescription>
+                Forward call data (transcript, summary, disposition, etc.) to your CRM, n8n, or any external system after each call ends.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="crm-webhook-url">Webhook URL</Label>
+                <Input
+                  id="crm-webhook-url"
+                  type="url"
+                  value={formData.crmWebhookUrl}
+                  onChange={(e) => updateFormData("crmWebhookUrl", e.target.value)}
+                  placeholder="https://your-crm.com/webhook or https://n8n.example.com/webhook/..."
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  When a call ends, we'll send a POST request with call details including: transcript, summary, duration, cost, sentiment, caller info, and recording URL.
+                </p>
+              </div>
+              
+              {/* Example payload preview */}
+              <div className="p-3 rounded-lg bg-muted/50 border">
+                <p className="text-xs font-medium mb-2">Example payload sent to your webhook:</p>
+                <pre className="text-xs text-muted-foreground overflow-x-auto">
+{`{
+  "callId": "call_abc123",
+  "agentName": "Sales Agent",
+  "transcript": "Full conversation...",
+  "summary": "AI-generated summary...",
+  "duration_seconds": 180,
+  "total_cost": 0.45,
+  "sentiment": "positive",
+  "caller_number": "+1234567890",
+  "recording_url": "https://..."
+}`}
+                </pre>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Tools Section */}
           <Card>
             <CardHeader>
@@ -1726,7 +1894,15 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 onChange={(tools) => updateFormData("tools", tools)}
                 provider={formData.provider}
                 calendarSettings={formData.calendarSettings}
-                onCalendarSettingsChange={(settings) => updateFormData("calendarSettings", settings)}
+                onCalendarSettingsChange={(settings) => {
+                  console.log('[AgentWizard] onCalendarSettingsChange called with:', {
+                    calendar_source: settings.calendar_source,
+                    existing_calendar_id: settings.existing_calendar_id,
+                    enable_owner_email: settings.enable_owner_email,
+                  })
+                  updateFormData("calendarSettings", settings)
+                }}
+                workspaceSlug={workspaceSlug}
               />
             </CardContent>
           </Card>
@@ -1925,6 +2101,22 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                         : "Not assigned"}
                   </p>
                 </div>
+                
+                {/* Warning for outbound agent without phone number */}
+                {formData.agentDirection === "outbound" && !formData.phoneNumberId && (
+                  <div className="col-span-2 mt-2">
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200">
+                      <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <p className="font-medium">No phone number configured</p>
+                        <p className="text-amber-700 dark:text-amber-300 mt-0.5">
+                          The "Call Me" feature will be unavailable until you assign a phone number. 
+                          You can add one later in the agent settings.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <p className="text-muted-foreground">Knowledge Base</p>
                   <p className="font-medium">

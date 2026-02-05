@@ -1077,6 +1077,7 @@ model AgentCalendarConfig {
   // Google Calendar Settings
   googleCredentialId          String    @map("google_credential_id") @db.Uuid
   calendarId                  String    @map("calendar_id") @db.VarChar(255) // Google Calendar ID
+  calendarName                String?   @map("calendar_name") @db.VarChar(500) // Human-readable name: workspacename-agentname
   
   // Timezone (REQUIRED)
   timezone                    String    @db.VarChar(100) // IANA timezone (e.g., "America/New_York")

@@ -31,6 +31,22 @@ interface SetupRequestBody {
   // Email notification settings
   enable_owner_email?: boolean
   owner_email?: string | null
+  // For using an existing calendar
+  use_existing_calendar?: boolean
+  existing_calendar_id?: string
+  existing_calendar_name?: string
+}
+
+/**
+ * Generate calendar name in the format: workspacename-agentname
+ * Sanitizes names to be safe for Google Calendar
+ */
+function generateCalendarName(workspaceName: string, agentName: string): string {
+  // Sanitize both names - remove special characters that might cause issues
+  const sanitize = (str: string) => str.trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ')
+  const sanitizedWorkspace = sanitize(workspaceName)
+  const sanitizedAgent = sanitize(agentName)
+  return `${sanitizedWorkspace}-${sanitizedAgent}`
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
@@ -55,6 +71,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // Email notification settings
       enable_owner_email = false,
       owner_email = null,
+      // Existing calendar options
+      use_existing_calendar = false,
+      existing_calendar_id,
+      existing_calendar_name,
     } = body
 
     if (!timezone) {
@@ -148,23 +168,37 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const accessToken = tokenResult.data
 
-    // 5. Create a new Google Calendar for this agent
-    const calendarName = `Appointments - ${agent.name}`
-    const calendarResult = await createCalendar(
-      accessToken,
-      calendarName,
-      timezone,
-      `Appointments calendar for AI agent: ${agent.name}`
-    )
+    // 5. Get or create calendar
+    let calendarId: string
+    let calendarName: string
 
-    if (!calendarResult.success || !calendarResult.data) {
-      return NextResponse.json(
-        { error: calendarResult.error || 'Failed to create Google Calendar' },
-        { status: 500 }
+    if (use_existing_calendar && existing_calendar_id) {
+      // Use an existing calendar from the workspace
+      calendarId = existing_calendar_id
+      calendarName = existing_calendar_name || generateCalendarName(ctx.workspace.name, agent.name)
+      console.log(`[CalendarSetup] Using existing calendar for agent ${agentId}:`, calendarId)
+    } else {
+      // Create a new Google Calendar with format: workspacename-agentname
+      calendarName = generateCalendarName(ctx.workspace.name, agent.name)
+      const calendarResult = await createCalendar(
+        accessToken,
+        calendarName,
+        timezone,
+        `Appointments calendar for AI agent: ${agent.name} in workspace: ${ctx.workspace.name}`
       )
+
+      if (!calendarResult.success || !calendarResult.data) {
+        return NextResponse.json(
+          { error: calendarResult.error || 'Failed to create Google Calendar' },
+          { status: 500 }
+        )
+      }
+
+      calendarId = calendarResult.data.id
+      console.log(`[CalendarSetup] Created new calendar for agent ${agentId}:`, calendarId, 'with name:', calendarName)
     }
 
-    const newCalendarId = calendarResult.data.id
+    const newCalendarId = calendarId
 
     // 6. Create agent_calendar_configs record
     const configData = {
@@ -172,6 +206,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       workspace_id: ctx.workspace.id,
       google_credential_id: credential.id,
       calendar_id: newCalendarId,
+      calendar_name: calendarName, // Store the human-readable calendar name
       timezone,
       slot_duration_minutes,
       buffer_between_slots_minutes,
@@ -194,9 +229,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (insertError) {
       console.error('[CalendarSetup] Failed to create config:', insertError)
-      // Try to clean up the created calendar
-      const { deleteCalendar } = await import('@/lib/integrations/calendar')
-      await deleteCalendar(accessToken, newCalendarId)
+      // Try to clean up the created calendar (only if we created a new one)
+      if (!use_existing_calendar) {
+        const { deleteCalendar } = await import('@/lib/integrations/calendar')
+        await deleteCalendar(accessToken, newCalendarId)
+      }
       return NextResponse.json(
         { error: 'Failed to save calendar configuration' },
         { status: 500 }

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { ArrowLeft, Mail, CheckCircle2, Loader2 } from "lucide-react"
+import { DevResetPasswordPanel } from "@/components/auth/dev-reset-password-panel"
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
@@ -62,6 +63,9 @@ export default function ForgotPasswordPage() {
               Back to sign in
             </Link>
           </div>
+          
+          {/* Development Mode: Direct reset option */}
+          <DevResetPasswordPanel email={email} />
         </CardContent>
       </Card>
     )
@@ -121,6 +125,9 @@ export default function ForgotPasswordPage() {
             Back to sign in
           </Link>
         </div>
+
+        {/* Development Mode: Direct reset option */}
+        <DevResetPasswordPanel email={email} />
       </CardContent>
     </Card>
   )

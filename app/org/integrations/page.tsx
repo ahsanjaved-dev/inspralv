@@ -59,6 +59,12 @@ const PROVIDERS = {
     icon: "🤖",
     category: "Voice AI",
   },
+  elevenlabs: {
+    name: "ElevenLabs",
+    description: "High-quality AI voice synthesis for natural-sounding voice agents",
+    icon: "🔊",
+    category: "Voice",
+  },
   algolia: {
     name: "Algolia",
     description: "Fast, reliable search for your call logs and transcripts",
@@ -80,7 +86,7 @@ export default function OrgIntegrationsPage() {
 
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [addDialogProvider, setAddDialogProvider] = useState<"vapi" | "retell" | "algolia" | "google_calendar" | null>(null)
+  const [addDialogProvider, setAddDialogProvider] = useState<"vapi" | "retell" | "algolia" | "google_calendar" | "elevenlabs" | null>(null)
   const [manageDialogOpen, setManageDialogOpen] = useState(false)
   const [selectedIntegration, setSelectedIntegration] = useState<PartnerIntegration | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -96,7 +102,7 @@ export default function OrgIntegrationsPage() {
     return acc
   }, {} as Record<string, PartnerIntegration[]>) || {}
 
-  const handleAddIntegration = (provider: "vapi" | "retell" | "algolia" | "google_calendar") => {
+  const handleAddIntegration = (provider: "vapi" | "retell" | "algolia" | "google_calendar" | "elevenlabs") => {
     setAddDialogProvider(provider)
     setAddDialogOpen(true)
   }

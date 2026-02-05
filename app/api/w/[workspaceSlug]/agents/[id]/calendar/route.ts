@@ -79,6 +79,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const {
       google_credential_id,
       calendar_id,
+      calendar_name, // Human-readable name: workspacename-agentname
       timezone,
       slot_duration_minutes = 30,
       buffer_between_slots_minutes = 0,
@@ -143,6 +144,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       workspace_id: ctx.workspace.id,
       google_credential_id,
       calendar_id,
+      calendar_name: calendar_name || null, // Store human-readable calendar name
       timezone,
       slot_duration_minutes,
       buffer_between_slots_minutes,
@@ -151,9 +153,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       preferred_hours_end,
       min_notice_hours,
       max_advance_days,
-      // Email notification settings
+      // Email notification settings - always save email so it's not lost when toggling
       enable_owner_email,
-      owner_email: enable_owner_email ? owner_email : null,
+      owner_email: owner_email || null,
       is_active: true,
       updated_at: new Date().toISOString(),
     }

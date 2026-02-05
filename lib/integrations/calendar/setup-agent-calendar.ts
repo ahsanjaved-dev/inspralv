@@ -16,6 +16,7 @@ export interface SetupAgentCalendarParams {
   agentId: string
   agentName: string
   workspaceId: string
+  workspaceName: string // Required for calendar naming
   partnerId: string
   timezone: string
   slot_duration_minutes?: number
@@ -25,8 +26,14 @@ export interface SetupAgentCalendarParams {
   preferred_hours_end?: string
   min_notice_hours?: number
   max_advance_days?: number
+  // Email notification settings
+  enable_owner_email?: boolean
+  owner_email?: string
   // If true, use the primary calendar instead of creating a new one
   usePrimaryCalendar?: boolean
+  // If provided, use this existing calendar instead of creating a new one
+  existingCalendarId?: string
+  existingCalendarName?: string
 }
 
 export interface SetupAgentCalendarResult {
@@ -44,11 +51,24 @@ export interface SetupAgentCalendarResult {
  * - Creates a new calendar in Google Calendar
  * - Creates an agent_calendar_configs record
  */
+/**
+ * Generate calendar name in the format: workspacename-agentname
+ * Sanitizes names to be safe for Google Calendar
+ */
+function generateCalendarName(workspaceName: string, agentName: string): string {
+  // Sanitize both names - remove special characters that might cause issues
+  const sanitize = (str: string) => str.trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, ' ')
+  const sanitizedWorkspace = sanitize(workspaceName)
+  const sanitizedAgent = sanitize(agentName)
+  return `${sanitizedWorkspace}-${sanitizedAgent}`
+}
+
 export async function setupAgentCalendar(params: SetupAgentCalendarParams): Promise<SetupAgentCalendarResult> {
   const {
     agentId,
     agentName,
     workspaceId,
+    workspaceName,
     partnerId,
     timezone,
     slot_duration_minutes = 30,
@@ -58,12 +78,26 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
     preferred_hours_end = '17:00',
     min_notice_hours = 0, // Allow immediate bookings by default
     max_advance_days = 60,
+    enable_owner_email = false,
+    owner_email,
     usePrimaryCalendar = false,
+    existingCalendarId,
+    existingCalendarName,
   } = params
 
   if (!timezone) {
     return { success: false, error: 'Timezone is required' }
   }
+
+  // Log what we received
+  console.log(`[CalendarSetup] Setting up calendar for agent ${agentId}:`, {
+    existingCalendarId: existingCalendarId || 'none (will create new)',
+    existingCalendarName: existingCalendarName || 'none',
+    usePrimaryCalendar,
+    timezone,
+    enable_owner_email,
+    owner_email: owner_email || 'not set',
+  })
 
   const supabase = createAdminClient()
 
@@ -71,7 +105,7 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
     // 1. Check if calendar config already exists
     const { data: existingConfig } = await supabase
       .from('agent_calendar_configs')
-      .select('id, calendar_id')
+      .select('id, calendar_id, calendar_name')
       .eq('agent_id', agentId)
       .single()
 
@@ -81,7 +115,7 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
         success: true,
         data: {
           calendar_id: existingConfig.calendar_id,
-          calendar_name: `Appointments - ${agentName}`,
+          calendar_name: existingConfig.calendar_name || generateCalendarName(workspaceName, agentName),
           config_id: existingConfig.id,
         }
       }
@@ -163,7 +197,12 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
     let calendarId: string
     let calendarName: string
 
-    if (usePrimaryCalendar) {
+    if (existingCalendarId) {
+      // Use an existing calendar from the workspace
+      calendarId = existingCalendarId
+      calendarName = existingCalendarName || generateCalendarName(workspaceName, agentName)
+      console.log(`[CalendarSetup] Using existing calendar for agent ${agentId}:`, calendarId)
+    } else if (usePrimaryCalendar) {
       // Use primary calendar - this ensures Google sends email notifications
       // Primary calendar ID is always 'primary' or the user's email
       calendarId = 'primary'
@@ -171,12 +210,13 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
       console.log(`[CalendarSetup] Using primary calendar for agent ${agentId} (email notifications enabled)`)
     } else {
       // Create a new secondary calendar (email notifications won't work)
-      calendarName = `Appointments - ${agentName}`
+      // Calendar name format: workspacename-agentname
+      calendarName = generateCalendarName(workspaceName, agentName)
       const calendarResult = await createCalendar(
         accessToken,
         calendarName,
         timezone,
-        `Appointments calendar for AI agent: ${agentName}`
+        `Appointments calendar for AI agent: ${agentName} in workspace: ${workspaceName}`
       )
 
       if (!calendarResult.success || !calendarResult.data) {
@@ -188,7 +228,7 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
       }
 
       calendarId = calendarResult.data.id
-      console.log(`[CalendarSetup] Created secondary calendar for agent ${agentId}:`, calendarId)
+      console.log(`[CalendarSetup] Created secondary calendar for agent ${agentId}:`, calendarId, 'with name:', calendarName)
       console.warn(`[CalendarSetup] Note: Secondary calendars do not send email notifications`)
     }
 
@@ -200,6 +240,7 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
       workspace_id: workspaceId,
       google_credential_id: credential.id,
       calendar_id: newCalendarId,
+      calendar_name: calendarName, // Store the human-readable calendar name
       timezone,
       slot_duration_minutes,
       buffer_between_slots_minutes,
@@ -208,6 +249,8 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
       preferred_hours_end,
       min_notice_hours,
       max_advance_days,
+      enable_owner_email,
+      owner_email: owner_email || null,
       is_active: true,
     }
 
