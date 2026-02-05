@@ -36,6 +36,7 @@ import { useState, useMemo } from "react"
 import { TestCallModal } from "@/components/agents/test-call-modal"
 import { TestOutboundCallModal } from "@/components/agents/test-outbound-call-modal"
 import { useTestCallValidation } from "../../../lib/hooks/use-test-call-validations"
+import { useOutboundCallValidation } from "../../../lib/hooks/use-outbound-call-validation"
 import { cn } from "@/lib/utils"
 
 // Calendar tool names
@@ -101,24 +102,27 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
   const hasCalendarTools = calendarTools.length > 0
   const providerStyle = providerConfig[agent.provider] || providerConfig.vapi
   const directionStyle = agent.agent_direction ? directionConfig[agent.agent_direction] : null
+  
+  // Check if outbound call can be made
+  const canMakeOutboundCall = outboundValidation.canCall
 
   return (
     <Card className={cn(
       "group relative overflow-hidden transition-all duration-300",
       "hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5",
       "border-border/50 hover:border-border",
-      "bg-gradient-to-br from-card via-card to-card/80"
+      "bg-linear-to-br from-card via-card to-card/80"
     )}>
       {/* Gradient accent at top */}
       <div className={cn(
-        "absolute top-0 left-0 right-0 h-1 bg-gradient-to-r",
+        "absolute top-0 left-0 right-0 h-1 bg-linear-to-r",
         agent.provider === "vapi" ? "from-purple-500 via-purple-400 to-purple-600" : "from-blue-500 via-blue-400 to-blue-600"
       )} />
       
       {/* Subtle background pattern */}
       <div className={cn(
-        "absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl opacity-50 pointer-events-none",
-        providerStyle.gradient
+        "absolute top-0 right-0 w-32 h-32 bg-linear-to-bl opacity-50 pointer-events-none",
+        providerStyle?.gradient
       )} />
 
       <CardContent className="p-5">
@@ -126,10 +130,10 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="flex items-start gap-3 min-w-0 flex-1">
             {/* Agent Icon with status indicator */}
-            <div className="relative flex-shrink-0">
+            <div className="relative shrink-0">
               <div className={cn(
                 "w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105",
-                "bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20"
+                "bg-linear-to-br from-primary/20 to-primary/5 border border-primary/20"
               )}>
                 <Bot className="w-6 h-6 text-primary" />
               </div>
@@ -152,7 +156,7 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
                   variant="secondary" 
                   className={cn(
                     "text-[10px] font-medium uppercase tracking-wide px-1.5 py-0",
-                    providerStyle.color,
+                    providerStyle?.color,
                     agent.provider === "vapi" ? "bg-purple-500/10" : "bg-blue-500/10"
                   )}
                 >
@@ -183,7 +187,7 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
               >
                 <MoreVertical className="h-4 w-4" />
               </Button>
@@ -230,17 +234,17 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
 
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-2 mb-4">
-          <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-blue-500/10 to-blue-500/5 p-3 text-center border border-blue-500/10">
+          <div className="relative overflow-hidden rounded-lg bg-linear-to-br from-blue-500/10 to-blue-500/5 p-3 text-center border border-blue-500/10">
             <MessageSquare className="w-4 h-4 mx-auto text-blue-500 mb-1" />
             <p className="text-lg font-bold text-foreground">{agent.total_conversations || 0}</p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Calls</p>
           </div>
-          <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-orange-500/10 to-orange-500/5 p-3 text-center border border-orange-500/10">
+          <div className="relative overflow-hidden rounded-lg bg-linear-to-br from-orange-500/10 to-orange-500/5 p-3 text-center border border-orange-500/10">
             <Clock className="w-4 h-4 mx-auto text-orange-500 mb-1" />
             <p className="text-lg font-bold text-foreground">{agent.total_minutes?.toFixed(0) || 0}</p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Mins</p>
           </div>
-          <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-3 text-center border border-emerald-500/10">
+          <div className="relative overflow-hidden rounded-lg bg-linear-to-br from-emerald-500/10 to-emerald-500/5 p-3 text-center border border-emerald-500/10">
             <DollarSign className="w-4 h-4 mx-auto text-emerald-500 mb-1" />
             <p className="text-lg font-bold text-foreground">${agent.total_cost?.toFixed(2) || "0.00"}</p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Cost</p>
@@ -250,14 +254,14 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
         {/* Phone Number Display */}
         {agent.external_phone_number ? (
           <div className="flex items-center gap-2 text-xs p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 mb-4">
-            <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+            <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <span className="font-mono text-emerald-700 dark:text-emerald-300 truncate">
               {agent.external_phone_number}
             </span>
           </div>
         ) : outboundNeedsPhone ? (
           <div className="flex items-center gap-2 text-xs p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 mb-4">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+            <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
             <span className="text-amber-700 dark:text-amber-300">
               No phone number configured
             </span>
@@ -272,7 +276,7 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
             size="sm"
             className={cn(
               "flex-1 gap-1.5 font-medium",
-              "bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80"
+              "bg-linear-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80"
             )}
             disabled={validation.isLoading || !validation.canCall}
             onClick={() => validation.canCall && setIsModalOpen(true)}
@@ -332,7 +336,7 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
         {/* Disabled Reason */}
         {!validation.isLoading && !validation.canCall && validation.reason && (
           <div className="mt-3 flex items-start gap-2 text-xs p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
             <div className="text-amber-700 dark:text-amber-300">
               <span className="font-medium">{validation.reason}:</span> {validation.solution}
             </div>

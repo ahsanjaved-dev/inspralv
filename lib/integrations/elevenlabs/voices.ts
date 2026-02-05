@@ -113,9 +113,11 @@ export async function listElevenLabsVoices(apiKey: string): Promise<ListElevenLa
         errorData = { message: errorText || `HTTP ${response.status}` }
       }
       console.error("[ElevenLabsVoices] API error:", response.status, errorData)
+      const detailMessage = (errorData.detail as any)?.message as string || ""
+      const errorMessage = (errorData.message as string) || ""
       return {
         success: false,
-        error: (errorData.detail?.message as string) || (errorData.message as string) || `ElevenLabs API error: ${response.status}`,
+        error: detailMessage || errorMessage || `ElevenLabs API error: ${response.status}`,
       }
     }
 

@@ -785,8 +785,8 @@ export function WorkspaceAgentForm({
                   : getVoicesForProvider(selectedProvider as "vapi" | "retell")
               
               // Apply filters to get filtered voices
-              const availableVoices = filterVoices(allVoices)
-              const availableAccents = getAvailableAccents(allVoices)
+              const availableVoices = filterVoices(allVoices as any)
+              const availableAccents = getAvailableAccents(allVoices as any)
               
               // Reset accent filter if the selected accent is no longer available
               if (voiceFilters.accent !== "all" && !availableAccents.includes(voiceFilters.accent)) {
@@ -815,7 +815,9 @@ export function WorkspaceAgentForm({
                     <div className="p-3 rounded-lg border border-primary/30 bg-primary/5">
                       <div className="flex items-start gap-3">
                         {(() => {
-                          const colors = getVoiceCardColor(selectedVoice.gender)
+                          // Handle "Unknown" gender safely for getVoiceCardColor
+                          const voiceGender = selectedVoice.gender === "Unknown" ? "Male" : selectedVoice.gender
+                          const colors = getVoiceCardColor(voiceGender)
                           const isRetellVoice = isRetellProvider
                           const isElevenLabsVoice = !isRetellProvider && 'provider' in selectedVoice && (selectedVoice as ElevenLabsVoice).provider === "elevenlabs"
                           const retellVoice = isRetellVoice ? (selectedVoice as RetellVoice) : null
@@ -1092,7 +1094,9 @@ export function WorkspaceAgentForm({
                             >
                               <div className="space-y-2">
                                 {availableVoices.map((voice: VoiceOption | RetellVoice | ElevenLabsVoice) => {
-                                  const colors = getVoiceCardColor(voice.gender)
+                                  // Handle "Unknown" gender safely for getVoiceCardColor
+                                  const voiceGender = voice.gender === "Unknown" ? "Male" : voice.gender
+                                  const colors = getVoiceCardColor(voiceGender)
                                   const isRetellVoice = isRetellProvider
                                   const isElevenLabsVoice = !isRetellProvider && 'provider' in voice && (voice as ElevenLabsVoice).provider === "elevenlabs"
                                   const retellVoice = isRetellVoice ? (voice as RetellVoice) : null

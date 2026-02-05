@@ -376,7 +376,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   }
 
   // Filter voices based on search and gender only (for accent dropdown)
-  const filterVoicesForAccentDropdown = (voices: (VoiceOption | RetellVoice)[]): (VoiceOption | RetellVoice)[] => {
+  const filterVoicesForAccentDropdown = (voices: (VoiceOption | ElevenLabsVoice | RetellVoice)[]): (VoiceOption | ElevenLabsVoice | RetellVoice)[] => {
     return voices.filter((voice) => {
       // Search filter - check name, accent, and characteristics
       if (voiceFilters.search) {
@@ -402,7 +402,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   }
 
   // Filter voices based on all filters (for display)
-  const filterVoices = (voices: (VoiceOption | RetellVoice)[]): (VoiceOption | RetellVoice)[] => {
+  const filterVoices = (voices: (VoiceOption | ElevenLabsVoice | RetellVoice)[]): (VoiceOption | ElevenLabsVoice | RetellVoice)[] => {
     return voices.filter((voice) => {
       // Search filter - check name, accent, and characteristics
       if (voiceFilters.search) {
@@ -433,7 +433,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   }
 
   // Get unique accents from voices that match search and gender filters
-  const getAvailableAccents = (voices: (VoiceOption | RetellVoice)[]): string[] => {
+  const getAvailableAccents = (voices: (VoiceOption | ElevenLabsVoice | RetellVoice)[]): string[] => {
     const filteredForAccents = filterVoicesForAccentDropdown(voices)
     const accents = new Set<string>()
     filteredForAccents.forEach((voice) => {
@@ -984,7 +984,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                       {(() => {
                         // Find selected voice - check both id AND providerId (for VAPI ElevenLabs voices)
                         const selectedVoice = availableVoices.find(
-                          (v: VoiceOption | RetellVoice) => {
+                          (v: VoiceOption | ElevenLabsVoice | RetellVoice) => {
                             if (v.id === formData.voice) return true
                             // For VAPI voices, also check the providerId (ElevenLabs ID)
                             if ('providerId' in v && (v as VoiceOption).providerId === formData.voice) return true
@@ -992,7 +992,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                           }
                         )
                         if (!selectedVoice) return null
-                        const colors = getVoiceCardColor(selectedVoice.gender)
+                        // Handle "Unknown" gender safely for getVoiceCardColor
+                        const voiceGender = selectedVoice.gender === "Unknown" ? "Male" : selectedVoice.gender
+                        const colors = getVoiceCardColor(voiceGender)
                         const isRetellVoice = formData.provider === "retell"
                         const retellVoice = isRetellVoice ? (selectedVoice as RetellVoice) : null
                         const vapiVoice = !isRetellVoice ? (selectedVoice as VoiceOption) : null
@@ -1278,7 +1280,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                             >
                               <div className="space-y-2">
                                 {filteredVoices.map((voice: VoiceOption | RetellVoice | ElevenLabsVoice) => {
-                                  const colors = getVoiceCardColor(voice.gender)
+                                  // Handle "Unknown" gender safely for getVoiceCardColor
+                                  const voiceGender = voice.gender === "Unknown" ? "Male" : voice.gender
+                                  const colors = getVoiceCardColor(voiceGender)
                                   const isRetellVoice = formData.provider === "retell"
                                   const isElevenLabsVoice = formData.provider === "vapi" && 'provider' in voice && voice.provider === "elevenlabs"
                                   const retellVoice = isRetellVoice ? (voice as RetellVoice) : null
