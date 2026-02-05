@@ -591,7 +591,8 @@ function extractStereoRecordingUrl(call: VapiCall, payload?: VapiWebhookPayload)
 }
 
 /**
- * Forward webhook event to user's configured webhook URL
+ * Forward webhook event to user's configured webhook URL (tools_server_url)
+ * Used for function call execution during calls
  */
 async function forwardToUserWebhook(
   agent: { id: string; config: unknown } | null,
@@ -621,6 +622,80 @@ async function forwardToUserWebhook(
     }
   } catch (error) {
     console.error("[VAPI Webhook] Error forwarding to user webhook:", error)
+  }
+}
+
+/**
+ * Forward call data to user's CRM webhook URL (crm_webhook_url)
+ * Used for sending complete call data after call ends
+ */
+async function forwardCallDataToCRM(
+  agent: { id: string; name: string; config: unknown } | null,
+  callData: {
+    callId: string
+    transcript?: string | null
+    summary?: string | null
+    duration_seconds?: number
+    total_cost?: number
+    sentiment?: string | null
+    caller_number?: string | null
+    caller_name?: string | null
+    recording_url?: string | null
+    started_at?: string | null
+    ended_at?: string | null
+    status?: string
+    direction?: string
+  }
+): Promise<void> {
+  try {
+    if (!agent) return
+
+    const config = agent.config as Record<string, unknown> | null
+    const crmWebhookUrl = config?.crm_webhook_url as string | undefined
+
+    if (!crmWebhookUrl) {
+      console.log(`[VAPI Webhook] No CRM webhook URL configured for agent ${agent.id}`)
+      return
+    }
+
+    console.log(`[VAPI Webhook] Forwarding call data to CRM: ${crmWebhookUrl}`)
+
+    const payload = {
+      callId: callData.callId,
+      agentId: agent.id,
+      agentName: agent.name,
+      transcript: callData.transcript || null,
+      summary: callData.summary || null,
+      duration_seconds: callData.duration_seconds || 0,
+      total_cost: callData.total_cost || 0,
+      sentiment: callData.sentiment || null,
+      caller_number: callData.caller_number || null,
+      caller_name: callData.caller_name || null,
+      recording_url: callData.recording_url || null,
+      started_at: callData.started_at || null,
+      ended_at: callData.ended_at || null,
+      status: callData.status || "completed",
+      direction: callData.direction || "inbound",
+      timestamp: new Date().toISOString(),
+    }
+
+    const response = await fetch(crmWebhookUrl, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "X-Webhook-Source": "genius365",
+        "X-Call-Id": callData.callId,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      console.error(`[VAPI Webhook] CRM webhook returned error: ${response.status}`)
+    } else {
+      console.log(`[VAPI Webhook] Successfully forwarded call data to CRM`)
+    }
+  } catch (error) {
+    console.error("[VAPI Webhook] Error forwarding call data to CRM:", error)
   }
 }
 
@@ -1069,7 +1144,7 @@ async function handleEndOfCallReport(payload: VapiWebhookPayload) {
     }
   }
 
-  // Forward to user's webhook
+  // Forward to user's webhook (tools_server_url - for function call execution)
   await forwardToUserWebhook(conversation.agent, {
     type: "end-of-call-report",
     call_id: call.id,
@@ -1083,6 +1158,29 @@ async function handleEndOfCallReport(payload: VapiWebhookPayload) {
     ended_reason: call.endedReason,
     cost: messageCost, // Use message.cost (at message level, not call level)
   })
+
+  // Forward call data to CRM webhook (crm_webhook_url - for CRM/automation integration)
+  if (finalConversation?.agent) {
+    const callType = determineCallType(call)
+    await forwardCallDataToCRM(
+      { id: finalConversation.agent.id, name: finalConversation.agent.name, config: conversation.agent?.config },
+      {
+        callId: call.id,
+        transcript: extractFormattedTranscript(call, payload),
+        summary: payload.summary || payload.analysis?.summary || call.analysis?.summary || null,
+        duration_seconds: durationSeconds,
+        total_cost: finalConversation.totalCost ? Number(finalConversation.totalCost) : 0,
+        sentiment: call.sentiment?.overall || null,
+        caller_number: call.customer?.number || null,
+        caller_name: call.customer?.name || null,
+        recording_url: extractRecordingUrl(call, payload),
+        started_at: call.startedAt || null,
+        ended_at: call.endedAt || null,
+        status: "completed",
+        direction: callType === "inbound" ? "inbound" : "outbound",
+      }
+    )
+  }
 }
 
 /**

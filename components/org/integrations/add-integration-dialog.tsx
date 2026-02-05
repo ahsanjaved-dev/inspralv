@@ -21,7 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 interface AddIntegrationDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  provider: "vapi" | "retell" | "algolia" | "google_calendar" | null
+  provider: "vapi" | "retell" | "algolia" | "google_calendar" | "elevenlabs" | null
 }
 
 const PROVIDER_LABELS = {
@@ -29,6 +29,7 @@ const PROVIDER_LABELS = {
   retell: "Retell AI",
   algolia: "Algolia",
   google_calendar: "Google Calendar",
+  elevenlabs: "ElevenLabs",
 }
 
 export function AddIntegrationDialog({ open, onOpenChange, provider }: AddIntegrationDialogProps) {
@@ -55,6 +56,7 @@ export function AddIntegrationDialog({ open, onOpenChange, provider }: AddIntegr
 
   const isAlgolia = provider === "algolia"
   const isGoogleCalendar = provider === "google_calendar"
+  const isElevenLabs = provider === "elevenlabs"
   const providerLabel = provider ? PROVIDER_LABELS[provider] : ""
 
   // Get the redirect URI for Google Calendar OAuth
@@ -117,6 +119,11 @@ export function AddIntegrationDialog({ open, onOpenChange, provider }: AddIntegr
         toast.error("Please enter the Google Client Secret")
         return
       }
+    } else if (isElevenLabs) {
+      if (!secretKey.trim()) {
+        toast.error("Please enter your ElevenLabs API key")
+        return
+      }
     } else {
       if (!secretKey.trim()) {
         toast.error("Please enter the secret API key")
@@ -147,6 +154,12 @@ export function AddIntegrationDialog({ open, onOpenChange, provider }: AddIntegr
         payload.config = {
           client_id: googleClientId,
           client_secret: googleClientSecret,
+        }
+      } else if (isElevenLabs) {
+        // ElevenLabs uses a single API key
+        payload.default_secret_key = secretKey
+        payload.config = {
+          elevenlabs_api_key: secretKey,
         }
       } else {
         // VAPI / Retell
@@ -256,6 +269,68 @@ export function AddIntegrationDialog({ open, onOpenChange, provider }: AddIntegr
                     value={algoliaIndex}
                     onChange={(e) => setAlgoliaIndex(e.target.value)}
                   />
+                </div>
+              </>
+            ) : isElevenLabs ? (
+              // ElevenLabs-specific fields
+              <>
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <div className="shrink-0 mt-0.5">
+                      <svg className="h-4 w-4 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                      </svg>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                        ElevenLabs Voice Integration
+                      </p>
+                      <p className="text-xs text-blue-600 dark:text-blue-400">
+                        Add your ElevenLabs API key to enable high-quality AI voice synthesis for your VAPI agents.
+                        Voices will be dynamically fetched from your ElevenLabs account.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="elevenlabs-key" className="flex items-center gap-2">
+                    <Key className="h-4 w-4" />
+                    ElevenLabs API Key
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="elevenlabs-key"
+                      type={showSecretKey ? "text" : "password"}
+                      placeholder="Your ElevenLabs API key (xi-...)"
+                      value={secretKey}
+                      onChange={(e) => setSecretKey(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3"
+                      onClick={() => setShowSecretKey(!showSecretKey)}
+                    >
+                      {showSecretKey ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Find your API key at{" "}
+                    <a
+                      href="https://elevenlabs.io/app/settings/api-keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline hover:no-underline"
+                    >
+                      ElevenLabs Settings → API Keys
+                    </a>
+                  </p>
                 </div>
               </>
             ) : isGoogleCalendar ? (

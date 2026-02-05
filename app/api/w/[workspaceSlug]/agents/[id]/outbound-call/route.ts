@@ -315,20 +315,27 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     // Check if workspace is billing exempt (uses partner credits)
     const isBillingExempt = ctx.workspace.is_billing_exempt
+    const isPlatformPartner = ctx.partner.is_platform_partner
     const estimatedMinutes = 5
 
     if (isBillingExempt) {
-      // Billing-exempt workspaces use partner credits
-      const hasPartnerCredits = await hasSufficientCredits(ctx.partner.id, estimatedMinutes)
+      // Platform partner's billing-exempt workspaces skip credit checks entirely
+      // (Platform partner owns the platform and doesn't use the credit system)
+      if (isPlatformPartner) {
+        console.log("[OutboundCall] Billing checks skipped (platform partner billing-exempt workspace)")
+      } else {
+        // Non-platform partner billing-exempt workspaces use partner credits
+        const hasPartnerCredits = await hasSufficientCredits(ctx.partner.id, estimatedMinutes)
 
-      if (!hasPartnerCredits) {
-        return apiError(
-          "Insufficient organization credits. Please contact your organization admin to top up credits.",
-          402 // Payment Required
-        )
+        if (!hasPartnerCredits) {
+          return apiError(
+            "Insufficient organization credits. Please contact your organization admin to top up credits.",
+            402 // Payment Required
+          )
+        }
+
+        console.log("[OutboundCall] Billing checks passed (billing-exempt, using partner credits)")
       }
-
-      console.log("[OutboundCall] Billing checks passed (billing-exempt, using partner credits)")
     } else {
       // Non-billing-exempt workspaces: Check subscription and workspace credits
       

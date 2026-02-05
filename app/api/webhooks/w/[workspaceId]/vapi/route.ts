@@ -942,6 +942,57 @@ async function handleEndOfCallReport(
   const hasTranscript = !!(transcript && transcript.length > 0)
   const callOutcome = mapEndedReasonToOutcome(endedReason, durationSeconds, hasTranscript)
   await updateCampaignRecipientStatus(call.id, callOutcome, durationSeconds, messageCost)
+
+  // =========================================================================
+  // FORWARD CALL DATA TO CRM WEBHOOK (if configured)
+  // This sends complete call data to user's CRM/automation system
+  // =========================================================================
+  if (agentData?.config) {
+    const agentConfig = agentData.config as Record<string, unknown>
+    const crmWebhookUrl = agentConfig?.crm_webhook_url as string | undefined
+
+    if (crmWebhookUrl) {
+      console.log(`[VAPI Webhook] Forwarding call data to CRM: ${crmWebhookUrl}`)
+      try {
+        const crmPayload = {
+          callId: call.id,
+          agentId: agentData.id,
+          agentName: agentData.name,
+          transcript: transcript || null,
+          summary: summary || null,
+          duration_seconds: durationSeconds,
+          total_cost: finalConversation?.total_cost || messageCost || 0,
+          sentiment: sentiment || null,
+          caller_number: call.customer?.number || null,
+          caller_name: call.customer?.name || null,
+          recording_url: recordingUrl || null,
+          started_at: call.startedAt || null,
+          ended_at: call.endedAt || null,
+          status: "completed",
+          direction: mapCallDirection(call.type),
+          timestamp: new Date().toISOString(),
+        }
+
+        const crmResponse = await fetch(crmWebhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Webhook-Source": "genius365",
+            "X-Call-Id": call.id,
+          },
+          body: JSON.stringify(crmPayload),
+        })
+
+        if (!crmResponse.ok) {
+          console.error(`[VAPI Webhook] CRM webhook returned error: ${crmResponse.status}`)
+        } else {
+          console.log(`[VAPI Webhook] Successfully forwarded call data to CRM`)
+        }
+      } catch (crmError) {
+        console.error("[VAPI Webhook] Error forwarding call data to CRM:", crmError)
+      }
+    }
+  }
 }
 
 async function handleFunctionCall(
