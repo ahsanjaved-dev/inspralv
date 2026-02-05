@@ -310,28 +310,7 @@ async function handleCallEnded(
 
   console.log(`[Retell Webhook] Updated conversation: ${conversation.id}`)
 
-  // Index to Algolia
-  // IMPORTANT: Must await to ensure indexing completes before serverless function terminates
-  if (conversation.agent) {
-    try {
-      const indexResult = await indexCallLogToAlgolia({
-        conversation: updatedConversation as unknown as Conversation,
-        workspaceId: workspaceId,
-        partnerId: partnerId,
-        agentName: conversation.agent.name || "Unknown Agent",
-        agentProvider: (conversation.agent.provider as AgentProvider) || "retell",
-      })
-      if (indexResult.success) {
-        console.log(`[Retell Webhook] Algolia index SUCCESS for call: ${call.call_id}`)
-      } else {
-        console.warn(`[Retell Webhook] Algolia indexing SKIPPED for call: ${call.call_id} - ${indexResult.reason}`)
-      }
-    } catch (err) {
-      console.error("[Retell Webhook] Algolia indexing failed:", err)
-    }
-  }
-
-  // Process billing
+  // Process billing FIRST (so partner cost is calculated before indexing)
   const billingResult = await processCallCompletion({
     conversationId: conversation.id,
     workspaceId: workspaceId,
@@ -345,6 +324,33 @@ async function handleCallEnded(
     console.log(`[Retell Webhook] ✅ Billing processed: ${billingResult.minutesAdded} minutes`)
   } else {
     console.error(`[Retell Webhook] ❌ Billing failed: ${billingResult.error || billingResult.reason}`)
+  }
+
+  // Re-fetch conversation to get updated cost from billing (partner cost, not provider cost)
+  const finalConversation = await prisma.conversation.findUnique({
+    where: { id: conversation.id },
+  })
+
+  // Index to Algolia AFTER billing (so cost reflects partner pricing)
+  // IMPORTANT: Must await to ensure indexing completes before serverless function terminates
+  if (conversation.agent && finalConversation) {
+    console.log(`[Retell Webhook] Indexing conversation to Algolia with updated cost: ${finalConversation.totalCost}`)
+    try {
+      const indexResult = await indexCallLogToAlgolia({
+        conversation: finalConversation as unknown as Conversation,
+        workspaceId: workspaceId,
+        partnerId: partnerId,
+        agentName: conversation.agent.name || "Unknown Agent",
+        agentProvider: (conversation.agent.provider as AgentProvider) || "retell",
+      })
+      if (indexResult.success) {
+        console.log(`[Retell Webhook] Algolia index SUCCESS for call: ${call.call_id}`)
+      } else {
+        console.warn(`[Retell Webhook] Algolia indexing SKIPPED for call: ${call.call_id} - ${indexResult.reason}`)
+      }
+    } catch (err) {
+      console.error("[Retell Webhook] Algolia indexing failed:", err)
+    }
   }
 
   // Check if this is a campaign call and trigger next batch

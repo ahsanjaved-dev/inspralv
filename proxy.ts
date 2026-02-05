@@ -39,17 +39,19 @@ const PARTNER_ALLOWED_ROUTES = [
   "/select-workspace",
   "/setup-profile",
   "/workspace-onboarding",
+  "/org", // Organization dashboard root (exact path, prefix /org/ handles sub-routes)
 ]
 
 // Route prefixes that are ALWAYS allowed on partner domains
 const PARTNER_ALLOWED_PREFIXES = [
   "/w/", // Workspace dashboard routes
   "/org/", // Organization dashboard routes
-  "/api/partner/", // Partner API routes
+  "/api/partner", // Partner API routes (no trailing slash to match both /api/partner and /api/partner/*)
   "/api/w/", // Workspace API routes
   "/api/auth/", // Auth API routes
   "/api/webhooks/", // Webhook routes
   "/api/public/", // Public API routes (pricing, etc.)
+  "/api/upload/", // File upload routes (logo, etc.)
   "/_next/", // Next.js internals
   "/favicon", // Favicon
 ]

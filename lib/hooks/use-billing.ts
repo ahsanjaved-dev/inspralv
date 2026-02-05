@@ -114,6 +114,34 @@ export interface PlanChangeResponse {
   message: string
 }
 
+export interface PartnerPricingInfo {
+  perMinuteRateCents: number
+  perMinuteRate: number
+  perMinuteRateFormatted: string
+  defaultRateCents: number
+  defaultRate: number
+}
+
+export interface PartnerPricingResponse {
+  pricing: PartnerPricingInfo
+  partner: {
+    id: string
+    name: string
+  }
+}
+
+export interface UpdatePartnerPricingResponse {
+  success: boolean
+  pricing: PartnerPricingInfo & {
+    previousRateCents: number
+    previousRate: number
+  }
+  partner: {
+    id: string
+    name: string
+  }
+}
+
 // =============================================================================
 // QUERY KEYS
 // =============================================================================
@@ -123,6 +151,7 @@ export const billingKeys = {
   info: () => [...billingKeys.all, "info"] as const,
   connect: () => [...billingKeys.all, "connect"] as const,
   credits: () => [...billingKeys.all, "credits"] as const,
+  pricing: () => [...billingKeys.all, "pricing"] as const,
 }
 
 // =============================================================================
@@ -278,6 +307,50 @@ export function useTopupIntent() {
     },
     onSuccess: () => {
       // Invalidate credits after successful top-up
+      queryClient.invalidateQueries({ queryKey: billingKeys.credits() })
+    },
+  })
+}
+
+// =============================================================================
+// PARTNER PRICING HOOKS
+// =============================================================================
+
+/**
+ * Get partner pricing configuration (per-minute rate)
+ */
+export function usePartnerPricing() {
+  return useQuery({
+    queryKey: billingKeys.pricing(),
+    queryFn: () => apiFetch<PartnerPricingResponse>("/api/partner/pricing"),
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  })
+}
+
+/**
+ * Update partner pricing configuration
+ */
+export function useUpdatePartnerPricing() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: { perMinuteRate?: number; perMinuteRateCents?: number }) => {
+      const response = await fetch("/api/partner/pricing", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to update pricing")
+      }
+
+      const result = await response.json()
+      return result.data as UpdatePartnerPricingResponse
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.pricing() })
       queryClient.invalidateQueries({ queryKey: billingKeys.credits() })
     },
   })
