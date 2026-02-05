@@ -3,11 +3,17 @@
  * 
  * Handles credit balance tracking, top-ups via Stripe Connect, and usage deductions for workspaces.
  * Billing-exempt workspaces (partner's default) draw from partner-level credits instead.
+ * 
+ * Pricing Model:
+ * - Partner sets a single per-minute rate (in billing_credits.per_minute_rate_cents)
+ * - This rate applies uniformly to all workspaces under the partner
+ * - Workspace.perMinuteRateCents is a cached copy (synced via DB trigger)
+ * - For canonical rate, always fetch from partner's billing_credits
  */
 
 import { prisma, type CreditTransactionType } from "@/lib/prisma"
 import { getStripe, getConnectAccountId } from "./index"
-import { deductUsage as deductPartnerUsage, checkAndSendLowBalanceAlert as checkPartnerLowBalance } from "./credits"
+import { deductUsage as deductPartnerUsage, checkAndSendLowBalanceAlert as checkPartnerLowBalance, DEFAULT_PER_MINUTE_RATE_CENTS } from "./credits"
 import { sendLowBalanceAlertEmail } from "@/lib/email/send"
 import { env } from "@/lib/env"
 
@@ -46,6 +52,44 @@ export interface WorkspaceCreditTransactionInfo {
   balanceAfterCents: number
   description: string | null
   createdAt: Date
+}
+
+// =============================================================================
+// PARTNER RATE HELPER
+// =============================================================================
+
+/**
+ * Get the partner's per-minute rate for a workspace
+ * This fetches the canonical rate from the partner's billing_credits table
+ * (not the cached workspace.perMinuteRateCents which may be stale)
+ * 
+ * @param workspaceId - The workspace ID
+ * @returns Partner's per-minute rate in cents
+ */
+export async function getPartnerRateForWorkspace(workspaceId: string): Promise<number> {
+  if (!prisma) throw new Error("Database not configured")
+
+  const workspace = await prisma.workspace.findUnique({
+    where: { id: workspaceId },
+    select: {
+      partner: {
+        select: {
+          billingCredits: {
+            select: {
+              perMinuteRateCents: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (!workspace) {
+    throw new Error("Workspace not found")
+  }
+
+  // Return partner's canonical rate, or default if not set
+  return workspace.partner.billingCredits?.perMinuteRateCents ?? DEFAULT_PER_MINUTE_RATE_CENTS
 }
 
 // =============================================================================
@@ -574,7 +618,6 @@ export async function deductWorkspaceUsage(
       id: true,
       partnerId: true,
       isBillingExempt: true,
-      perMinuteRateCents: true,
     },
   })
 
@@ -597,6 +640,9 @@ export async function deductWorkspaceUsage(
   }
 
   const minutes = Math.ceil(durationSeconds / 60)
+  
+  // Get the canonical per-minute rate from partner (not cached workspace value)
+  const perMinuteRateCents = await getPartnerRateForWorkspace(workspaceId)
 
   // Check for active subscription
   const subscription = await prisma.workspaceSubscription.findUnique({
@@ -628,7 +674,7 @@ export async function deductWorkspaceUsage(
     // PREPAID: Use subscription logic (included minutes + credits for overage)
     return await deductWithSubscription(
       workspaceId,
-      workspace.perMinuteRateCents,
+      perMinuteRateCents,
       minutes,
       subscription,
       conversationId,
@@ -639,7 +685,7 @@ export async function deductWorkspaceUsage(
   // No subscription - use prepaid credits only
   return await deductFromPrepaidCredits(
     workspaceId,
-    workspace.perMinuteRateCents,
+    perMinuteRateCents,
     minutes,
     conversationId,
     description

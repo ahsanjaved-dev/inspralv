@@ -381,7 +381,12 @@ model Workspace {
   status              String    @default("active")
   // Billing fields
   isBillingExempt     Boolean   @default(false) @map("is_billing_exempt")
-  perMinuteRateCents  Int       @default(20) @map("per_minute_rate_cents")
+  // Per-minute rate INHERITED from partner's billing_credits.perMinuteRateCents
+  // This field is cached locally for query performance but is automatically synced via database trigger:
+  // - On partner rate update: trigger_propagate_partner_rate automatically updates all workspaces
+  // - On workspace creation: trigger_set_workspace_rate sets initial rate from partner
+  // DO NOT update this directly - always update the partner's BillingCredits.perMinuteRateCents instead
+  perMinuteRateCents  Int       @default(15) @map("per_minute_rate_cents") // Inherited from partner (default $0.15)
   deletedAt           DateTime? @map("deleted_at") @db.Timestamptz
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -630,7 +635,16 @@ model Conversation {
   sentiment        String?
   qualityScore     Decimal?      @map("quality_score") @db.Decimal
   customerRating   Int?          @map("customer_rating")
+  // Total cost from provider (VAPI/Retell) - stored for internal tracking only
   totalCost        Decimal       @default(0) @map("total_cost") @db.Decimal
+  // Cost breakdown JSON structure:
+  // {
+  //   provider_cost_cents: number,     // Original cost from VAPI/Retell (internal only)
+  //   partner_cost_cents: number,      // Calculated: minutes * partner_rate (displayed to users)
+  //   duration_minutes: number,        // Call duration used for calculation
+  //   partner_rate_cents: number,      // Partner rate at time of call
+  //   ... provider-specific breakdown fields
+  // }
   costBreakdown    Json          @default("{}") @map("cost_breakdown")
   requiresFollowUp Boolean       @default(false) @map("requires_follow_up")
   followUpNotes    String?       @map("follow_up_notes")
@@ -1249,6 +1263,11 @@ model BillingCredits {
   partnerId                String   @unique @map("partner_id") @db.Uuid
   balanceCents             Int      @default(0) @map("balance_cents")
   lowBalanceThresholdCents Int      @default(1000) @map("low_balance_threshold_cents") // $10 default
+  // Partner-level per-minute rate (CANONICAL PRICING RATE)
+  // This is the single source of truth for pricing that applies to ALL workspaces under this partner.
+  // - Used for billing calculations and cost display
+  // - Hides provider costs from workspaces (they only see partner rate)
+  // - Automatically propagated to workspaces via database trigger
   perMinuteRateCents       Int      @default(15) @map("per_minute_rate_cents") // $0.15 default
   createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz

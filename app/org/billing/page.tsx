@@ -3,6 +3,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   CreditCard,
   ExternalLink,
@@ -24,9 +26,11 @@ import {
   FileText,
   Settings,
   DollarSign,
-  BarChart3
+  BarChart3,
+  Save,
+  CircleDollarSign
 } from "lucide-react"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import {
@@ -35,7 +39,9 @@ import {
   useCustomerPortal,
   useConnectStatus,
   useConnectOnboarding,
-  useCredits
+  useCredits,
+  usePartnerPricing,
+  useUpdatePartnerPricing
 } from "@/lib/hooks/use-billing"
 import { CreditsCard } from "@/components/billing/credits-card"
 import { toast } from "sonner"
@@ -49,6 +55,19 @@ export default function OrgBillingPage() {
   const connectOnboarding = useConnectOnboarding()
 
   const { refetch: refetchCredits } = useCredits()
+  
+  // Pricing configuration
+  const { data: pricingData, isLoading: pricingLoading } = usePartnerPricing()
+  const updatePricing = useUpdatePartnerPricing()
+  const [perMinuteRateInput, setPerMinuteRateInput] = useState<string>("")
+  const [pricingError, setPricingError] = useState<string>("")
+  
+  // Initialize pricing input when data loads
+  useEffect(() => {
+    if (pricingData?.pricing) {
+      setPerMinuteRateInput(pricingData.pricing.perMinuteRate.toFixed(2))
+    }
+  }, [pricingData])
 
   // Handle callback messages from URL params
   useEffect(() => {
@@ -109,6 +128,33 @@ export default function OrgBillingPage() {
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to start Connect onboarding")
+    }
+  }
+  
+  const handlePricingUpdate = async () => {
+    setPricingError("")
+    
+    const rate = parseFloat(perMinuteRateInput)
+    if (isNaN(rate)) {
+      setPricingError("Please enter a valid number")
+      return
+    }
+    
+    if (rate < 0.01) {
+      setPricingError("Minimum rate is $0.01 per minute")
+      return
+    }
+    
+    if (rate > 10.00) {
+      setPricingError("Maximum rate is $10.00 per minute")
+      return
+    }
+    
+    try {
+      await updatePricing.mutateAsync({ perMinuteRate: rate })
+      toast.success("Per-minute rate updated successfully!")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update pricing")
     }
   }
 
@@ -292,6 +338,114 @@ export default function OrgBillingPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Pricing Configuration Card for Platform Partner */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CircleDollarSign className="h-5 w-5" />
+                Pricing Configuration
+              </CardTitle>
+              <CardDescription>
+                Set the per-minute rate for your workspaces. This rate is used for billing calculations and displayed in call logs.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {pricingLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Current Rate Display */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Current Per-Minute Rate</p>
+                      <p className="text-2xl font-bold text-primary">
+                        {pricingData?.pricing?.perMinuteRateFormatted || "$0.15"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Default Rate</p>
+                      <p className="text-lg font-medium text-muted-foreground">
+                        ${(pricingData?.pricing?.defaultRate || 0.15).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Rate Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="perMinuteRatePlatform">Per-Minute Rate (USD)</Label>
+                    <div className="flex items-center gap-3">
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                          $
+                        </span>
+                        <Input
+                          id="perMinuteRatePlatform"
+                          type="text"
+                          inputMode="decimal"
+                          value={perMinuteRateInput}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            // Allow empty, or valid decimal numbers
+                            if (value === "" || /^\d*\.?\d{0,2}$/.test(value)) {
+                              setPerMinuteRateInput(value)
+                              setPricingError("")
+                            }
+                          }}
+                          placeholder="0.15"
+                          className="pl-7 font-mono"
+                        />
+                      </div>
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                        per minute
+                      </span>
+                    </div>
+                    {pricingError && (
+                      <p className="text-sm text-destructive">{pricingError}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Rate must be between $0.01 and $10.00 per minute
+                    </p>
+                  </div>
+
+                  {/* Save Button */}
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handlePricingUpdate}
+                      disabled={
+                        updatePricing.isPending ||
+                        perMinuteRateInput === "" ||
+                        perMinuteRateInput === pricingData?.pricing?.perMinuteRate.toFixed(2)
+                      }
+                    >
+                      {updatePricing.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4 mr-2" />
+                      )}
+                      {updatePricing.isPending ? "Saving..." : "Save Rate"}
+                    </Button>
+                  </div>
+
+                  {/* Info Section */}
+                  <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground mb-1">How Pricing Works</p>
+                      <ul className="space-y-1">
+                        <li>• This rate applies uniformly to all workspaces under your organization</li>
+                        <li>• Call costs shown in call logs and agent stats use this rate</li>
+                        <li>• Credits are deducted based on call duration × this rate</li>
+                        <li>• Provider costs (from VAPI/Retell) are hidden from your end users</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
 
@@ -473,6 +627,114 @@ export default function OrgBillingPage() {
 
           {/* Credits Card - For agency partners */}
           <CreditsCard />
+
+          {/* Pricing Configuration Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CircleDollarSign className="h-5 w-5" />
+                Pricing Configuration
+              </CardTitle>
+              <CardDescription>
+                Set the per-minute rate for your workspaces. This rate is used for billing calculations and displayed in call logs.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {pricingLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Current Rate Display */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Current Per-Minute Rate</p>
+                      <p className="text-2xl font-bold text-primary">
+                        {pricingData?.pricing?.perMinuteRateFormatted || "$0.15"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Default Rate</p>
+                      <p className="text-lg font-medium text-muted-foreground">
+                        ${(pricingData?.pricing?.defaultRate || 0.15).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Rate Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="perMinuteRate">Per-Minute Rate (USD)</Label>
+                    <div className="flex items-center gap-3">
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                          $
+                        </span>
+                        <Input
+                          id="perMinuteRate"
+                          type="text"
+                          inputMode="decimal"
+                          value={perMinuteRateInput}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            // Allow empty, or valid decimal numbers
+                            if (value === "" || /^\d*\.?\d{0,2}$/.test(value)) {
+                              setPerMinuteRateInput(value)
+                              setPricingError("")
+                            }
+                          }}
+                          placeholder="0.15"
+                          className="pl-7 font-mono"
+                        />
+                      </div>
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                        per minute
+                      </span>
+                    </div>
+                    {pricingError && (
+                      <p className="text-sm text-destructive">{pricingError}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Rate must be between $0.01 and $10.00 per minute
+                    </p>
+                  </div>
+
+                  {/* Save Button */}
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handlePricingUpdate}
+                      disabled={
+                        updatePricing.isPending ||
+                        perMinuteRateInput === "" ||
+                        perMinuteRateInput === pricingData?.pricing?.perMinuteRate.toFixed(2)
+                      }
+                    >
+                      {updatePricing.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4 mr-2" />
+                      )}
+                      {updatePricing.isPending ? "Saving..." : "Save Rate"}
+                    </Button>
+                  </div>
+
+                  {/* Info Section */}
+                  <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground mb-1">How Pricing Works</p>
+                      <ul className="space-y-1">
+                        <li>• This rate applies uniformly to all workspaces under your organization</li>
+                        <li>• Call costs shown in call logs and agent stats use this rate</li>
+                        <li>• Credits are deducted based on call duration × this rate</li>
+                        <li>• Provider costs (from VAPI/Retell) are hidden from your end users</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
 

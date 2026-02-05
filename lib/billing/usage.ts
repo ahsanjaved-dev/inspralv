@@ -9,10 +9,15 @@
  * 2. Prepaid subscriptions → Use included minutes, then credits for overage
  * 3. No subscription → Deduct from workspace prepaid credits
  * 4. Billing-exempt workspaces → Use partner credits
+ * 
+ * Pricing Model:
+ * - Partner sets a single per-minute rate that applies to all their workspaces
+ * - Partner rate is used for billing and display (hides provider costs)
+ * - Provider costs are stored internally for audit/tracking only
  */
 
 import { prisma } from "@/lib/prisma"
-import { deductUsage, hasSufficientCredits as checkCredits } from "@/lib/stripe/credits"
+import { deductUsage, hasSufficientCredits as checkCredits, DEFAULT_PER_MINUTE_RATE_CENTS } from "@/lib/stripe/credits"
 import { deductWorkspaceUsage, canMakePostpaidCall } from "@/lib/stripe/workspace-credits"
 
 // =============================================================================
@@ -53,6 +58,43 @@ const PLAN_MONTHLY_MINUTES = {
 export function getPlanMonthlyMinutesLimit(planTier: string): number {
   const plan = planTier as keyof typeof PLAN_MONTHLY_MINUTES
   return PLAN_MONTHLY_MINUTES[plan] || PLAN_MONTHLY_MINUTES.starter
+}
+
+// =============================================================================
+// PARTNER RATE HELPER
+// =============================================================================
+
+/**
+ * Get the partner's per-minute rate for a workspace
+ * This is the canonical rate used for billing and cost display
+ * 
+ * @param workspaceId - The workspace ID
+ * @returns Partner's per-minute rate in cents
+ */
+export async function getPartnerRateForWorkspace(workspaceId: string): Promise<number> {
+  if (!prisma) throw new Error("Database not configured")
+
+  const workspace = await prisma.workspace.findUnique({
+    where: { id: workspaceId },
+    select: {
+      partner: {
+        select: {
+          billingCredits: {
+            select: {
+              perMinuteRateCents: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (!workspace) {
+    throw new Error("Workspace not found")
+  }
+
+  // Return partner's rate, or default if not set
+  return workspace.partner.billingCredits?.perMinuteRateCents ?? DEFAULT_PER_MINUTE_RATE_CENTS
 }
 
 // =============================================================================
@@ -128,6 +170,7 @@ export async function checkMonthlyMinutesLimit(workspaceId: string): Promise<{
  * 3. Supports prepaid subscriptions (included minutes + overage)
  * 4. Falls back to partner credits for billing-exempt workspaces
  * 5. Is idempotent (checks if already processed)
+ * 6. Calculates partner cost using partner's per-minute rate (not provider cost)
  */
 export async function processCallCompletion(
   data: CallUsageData
@@ -164,7 +207,7 @@ export async function processCallCompletion(
       return {
         success: true,
         reason: "Already processed (idempotent)",
-        amountDeducted: Number(conversation.totalCost) * 100, // Convert back to cents
+        amountDeducted: Number(costBreakdown.partner_cost_cents) || Number(conversation.totalCost) * 100,
       }
     }
 
@@ -180,13 +223,19 @@ export async function processCallCompletion(
     const minutes = Math.ceil(durationSeconds / 60)
     const billedCostCents = usageResult.amountDeducted // What we charged (may be $0 for subscription)
     
-    // Use the PROVIDER cost (set by webhook from VAPI/Retell) for dashboard visibility
-    // This shows actual provider charges, not our billing (which may be $0 for subscription users)
+    // Provider cost (from VAPI/Retell webhook) - stored for internal tracking only
     const providerCostDollars = Number(conversation.totalCost) || 0
+    const providerCostCents = Math.round(providerCostDollars * 100)
+    
+    // Get partner's per-minute rate and calculate PARTNER cost
+    // This is the canonical cost that should be displayed to users and used for billing
+    const partnerRateCents = await getPartnerRateForWorkspace(workspaceId)
+    const partnerCostCents = minutes * partnerRateCents
+    const partnerCostDollars = partnerCostCents / 100
     
     // Build transaction operations
     const transactionOps: any[] = [
-      // Update workspace monthly usage with PROVIDER cost for visibility
+      // Update workspace monthly usage with PARTNER cost (what workspaces see)
       prisma.workspace.update({
         where: { id: workspaceId },
         data: {
@@ -194,21 +243,28 @@ export async function processCallCompletion(
             increment: minutes,
           },
           currentMonthCost: {
-            increment: providerCostDollars, // Use provider cost for dashboard
+            increment: partnerCostDollars, // Use partner cost for dashboard visibility
           },
         },
       }),
-      // Update conversation - keep provider cost in totalCost, store billing details in costBreakdown
+      // Update conversation - store partner cost for display, provider cost for audit
       prisma.conversation.update({
         where: { id: conversationId },
         data: {
-          // Keep totalCost as-is (provider's reported cost from webhook)
-          // Store our billing info in costBreakdown
+          // Update totalCost to partner cost (this is what gets displayed)
+          totalCost: partnerCostDollars,
+          // Store detailed cost breakdown for audit and display
           costBreakdown: {
             minutes,
+            // Partner pricing (for display)
+            partner_cost_cents: partnerCostCents,
+            partner_cost_dollars: partnerCostDollars,
+            partner_rate_per_minute_cents: partnerRateCents,
+            // Provider cost (internal tracking only)
+            provider_cost_cents: providerCostCents,
             provider_cost_dollars: providerCostDollars,
+            // Billing info
             billed_cost_cents: billedCostCents,
-            rate_per_minute_cents: billedCostCents > 0 ? Math.round(billedCostCents / minutes) : 0,
             billing_type: usageResult.deductedFrom,
             // Include subscription info if applicable
             ...(usageResult.deductedFrom === "subscription" && {
@@ -227,7 +283,7 @@ export async function processCallCompletion(
       }),
     ]
 
-    // Update agent stats with PROVIDER cost for consistency with agent card display
+    // Update agent stats with PARTNER cost (this is what workspaces should see)
     if (conversation.agentId) {
       transactionOps.push(
         prisma.aiAgent.update({
@@ -235,7 +291,7 @@ export async function processCallCompletion(
           data: {
             totalConversations: { increment: 1 },
             totalMinutes: { increment: minutes },
-            totalCost: { increment: providerCostDollars }, // Use provider cost
+            totalCost: { increment: partnerCostDollars }, // Use partner cost
             lastConversationAt: new Date(),
           },
         })
@@ -245,7 +301,9 @@ export async function processCallCompletion(
     await prisma.$transaction(transactionOps)
 
     console.log(
-      `[Billing] Usage processed: ${minutes} min, provider cost: $${providerCostDollars.toFixed(2)}, ` +
+      `[Billing] Usage processed: ${minutes} min, ` +
+      `partner cost: $${partnerCostDollars.toFixed(2)} (@ $${(partnerRateCents / 100).toFixed(2)}/min), ` +
+      `provider cost: $${providerCostDollars.toFixed(2)} (internal), ` +
       `billed: $${(billedCostCents / 100).toFixed(2)}, billing_type: ${usageResult.deductedFrom}`
     )
 
