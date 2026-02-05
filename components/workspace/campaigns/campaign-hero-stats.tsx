@@ -3,7 +3,9 @@
 /**
  * Campaign Hero Stats Component (OPTIMIZED)
  * 
- * Lightweight stats overview without heavy animations
+ * Lightweight stats overview without heavy animations.
+ * Shows only scalable aggregate stats (Total Campaigns, Active Campaigns).
+ * Removed per-call stats that don't scale well for millions of calls.
  */
 
 import { Card } from "@/components/ui/card"
@@ -11,8 +13,6 @@ import { cn } from "@/lib/utils"
 import {
   Phone,
   PhoneCall,
-  Users,
-  CheckCircle2,
   TrendingUp,
 } from "lucide-react"
 
@@ -67,8 +67,11 @@ function HeroStat({ label, value, icon, gradient, suffix, trend }: HeroStatProps
 interface CampaignHeroStatsProps {
   totalCampaigns: number
   activeCampaigns: number
-  totalRecipients: number
-  processedCalls: number
+  /** @deprecated Not used - removed for scalability */
+  totalRecipients?: number
+  /** @deprecated Not used - removed for scalability */
+  processedCalls?: number
+  /** @deprecated Not used - removed for scalability */
   successRate?: number
   isLoading?: boolean
   className?: string
@@ -77,16 +80,13 @@ interface CampaignHeroStatsProps {
 export function CampaignHeroStats({
   totalCampaigns,
   activeCampaigns,
-  totalRecipients,
-  processedCalls,
-  successRate,
   isLoading = false,
   className,
 }: CampaignHeroStatsProps) {
   if (isLoading) {
     return (
-      <div className={cn("grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4", className)}>
-        {[...Array(4)].map((_, i) => (
+      <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-4", className)}>
+        {[...Array(2)].map((_, i) => (
           <Card key={i} className="p-6 animate-pulse bg-muted/50">
             <div className="h-10 w-10 bg-muted rounded-lg mb-4" />
             <div className="h-8 w-20 bg-muted rounded mb-2" />
@@ -111,23 +111,10 @@ export function CampaignHeroStats({
       gradient: "from-emerald-500 to-teal-600",
       trend: activeCampaigns > 0 ? { value: activeCampaigns, isPositive: true } : undefined,
     },
-    {
-      label: "Total Recipients",
-      value: totalRecipients,
-      icon: <Users className="h-5 w-5 text-white" />,
-      gradient: "from-blue-500 to-cyan-600",
-    },
-    {
-      label: "Processed Calls",
-      value: processedCalls,
-      icon: <CheckCircle2 className="h-5 w-5 text-white" />,
-      gradient: "from-violet-500 to-fuchsia-600",
-      trend: successRate ? { value: successRate, isPositive: successRate >= 50 } : undefined,
-    },
   ]
 
   return (
-    <div className={cn("grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4", className)}>
+    <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-4", className)}>
       {stats.map((stat) => (
         <HeroStat key={stat.label} {...stat} />
       ))}

@@ -215,10 +215,11 @@ export const StepSchedule = memo(function StepSchedule({
           </Card>
         </div>
 
+        {/* Scheduled Start Date/Time - only for "Schedule for Later" */}
         {formData.scheduleType === "scheduled" && (
-          <div className="mt-4 p-4 bg-muted/50 rounded-lg space-y-4">
+          <div className="mt-4 p-4 bg-muted/50 rounded-lg">
             <div>
-              <Label htmlFor="scheduled-start">Start Date & Time</Label>
+              <Label htmlFor="scheduled-start">Start Date & Time <span className="text-destructive">*</span></Label>
               <Input
                 id="scheduled-start"
                 type="datetime-local"
@@ -233,36 +234,43 @@ export const StepSchedule = memo(function StepSchedule({
                 </p>
               )}
             </div>
-
-            <div>
-              <Label htmlFor="scheduled-expires">
-                Expiry Date & Time <span className="text-muted-foreground">(Optional)</span>
-              </Label>
-              <p className="text-xs text-muted-foreground mt-1 mb-2">
-                Campaign will auto-cancel if not started by this time
-              </p>
-              <Input
-                id="scheduled-expires"
-                type="datetime-local"
-                value={formData.scheduledExpiresAt || ""}
-                onChange={(e) => updateFormData("scheduledExpiresAt", e.target.value)}
-                className={`max-w-xs ${errors.scheduledExpiresAt ? "border-destructive" : ""}`}
-              />
-              {errors.scheduledExpiresAt && (
-                <p className="text-sm text-destructive flex items-center gap-1 mt-1">
-                  <AlertCircle className="h-4 w-4" />
-                  {errors.scheduledExpiresAt}
-                </p>
-              )}
-              {!errors.scheduledExpiresAt && formData.scheduledExpiresAt && (
-                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  Campaign will expire if not started by this time
-                </p>
-              )}
-            </div>
           </div>
         )}
+
+        {/* Expiry Date/Time - REQUIRED for both schedule types */}
+        <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
+          <div>
+            <Label htmlFor="scheduled-expires" className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              Campaign Expiry Date & Time <span className="text-destructive">*</span>
+            </Label>
+            <p className="text-xs text-muted-foreground mt-1 mb-2">
+              {formData.scheduleType === "immediate" 
+                ? "Campaign will auto-cancel if not completed by this time. This protects recipients from stale campaigns."
+                : "Campaign will auto-cancel if not started by this time."
+              }
+            </p>
+            <Input
+              id="scheduled-expires"
+              type="datetime-local"
+              value={formData.scheduledExpiresAt || ""}
+              onChange={(e) => updateFormData("scheduledExpiresAt", e.target.value)}
+              className={`max-w-xs ${errors.scheduledExpiresAt ? "border-destructive" : ""}`}
+            />
+            {errors.scheduledExpiresAt && (
+              <p className="text-sm text-destructive flex items-center gap-1 mt-1">
+                <AlertCircle className="h-4 w-4" />
+                {errors.scheduledExpiresAt}
+              </p>
+            )}
+            {!errors.scheduledExpiresAt && formData.scheduledExpiresAt && (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                Campaign will expire on {new Date(formData.scheduledExpiresAt).toLocaleString()}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Business Hours Section - Always shown, no toggle */}

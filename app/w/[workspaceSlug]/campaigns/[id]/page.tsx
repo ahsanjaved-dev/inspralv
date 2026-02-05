@@ -2,10 +2,17 @@
 
 import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter, useParams } from "next/navigation"
+import { format } from "date-fns"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import {
   Table,
   TableBody,
@@ -75,6 +82,8 @@ import {
   MoreVertical,
   RefreshCw,
   Calendar,
+  CalendarIcon,
+  X,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -83,11 +92,31 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 import type {
   CallRecipient,
   RecipientCallStatus,
   BusinessHoursConfig,
 } from "@/types/database.types"
+
+/**
+ * Get today's date in YYYY-MM-DD format (local timezone)
+ */
+function getTodayDateString(): string {
+  const today = new Date()
+  return formatDateToLocal(today)
+}
+
+/**
+ * Format a Date object to YYYY-MM-DD in local timezone
+ * This avoids timezone issues with toISOString() which converts to UTC
+ */
+function formatDateToLocal(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
 
 const statusFilterOptions = [
   { value: "all", label: "All Status" },
@@ -99,9 +128,10 @@ const statusFilterOptions = [
 ]
 
 const pageSizeOptions = [
-  { value: "25", label: "25" },
+  { value: "10", label: "10" },
+  { value: "20", label: "20" },
+  { value: "30", label: "30" },
   { value: "50", label: "50" },
-  { value: "100", label: "100" },
 ]
 
 export default function CampaignDetailPage() {
@@ -111,11 +141,16 @@ export default function CampaignDetailPage() {
   const campaignId = params.id as string
 
   const [statusFilter, setStatusFilter] = useState<RecipientCallStatus | "all">("all")
+  const [dateFilter, setDateFilter] = useState<string | null>(getTodayDateString()) // Default to today
+  const [datePickerOpen, setDatePickerOpen] = useState(false) // Control popover
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [pageSize, setPageSize] = useState(10) // Default 10
   const [importOpen, setImportOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<CallRecipient | null>(null)
+
+  // Parse date filter for calendar component (use noon to avoid timezone edge cases)
+  const selectedDate = dateFilter ? new Date(dateFilter + "T12:00:00") : undefined
 
   const {
     data: campaignData,
@@ -132,6 +167,7 @@ export default function CampaignDetailPage() {
     refetch: refetchRecipients,
   } = useCampaignRecipients(campaignId, { 
     status: statusFilter, 
+    date: dateFilter,
     page, 
     pageSize,
     enablePolling: true,
@@ -605,25 +641,76 @@ export default function CampaignDetailPage() {
         </CardHeader>
         <CardContent>
           {/* Filter Controls */}
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <Select
-              value={statusFilter}
-              onValueChange={(v) => {
-                setStatusFilter(v as RecipientCallStatus | "all")
-                setPage(1)
-              }}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                {statusFilterOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Date Filter */}
+              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-[180px] justify-start text-left font-normal",
+                      !dateFilter && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFilter ? format(selectedDate!, "PPP") : "All dates"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={(date) => {
+                      if (date) {
+                        // Use local date formatting to avoid timezone issues
+                        setDateFilter(formatDateToLocal(date))
+                        setPage(1)
+                        setDatePickerOpen(false) // Close popover after selection
+                      }
+                    }}
+                    initialFocus
+                  />
+                  {dateFilter && (
+                    <div className="p-2 border-t">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => {
+                          setDateFilter(null)
+                          setPage(1)
+                          setDatePickerOpen(false)
+                        }}
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Clear date filter
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+
+              {/* Status Filter */}
+              <Select
+                value={statusFilter}
+                onValueChange={(v) => {
+                  setStatusFilter(v as RecipientCallStatus | "all")
+                  setPage(1)
+                }}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusFilterOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Rows per page:</span>

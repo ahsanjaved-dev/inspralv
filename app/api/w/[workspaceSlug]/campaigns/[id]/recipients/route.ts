@@ -15,8 +15,9 @@ export async function GET(
 
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status")
+    const dateFilter = searchParams.get("date") // Format: YYYY-MM-DD
     const page = parseInt(searchParams.get("page") || "1")
-    const pageSize = parseInt(searchParams.get("pageSize") || "50")
+    const pageSize = parseInt(searchParams.get("pageSize") || "10")
     const offset = (page - 1) * pageSize
 
     // Verify campaign exists
@@ -42,6 +43,15 @@ export async function GET(
 
     if (status && status !== "all") {
       query = query.eq("call_status", status)
+    }
+
+    // Date filter - filter recipients by creation date or last called date
+    // Using a simple range filter without timezone suffix for better compatibility
+    if (dateFilter) {
+      const startOfDay = `${dateFilter}T00:00:00`
+      const endOfDay = `${dateFilter}T23:59:59.999`
+      // Filter by created_at date range
+      query = query.gte("created_at", startOfDay).lte("created_at", endOfDay)
     }
 
     const { data, error, count } = await query
