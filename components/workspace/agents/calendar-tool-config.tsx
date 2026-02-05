@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { ALL_TIMEZONES, TIMEZONE_REGIONS } from "@/lib/utils/timezones"
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -35,8 +37,11 @@ import {
   Info,
   Settings,
   X,
+  Link2,
+  Mail,
 } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { cn } from "@/lib/utils"
 import type { FunctionTool, FunctionToolParameterProperty } from "@/types/database.types"
 
@@ -101,31 +106,7 @@ const BUILT_IN_PARAMETERS: Record<CalendarToolType, Array<{
   ],
 }
 
-// Timezones
-const TIMEZONES = [
-  { value: "America/New_York", label: "Eastern Time (ET)", region: "US" },
-  { value: "America/Chicago", label: "Central Time (CT)", region: "US" },
-  { value: "America/Denver", label: "Mountain Time (MT)", region: "US" },
-  { value: "America/Los_Angeles", label: "Pacific Time (PT)", region: "US" },
-  { value: "America/Anchorage", label: "Alaska Time", region: "US" },
-  { value: "Pacific/Honolulu", label: "Hawaii Time", region: "US" },
-  { value: "Europe/London", label: "London (GMT/BST)", region: "Europe" },
-  { value: "Europe/Paris", label: "Paris (CET)", region: "Europe" },
-  { value: "Europe/Berlin", label: "Berlin (CET)", region: "Europe" },
-  { value: "Europe/Amsterdam", label: "Amsterdam (CET)", region: "Europe" },
-  { value: "Europe/Madrid", label: "Madrid (CET)", region: "Europe" },
-  { value: "Europe/Rome", label: "Rome (CET)", region: "Europe" },
-  { value: "Asia/Dubai", label: "Dubai (GST)", region: "Asia" },
-  { value: "Asia/Kolkata", label: "India (IST)", region: "Asia" },
-  { value: "Asia/Singapore", label: "Singapore (SGT)", region: "Asia" },
-  { value: "Asia/Tokyo", label: "Tokyo (JST)", region: "Asia" },
-  { value: "Asia/Shanghai", label: "China (CST)", region: "Asia" },
-  { value: "Asia/Hong_Kong", label: "Hong Kong (HKT)", region: "Asia" },
-  { value: "Australia/Sydney", label: "Sydney (AEST)", region: "Pacific" },
-  { value: "Australia/Melbourne", label: "Melbourne (AEST)", region: "Pacific" },
-  { value: "Pacific/Auckland", label: "Auckland (NZST)", region: "Pacific" },
-  { value: "UTC", label: "UTC", region: "Other" },
-]
+// Timezones are imported from @/lib/utils/timezones (ALL_TIMEZONES, TIMEZONE_REGIONS)
 
 // =============================================================================
 // TYPES
@@ -183,6 +164,33 @@ export interface CalendarToolSettings {
   timezone: string
   min_notice_hours: number
   max_advance_days: number
+  // Email notification settings
+  enable_owner_email: boolean
+  owner_email?: string
+  // For existing calendar selection
+  calendar_source: 'new' | 'existing'
+  existing_calendar_id?: string
+  existing_calendar_name?: string
+}
+
+// Workspace calendar type for existing calendar selection
+interface WorkspaceCalendar {
+  calendar_id: string
+  calendar_name: string | null
+  agent_id: string
+  agent_name: string
+  timezone: string
+  slot_duration_minutes: number
+  buffer_between_slots_minutes: number
+  preferred_days: string[]
+  preferred_hours_start: string
+  preferred_hours_end: string
+  min_notice_hours: number
+  max_advance_days: number
+  enable_owner_email: boolean
+  owner_email: string | null
+  is_active: boolean
+  agents_using?: { id: string; name: string }[]
 }
 
 interface CalendarToolConfigDialogProps {
@@ -194,6 +202,8 @@ interface CalendarToolConfigDialogProps {
   calendarSettings?: CalendarToolSettings
   onCalendarSettingsChange?: (settings: CalendarToolSettings) => void
   isFirstCalendarTool?: boolean
+  workspaceSlug?: string // For fetching existing calendars
+  currentAgentId?: string // To exclude current agent's calendar from selection
 }
 
 // =============================================================================
@@ -213,6 +223,11 @@ const DEFAULT_CALENDAR_SETTINGS: CalendarToolSettings = {
   timezone: "America/New_York",
   min_notice_hours: 0, // Allow immediate bookings by default
   max_advance_days: 60,
+  enable_owner_email: false,
+  owner_email: undefined,
+  calendar_source: 'new',
+  existing_calendar_id: undefined,
+  existing_calendar_name: undefined,
 }
 
 // =============================================================================
@@ -228,10 +243,32 @@ export function CalendarToolConfigDialog({
   calendarSettings,
   onCalendarSettingsChange,
   isFirstCalendarTool = false,
+  workspaceSlug,
+  currentAgentId,
 }: CalendarToolConfigDialogProps) {
   const toolInfo = CALENDAR_TOOL_INFO[toolType]
   const builtInParams = BUILT_IN_PARAMETERS[toolType]
   const Icon = toolInfo.icon
+
+  // Calendar source selection
+  const [calendarSource, setCalendarSource] = useState<'new' | 'existing'>('new')
+  const [selectedExistingCalendarId, setSelectedExistingCalendarId] = useState<string | null>(null)
+
+  // Fetch workspace calendars (for existing calendar selection)
+  const { data: workspaceCalendarsData, isLoading: calendarsLoading } = useQuery({
+    queryKey: ["workspace-calendars", workspaceSlug],
+    queryFn: async () => {
+      if (!workspaceSlug) return { data: { calendars: [] } }
+      const res = await fetch(`/api/w/${workspaceSlug}/calendars`)
+      if (!res.ok) throw new Error("Failed to fetch workspace calendars")
+      return res.json()
+    },
+    enabled: !!workspaceSlug && open && toolType === "book_appointment",
+  })
+
+  const workspaceCalendars = (workspaceCalendarsData?.data?.calendars || []) as WorkspaceCalendar[]
+  // Filter out the current agent's calendar from the list
+  const availableCalendars = workspaceCalendars.filter(cal => cal.agent_id !== currentAgentId)
 
   // Calendar Settings (only editable if this is first calendar tool being added)
   const [slotDuration, setSlotDuration] = useState("30")
@@ -242,6 +279,10 @@ export function CalendarToolConfigDialog({
   const [timezone, setTimezone] = useState("America/New_York")
   const [minNoticeHours, setMinNoticeHours] = useState("0")
   const [maxAdvanceDays, setMaxAdvanceDays] = useState("60")
+  
+  // Email notification settings
+  const [enableOwnerEmail, setEnableOwnerEmail] = useState(false)
+  const [ownerEmail, setOwnerEmail] = useState("")
 
   // Custom parameters
   const [customParams, setCustomParams] = useState<Array<{
@@ -252,6 +293,34 @@ export function CalendarToolConfigDialog({
   const [newParamName, setNewParamName] = useState("")
   const [newParamDesc, setNewParamDesc] = useState("")
   const [newParamRequired, setNewParamRequired] = useState(false)
+
+  // Load existing calendar config when one is selected (only when selection changes)
+  const handleExistingCalendarSelection = (calendarId: string) => {
+    setSelectedExistingCalendarId(calendarId)
+    const selectedCalendar = availableCalendars.find(
+      cal => cal.calendar_id === calendarId
+    )
+    console.log('[CalendarToolConfig] Loading existing calendar:', {
+      calendarId,
+      selectedCalendar,
+      enable_owner_email: selectedCalendar?.enable_owner_email,
+      owner_email: selectedCalendar?.owner_email,
+    })
+    if (selectedCalendar) {
+      // Load the selected calendar's configuration
+      setTimezone(selectedCalendar.timezone)
+      setSlotDuration(String(selectedCalendar.slot_duration_minutes))
+      setBufferMinutes(String(selectedCalendar.buffer_between_slots_minutes))
+      setPreferredDays(selectedCalendar.preferred_days as DayOfWeek[])
+      setPreferredHoursStart(selectedCalendar.preferred_hours_start)
+      setPreferredHoursEnd(selectedCalendar.preferred_hours_end)
+      setMinNoticeHours(String(selectedCalendar.min_notice_hours))
+      setMaxAdvanceDays(String(selectedCalendar.max_advance_days))
+      // Load email notification settings from existing calendar
+      setEnableOwnerEmail(selectedCalendar.enable_owner_email || false)
+      setOwnerEmail(selectedCalendar.owner_email || "")
+    }
+  }
 
   // Load existing tool config
   useEffect(() => {
@@ -266,6 +335,14 @@ export function CalendarToolConfigDialog({
       setTimezone(settings.timezone)
       setMinNoticeHours(String(settings.min_notice_hours))
       setMaxAdvanceDays(String(settings.max_advance_days))
+      
+      // Load email notification settings
+      setEnableOwnerEmail(settings.enable_owner_email || false)
+      setOwnerEmail(settings.owner_email || "")
+      
+      // Load calendar source settings
+      setCalendarSource(settings.calendar_source || 'new')
+      setSelectedExistingCalendarId(settings.existing_calendar_id || null)
 
       if (existingTool) {
         // Load custom params (exclude built-in ones)
@@ -344,7 +421,11 @@ export function CalendarToolConfigDialog({
 
     // Update calendar settings only for book_appointment
     if (toolType === "book_appointment" && onCalendarSettingsChange) {
-      onCalendarSettingsChange({
+      const selectedCalendar = calendarSource === 'existing' 
+        ? availableCalendars.find(cal => cal.calendar_id === selectedExistingCalendarId)
+        : null
+      
+      const settingsToSave = {
         slot_duration_minutes: parseInt(slotDuration),
         buffer_between_slots_minutes: parseInt(bufferMinutes),
         preferred_days: preferredDays,
@@ -353,7 +434,23 @@ export function CalendarToolConfigDialog({
         timezone,
         min_notice_hours: parseInt(minNoticeHours),
         max_advance_days: parseInt(maxAdvanceDays),
+        // Email notification settings
+        enable_owner_email: enableOwnerEmail,
+        owner_email: ownerEmail || undefined,
+        // Calendar source settings
+        calendar_source: calendarSource,
+        existing_calendar_id: selectedCalendar?.calendar_id,
+        existing_calendar_name: selectedCalendar?.calendar_name || undefined,
+      }
+      
+      console.log('[CalendarToolConfig] Saving calendar settings:', {
+        calendarSource,
+        selectedExistingCalendarId,
+        selectedCalendar: selectedCalendar ? { id: selectedCalendar.calendar_id, name: selectedCalendar.calendar_name } : null,
+        settingsToSave,
       })
+        
+      onCalendarSettingsChange(settingsToSave)
     }
 
     onSave(tool)
@@ -362,7 +459,9 @@ export function CalendarToolConfigDialog({
 
   // Only book_appointment requires calendar settings validation
   const canSave = toolType === "book_appointment" 
-    ? (preferredDays.length > 0 && timezone)
+    ? (preferredDays.length > 0 && timezone && 
+       // If using existing calendar, must have selected one
+       (calendarSource === 'new' || (calendarSource === 'existing' && selectedExistingCalendarId)))
     : true
 
   return (
@@ -381,15 +480,120 @@ export function CalendarToolConfigDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+          {/* Calendar Source Selection - Only for Book Appointment with workspaceSlug */}
+          {toolType === "book_appointment" && workspaceSlug && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <Label className="text-sm font-semibold">Calendar Source</Label>
+              </div>
+              
+              <RadioGroup
+                value={calendarSource}
+                onValueChange={(value: 'new' | 'existing') => {
+                  setCalendarSource(value)
+                  if (value === 'new') {
+                    setSelectedExistingCalendarId(null)
+                  }
+                }}
+                className="grid grid-cols-1 gap-2"
+              >
+                <Label
+                  htmlFor="cal-new"
+                  className={cn(
+                    "flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all",
+                    calendarSource === 'new' 
+                      ? "border-primary bg-primary/5" 
+                      : "border-muted hover:border-muted-foreground/50"
+                  )}
+                >
+                  <RadioGroupItem value="new" id="cal-new" className="mt-0.5" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 font-medium text-sm">
+                      <Plus className="h-4 w-4" />
+                      Create New Calendar
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      A new Google Calendar will be created for this agent.
+                    </p>
+                  </div>
+                </Label>
+                
+                <Label
+                  htmlFor="cal-existing"
+                  className={cn(
+                    "flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all",
+                    calendarSource === 'existing' 
+                      ? "border-primary bg-primary/5" 
+                      : "border-muted hover:border-muted-foreground/50",
+                    availableCalendars.length === 0 && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <RadioGroupItem 
+                    value="existing" 
+                    id="cal-existing" 
+                    className="mt-0.5"
+                    disabled={availableCalendars.length === 0}
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 font-medium text-sm">
+                      <Link2 className="h-4 w-4" />
+                      Use Existing Calendar
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {calendarsLoading 
+                        ? "Loading available calendars..."
+                        : availableCalendars.length > 0 
+                          ? `Share a calendar from another agent (${availableCalendars.length} available).`
+                          : "No existing calendars available in this workspace."
+                      }
+                    </p>
+                  </div>
+                </Label>
+              </RadioGroup>
+
+              {/* Existing Calendar Selection Dropdown */}
+              {calendarSource === 'existing' && availableCalendars.length > 0 && (
+                <div className="space-y-2 pl-7">
+                  <Label className="text-sm">Select Calendar</Label>
+                  <Select
+                    value={selectedExistingCalendarId || ""}
+                    onValueChange={handleExistingCalendarSelection}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose an existing calendar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableCalendars.map((cal) => (
+                        <SelectItem key={cal.calendar_id} value={cal.calendar_id}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {cal.calendar_name || `Calendar - ${cal.agent_name}`}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              Used by: {cal.agents_using?.map(a => a.name).join(', ') || cal.agent_name}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedExistingCalendarId && (
+                    <p className="text-xs text-muted-foreground">
+                      Settings loaded from selected calendar. You can modify them below.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Calendar Settings Section - Only for Book Appointment */}
           {toolType === "book_appointment" && (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Settings className="h-4 w-4 text-muted-foreground" />
                 <Label className="text-sm font-semibold">Appointment Settings</Label>
-                {!isFirstCalendarTool && (
-                  <Badge variant="secondary" className="text-xs">Shared across all calendar tools</Badge>
-                )}
               </div>
 
               {/* Slot Duration & Buffer */}
@@ -435,11 +639,11 @@ export function CalendarToolConfigDialog({
                   <SelectTrigger>
                     <SelectValue placeholder="Select timezone" />
                   </SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
-                    {["US", "Europe", "Asia", "Pacific", "Other"].map(region => (
+                  <SelectContent className="max-h-[400px]">
+                    {TIMEZONE_REGIONS.map(region => (
                       <SelectGroup key={region}>
-                        <SelectLabel>{region}</SelectLabel>
-                        {TIMEZONES.filter(tz => tz.region === region).map(tz => (
+                        <SelectLabel className="text-xs font-semibold text-primary">{region}</SelectLabel>
+                        {ALL_TIMEZONES.filter(tz => tz.region === region).map(tz => (
                           <SelectItem key={tz.value} value={tz.value}>
                             {tz.label}
                           </SelectItem>
@@ -540,6 +744,60 @@ export function CalendarToolConfigDialog({
                       Furthest time in advance
                     </p>
                   </div>
+                </div>
+              </div>
+
+              {/* Email Notifications */}
+              <div className="space-y-3 pt-4 border-t">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-sm font-semibold">Email Notifications</Label>
+                </div>
+                
+                <div className="rounded-lg border p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="enable_owner_email" className="text-sm font-medium">
+                        Enable Email Notifications
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Send email notifications when appointments are booked, rescheduled, or cancelled
+                      </p>
+                    </div>
+                    <Switch
+                      id="enable_owner_email"
+                      checked={enableOwnerEmail}
+                      onCheckedChange={(checked) => setEnableOwnerEmail(checked)}
+                    />
+                  </div>
+
+                  {enableOwnerEmail && (
+                    <div className="space-y-3 pt-3 border-t">
+                      <Label htmlFor="owner_email">
+                        Owner Email Address
+                      </Label>
+                      <Input
+                        id="owner_email"
+                        type="email"
+                        placeholder="Enter your email address"
+                        value={ownerEmail}
+                        onChange={(e) => setOwnerEmail(e.target.value)}
+                      />
+                      <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 p-3 space-y-2">
+                        <p className="text-xs font-medium text-blue-800 dark:text-blue-200">
+                          📧 How Email Notifications Work
+                        </p>
+                        <ul className="text-xs text-blue-700 dark:text-blue-300 space-y-1 list-disc list-inside">
+                          <li><strong>Booking:</strong> Both you and the caller receive confirmation emails</li>
+                          <li><strong>Reschedule:</strong> Both parties receive update notifications</li>
+                          <li><strong>Cancellation:</strong> Both parties receive cancellation emails</li>
+                        </ul>
+                        <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                          ⚠️ <strong>Note:</strong> If the caller provides the same email as your Google Calendar account, they won&apos;t receive a separate notification (Google Calendar limitation).
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -681,6 +939,8 @@ interface CalendarToolsSelectorProps {
   calendarSettings?: CalendarToolSettings
   onCalendarSettingsChange?: (settings: CalendarToolSettings) => void
   disabled?: boolean
+  workspaceSlug?: string // For fetching existing calendars
+  currentAgentId?: string // To exclude current agent's calendar from selection
 }
 
 export function CalendarToolsSelector({
@@ -689,6 +949,8 @@ export function CalendarToolsSelector({
   calendarSettings,
   onCalendarSettingsChange,
   disabled,
+  workspaceSlug,
+  currentAgentId,
 }: CalendarToolsSelectorProps) {
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [selectedToolType, setSelectedToolType] = useState<CalendarToolType | null>(null)
@@ -744,7 +1006,7 @@ export function CalendarToolsSelector({
 
   // Format current settings for display
   const formatSettingsSummary = () => {
-    const tz = TIMEZONES.find(t => t.value === localCalendarSettings.timezone)?.label || localCalendarSettings.timezone
+    const tz = ALL_TIMEZONES.find(t => t.value === localCalendarSettings.timezone)?.label || localCalendarSettings.timezone
     const days = localCalendarSettings.preferred_days
       .map(d => DAYS_OF_WEEK.find(day => day.value === d)?.label)
       .filter(Boolean)
@@ -865,6 +1127,8 @@ export function CalendarToolsSelector({
           calendarSettings={localCalendarSettings}
           onCalendarSettingsChange={handleCalendarSettingsChange}
           isFirstCalendarTool={selectedCalendarNames.size === 0}
+          workspaceSlug={workspaceSlug}
+          currentAgentId={currentAgentId}
         />
       )}
     </div>

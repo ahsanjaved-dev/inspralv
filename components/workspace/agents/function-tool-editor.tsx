@@ -98,6 +98,8 @@ interface FunctionToolEditorProps {
   provider?: "vapi" | "retell"
   calendarSettings?: CalendarToolSettings
   onCalendarSettingsChange?: (settings: CalendarToolSettings) => void
+  workspaceSlug?: string // For calendar existing calendar selection
+  currentAgentId?: string // To exclude current agent's calendar from selection
 }
 
 // ============================================================================
@@ -1066,6 +1068,8 @@ export function FunctionToolEditor({
   provider = "vapi",
   calendarSettings,
   onCalendarSettingsChange,
+  workspaceSlug,
+  currentAgentId,
 }: FunctionToolEditorProps) {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [editingTool, setEditingTool] = useState<FunctionTool | null>(null)
@@ -1086,6 +1090,11 @@ export function FunctionToolEditor({
       timezone: "America/New_York",
       min_notice_hours: 1,
       max_advance_days: 60,
+      enable_owner_email: false,
+      owner_email: undefined,
+      calendar_source: 'new',
+      existing_calendar_id: undefined,
+      existing_calendar_name: undefined,
     }
   )
   
@@ -1200,6 +1209,11 @@ export function FunctionToolEditor({
   
   // Handle calendar settings change
   const handleCalendarSettingsChange = (settings: CalendarToolSettings) => {
+    console.log('[FunctionToolEditor] Calendar settings changed:', {
+      calendar_source: settings.calendar_source,
+      existing_calendar_id: settings.existing_calendar_id,
+      enable_owner_email: settings.enable_owner_email,
+    })
     setLocalCalendarSettings(settings)
     onCalendarSettingsChange?.(settings)
   }
@@ -1412,6 +1426,8 @@ export function FunctionToolEditor({
           calendarSettings={localCalendarSettings}
           onCalendarSettingsChange={handleCalendarSettingsChange}
           isFirstCalendarTool={!tools.some(t => isCalendarToolType(t.name))}
+          workspaceSlug={workspaceSlug}
+          currentAgentId={currentAgentId}
         />
       )}
     </div>

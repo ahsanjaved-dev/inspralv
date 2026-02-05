@@ -14,7 +14,8 @@ import { safeRetellSync, shouldSyncToRetell } from "@/lib/integrations/retell/ag
 import { bindPhoneNumberToVapiAssistant, unbindPhoneNumberFromVapiAssistant } from "@/lib/integrations/vapi/agent/response"
 import type { AIAgent } from "@/types/database.types"
 import { prisma } from "@/lib/prisma"
-import { setupAgentCalendar } from "@/lib/integrations/calendar"
+import { setupAgentCalendar, deleteCalendar, getValidAccessToken, decrypt, DecryptionError } from "@/lib/integrations/calendar"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string; id: string }>
@@ -405,6 +406,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
             agentId: id,
             agentName: syncedAgent.name,
             workspaceId: ctx.workspace.id,
+            workspaceName: ctx.workspace.name, // Required for calendar naming
             partnerId,
             timezone: calendarSettings.timezone,
             slot_duration_minutes: calendarSettings.slot_duration_minutes || 30,
@@ -414,6 +416,12 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
             preferred_hours_end: calendarSettings.preferred_hours_end || '17:00',
             min_notice_hours: calendarSettings.min_notice_hours || 1,
             max_advance_days: calendarSettings.max_advance_days || 60,
+            // Email notification settings
+            enable_owner_email: calendarSettings.enable_owner_email || false,
+            owner_email: calendarSettings.owner_email,
+            // Support for using existing calendar
+            existingCalendarId: calendarSettings.calendar_source === 'existing' ? calendarSettings.existing_calendar_id : undefined,
+            existingCalendarName: calendarSettings.calendar_source === 'existing' ? calendarSettings.existing_calendar_name : undefined,
           })
 
           if (setupResult.success) {
@@ -485,6 +493,84 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       shouldSyncToRetell(typedExisting)
     ) {
       await safeRetellSync(typedExisting, "delete")
+    }
+
+    // Delete the agent's Google Calendar if it exists
+    try {
+      const supabase = createAdminClient()
+      
+      // Get the calendar config for this agent
+      const { data: calendarConfig } = await supabase
+        .from('agent_calendar_configs')
+        .select(`
+          id,
+          calendar_id,
+          google_credential_id,
+          google_calendar_credentials (
+            id,
+            access_token,
+            refresh_token,
+            client_id,
+            client_secret,
+            token_expiry
+          )
+        `)
+        .eq('agent_id', id)
+        .single()
+      
+      if (calendarConfig && calendarConfig.calendar_id) {
+        console.log(`[AgentDelete] Found calendar config for agent ${id}, deleting calendar...`)
+        
+        // Get valid access token
+        const credential = calendarConfig.google_calendar_credentials as any
+        if (credential) {
+          try {
+            const decryptedCredentials = {
+              access_token: credential.access_token ? decrypt(credential.access_token) : '',
+              refresh_token: credential.refresh_token ? decrypt(credential.refresh_token) : '',
+              client_secret: credential.client_secret ? decrypt(credential.client_secret) : '',
+            }
+            
+            const tokenResult = await getValidAccessToken(
+              {
+                access_token: decryptedCredentials.access_token,
+                refresh_token: decryptedCredentials.refresh_token,
+                client_id: credential.client_id,
+                client_secret: decryptedCredentials.client_secret,
+                token_expiry: credential.token_expiry,
+              },
+              async () => {} // No need to update token on delete
+            )
+            
+            if (tokenResult.success && tokenResult.data) {
+              // Delete the Google Calendar
+              const deleteResult = await deleteCalendar(tokenResult.data, calendarConfig.calendar_id)
+              if (deleteResult.success) {
+                console.log(`[AgentDelete] Successfully deleted Google Calendar: ${calendarConfig.calendar_id}`)
+              } else {
+                console.warn(`[AgentDelete] Failed to delete Google Calendar (non-blocking): ${deleteResult.error}`)
+              }
+            }
+          } catch (decryptError) {
+            if (decryptError instanceof DecryptionError) {
+              console.warn(`[AgentDelete] Could not decrypt credentials to delete calendar (non-blocking)`)
+            } else {
+              throw decryptError
+            }
+          }
+        }
+        
+        // Delete the calendar config from database
+        await supabase
+          .from('agent_calendar_configs')
+          .delete()
+          .eq('agent_id', id)
+        
+        console.log(`[AgentDelete] Deleted calendar config for agent ${id}`)
+      }
+    } catch (calendarError) {
+      console.warn(`[AgentDelete] Calendar cleanup failed (non-blocking):`, calendarError)
+      // Don't fail the agent deletion if calendar cleanup fails
     }
 
     // Soft delete
