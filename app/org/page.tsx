@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Progress } from "@/components/ui/progress"
 import {
   Table,
   TableBody,
@@ -57,6 +58,7 @@ import {
   type PartnerTeamMember,
 } from "@/lib/hooks/use-partner-team"
 import { usePartnerWorkspaces, type PartnerWorkspace } from "@/lib/hooks/use-partner-workspaces"
+import { useBillingInfo } from "@/lib/hooks/use-billing"
 import { AssignWorkspaceDialog } from "@/components/org/assign-workspace-dialog"
 import { WorkspaceIntegrationsDialog } from "@/components/org/integrations/workspace-integrations-dialog"
 import { useAuthContext } from "@/lib/hooks/use-auth"
@@ -80,6 +82,9 @@ import {
   FolderPlus,
   Eye,
   Plug,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
@@ -153,12 +158,26 @@ export default function OrgOverviewPage() {
   const { data: authContext } = useAuthContext()
   const { data: members, isLoading: membersLoading, refetch: refetchMembers } = usePartnerTeam()
   const { data: workspaces, isLoading: workspacesLoading, refetch: refetchWorkspaces } = usePartnerWorkspaces()
+  const { data: billingInfo, isLoading: billingLoading, refetch: refetchBilling } = useBillingInfo()
   const updateRole = useUpdatePartnerMemberRole()
   const removeMember = useRemovePartnerMember()
 
   const currentUserRole = authContext?.partnerMembership?.role || "member"
   const isOwner = currentUserRole === "owner"
   const isAdmin = currentUserRole === "owner" || currentUserRole === "admin"
+  
+  // Plan limits from billing info
+  const planLimits = useMemo(() => {
+    const maxWorkspaces = billingInfo?.whiteLabelVariant?.maxWorkspaces ?? -1
+    const isUnlimited = maxWorkspaces === -1
+    return {
+      maxWorkspaces,
+      isUnlimited,
+      planName: billingInfo?.whiteLabelVariant?.name || billingInfo?.subscription?.planName || "Free",
+      planTier: billingInfo?.subscription?.planTier || "free",
+      hasActiveSubscription: billingInfo?.subscription?.hasActiveSubscription || false,
+    }
+  }, [billingInfo])
 
   // Filter members by search query
   const filteredMembers = useMemo(() => {
@@ -190,15 +209,29 @@ export default function OrgOverviewPage() {
     )
   }, [workspaces, searchQuery])
 
-  // Stats
+  // Stats with plan limits
   const stats = useMemo(() => {
+    const totalWorkspaces = workspaces?.length || 0
+    const totalMembers = members?.length || 0
+    const totalAgents = workspaces?.reduce((sum, ws) => sum + ws.agent_count, 0) || 0
+    const workspaceOwners = members?.filter((m) => m.is_workspace_owner).length || 0
+    
+    // Calculate usage percentages
+    const workspaceUsagePercent = planLimits.isUnlimited 
+      ? 0 
+      : Math.min(100, (totalWorkspaces / planLimits.maxWorkspaces) * 100)
+    
     return {
-      totalWorkspaces: workspaces?.length || 0,
-      totalMembers: members?.length || 0,
-      totalAgents: workspaces?.reduce((sum, ws) => sum + ws.agent_count, 0) || 0,
-      workspaceOwners: members?.filter((m) => m.is_workspace_owner).length || 0,
+      totalWorkspaces,
+      totalMembers,
+      totalAgents,
+      workspaceOwners,
+      workspaceUsagePercent,
+      workspacesRemaining: planLimits.isUnlimited 
+        ? -1 
+        : Math.max(0, planLimits.maxWorkspaces - totalWorkspaces),
     }
-  }, [members, workspaces])
+  }, [members, workspaces, planLimits])
 
   const toggleWorkspace = (workspaceId: string) => {
     setExpandedWorkspaces((prev) => {
@@ -243,9 +276,10 @@ export default function OrgOverviewPage() {
   const handleRefresh = () => {
     refetchMembers()
     refetchWorkspaces()
+    refetchBilling()
   }
 
-  const isLoading = membersLoading || workspacesLoading
+  const isLoading = membersLoading || workspacesLoading || billingLoading
 
   return (
     <div className="space-y-6">
@@ -270,6 +304,59 @@ export default function OrgOverviewPage() {
         </div>
       </div>
 
+      {/* Plan Card */}
+      <Card className="border-primary/20 bg-gradient-to-r from-primary/5 via-transparent to-transparent">
+        <CardContent className="py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Sparkles className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold">{planLimits.planName}</h3>
+                  {planLimits.hasActiveSubscription ? (
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      Active
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      Inactive
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {planLimits.isUnlimited ? (
+                    "Unlimited workspaces included"
+                  ) : (
+                    <>
+                      {planLimits.maxWorkspaces} workspaces included
+                      {stats.workspacesRemaining > 0 && (
+                        <span className="text-primary ml-1">
+                          • {stats.workspacesRemaining} remaining
+                        </span>
+                      )}
+                      {stats.workspacesRemaining === 0 && (
+                        <span className="text-amber-500 ml-1">
+                          • Limit reached
+                        </span>
+                      )}
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/org/billing">Manage Plan</Link>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card>
@@ -278,11 +365,24 @@ export default function OrgOverviewPage() {
               Workspaces
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
-              <div className="text-2xl font-bold">{stats.totalWorkspaces}</div>
+              <div className="text-2xl font-bold">
+                {stats.totalWorkspaces}
+                {!planLimits.isUnlimited && (
+                  <span className="text-base font-normal text-muted-foreground">
+                    /{planLimits.maxWorkspaces}
+                  </span>
+                )}
+              </div>
               <Building2 className="h-5 w-5 text-muted-foreground" />
             </div>
+            {!planLimits.isUnlimited && (
+              <Progress 
+                value={stats.workspaceUsagePercent} 
+                className="h-1.5"
+              />
+            )}
           </CardContent>
         </Card>
         <Card>
