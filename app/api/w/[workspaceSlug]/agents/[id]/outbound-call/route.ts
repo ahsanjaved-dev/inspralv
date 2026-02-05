@@ -5,7 +5,9 @@ import { apiResponse, apiError, unauthorized, forbidden, serverError } from "@/l
 import type { AIAgent, VapiIntegrationConfig, RetellIntegrationConfig } from "@/types/database.types"
 import { createOutboundCall } from "@/lib/integrations/vapi/calls"
 import { createRetellOutboundCall } from "@/lib/integrations/retell/calls"
-import { hasSufficientCredits, checkMonthlyMinutesLimit } from "@/lib/billing/usage"
+import { checkMonthlyMinutesLimit } from "@/lib/billing/usage"
+import { hasSufficientCredits } from "@/lib/stripe/credits"
+import { canMakePostpaidCall, hasSufficientWorkspaceCredits } from "@/lib/stripe/workspace-credits"
 import { z } from "zod"
 
 interface RouteContext {
@@ -311,22 +313,60 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     // BILLING CHECKS (common for both providers)
     // ============================================================================
 
-    // Check if workspace is billing exempt (uses partner credits, no pre-check needed)
+    // Check if workspace is billing exempt (uses partner credits)
     const isBillingExempt = ctx.workspace.is_billing_exempt
+    const estimatedMinutes = 5
 
-    if (!isBillingExempt) {
-      // 1. Check if partner has sufficient credits (estimate 5 minutes for outbound call)
-      const estimatedMinutes = 5
-      const hasCredits = await hasSufficientCredits(ctx.partner.id, estimatedMinutes)
+    if (isBillingExempt) {
+      // Billing-exempt workspaces use partner credits
+      const hasPartnerCredits = await hasSufficientCredits(ctx.partner.id, estimatedMinutes)
 
-      if (!hasCredits) {
+      if (!hasPartnerCredits) {
         return apiError(
-          "Insufficient credits. Please top up your account before making outbound calls.",
+          "Insufficient organization credits. Please contact your organization admin to top up credits.",
           402 // Payment Required
         )
       }
 
-      // 2. Check if workspace has remaining monthly minutes
+      console.log("[OutboundCall] Billing checks passed (billing-exempt, using partner credits)")
+    } else {
+      // Non-billing-exempt workspaces: Check subscription and workspace credits
+      
+      // 1. Check if workspace has an active subscription with available minutes
+      const postpaidCheck = await canMakePostpaidCall(ctx.workspace.id)
+      
+      if (postpaidCheck.billingType === "postpaid") {
+        // Postpaid subscription - check against usage limit
+        if (!postpaidCheck.allowed) {
+          return apiError(
+            `Monthly minutes limit reached. You have used ${postpaidCheck.currentUsage} of ${postpaidCheck.limitMinutes} minutes. Please upgrade your plan or wait until next billing period.`,
+            429 // Too Many Requests
+          )
+        }
+        console.log("[OutboundCall] Billing checks passed (postpaid subscription):", {
+          remainingMinutes: postpaidCheck.remainingMinutes,
+        })
+      } else if (postpaidCheck.billingType === "prepaid") {
+        // Prepaid subscription - has included minutes, overage uses workspace credits
+        // The subscription has included minutes, so we allow the call
+        // Overage will be handled at call completion via workspace credits
+        console.log("[OutboundCall] Billing checks passed (prepaid subscription):", {
+          remainingIncludedMinutes: postpaidCheck.remainingMinutes,
+        })
+      } else {
+        // No subscription - check workspace prepaid credits
+        const hasWorkspaceCredits = await hasSufficientWorkspaceCredits(ctx.workspace.id, estimatedMinutes)
+
+        if (!hasWorkspaceCredits) {
+          return apiError(
+            "Insufficient credits. Please top up your account before making outbound calls.",
+            402 // Payment Required
+          )
+        }
+        console.log("[OutboundCall] Billing checks passed (workspace credits)")
+      }
+
+      // 2. Also check workspace monthly minutes limit (plan-level limit)
       const minutesCheck = await checkMonthlyMinutesLimit(ctx.workspace.id)
 
       if (!minutesCheck.allowed) {
@@ -335,13 +375,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           429 // Too Many Requests
         )
       }
-
-      console.log("[OutboundCall] Billing checks passed:", {
-        hasCredits: true,
-        monthlyMinutesRemaining: minutesCheck.remaining,
-      })
-    } else {
-      console.log("[OutboundCall] Billing checks skipped - workspace is billing exempt")
     }
 
     // ============================================================================

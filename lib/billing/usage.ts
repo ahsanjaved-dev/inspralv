@@ -144,6 +144,8 @@ export async function processCallCompletion(
         id: true,
         totalCost: true,
         durationSeconds: true,
+        costBreakdown: true,
+        agentId: true,
       },
     })
 
@@ -154,8 +156,11 @@ export async function processCallCompletion(
       }
     }
 
-    // If totalCost is already set, this call was already billed
-    if (conversation.totalCost !== null && Number(conversation.totalCost) > 0) {
+    // Check if our billing system already processed this call
+    // We look for billing_type in costBreakdown which is ONLY set by processCallCompletion()
+    // This is more reliable than checking totalCost since webhooks may set totalCost from provider data
+    const costBreakdown = conversation.costBreakdown as Record<string, unknown> | null
+    if (costBreakdown?.billing_type) {
       return {
         success: true,
         reason: "Already processed (idempotent)",
@@ -171,12 +176,17 @@ export async function processCallCompletion(
       `${provider.toUpperCase()} call - ${Math.ceil(durationSeconds / 60)} minutes`
     )
 
-    // 3. Calculate minutes and update workspace + conversation
+    // 3. Calculate minutes and costs
     const minutes = Math.ceil(durationSeconds / 60)
-    const costDollars = usageResult.amountDeducted / 100
-
-    await prisma.$transaction([
-      // Update workspace monthly minutes
+    const billedCostCents = usageResult.amountDeducted // What we charged (may be $0 for subscription)
+    
+    // Use the PROVIDER cost (set by webhook from VAPI/Retell) for dashboard visibility
+    // This shows actual provider charges, not our billing (which may be $0 for subscription users)
+    const providerCostDollars = Number(conversation.totalCost) || 0
+    
+    // Build transaction operations
+    const transactionOps: any[] = [
+      // Update workspace monthly usage with PROVIDER cost for visibility
       prisma.workspace.update({
         where: { id: workspaceId },
         data: {
@@ -184,20 +194,27 @@ export async function processCallCompletion(
             increment: minutes,
           },
           currentMonthCost: {
-            increment: costDollars,
+            increment: providerCostDollars, // Use provider cost for dashboard
           },
         },
       }),
-      // Update conversation with cost
+      // Update conversation - keep provider cost in totalCost, store billing details in costBreakdown
       prisma.conversation.update({
         where: { id: conversationId },
         data: {
-          totalCost: costDollars,
+          // Keep totalCost as-is (provider's reported cost from webhook)
+          // Store our billing info in costBreakdown
           costBreakdown: {
             minutes,
-            rate_per_minute: usageResult.amountDeducted / minutes / 100,
-            total_cents: usageResult.amountDeducted,
+            provider_cost_dollars: providerCostDollars,
+            billed_cost_cents: billedCostCents,
+            rate_per_minute_cents: billedCostCents > 0 ? Math.round(billedCostCents / minutes) : 0,
             billing_type: usageResult.deductedFrom,
+            // Include subscription info if applicable
+            ...(usageResult.deductedFrom === "subscription" && {
+              subscription_minutes_used: usageResult.subscriptionMinutesUsed,
+              overage_minutes: usageResult.overageMinutes,
+            }),
             // Include postpaid info if applicable
             ...(usageResult.deductedFrom === "postpaid" && {
               postpaid_minutes_used: usageResult.postpaidMinutesUsed,
@@ -208,11 +225,28 @@ export async function processCallCompletion(
           durationSeconds: durationSeconds,
         },
       }),
-    ])
+    ]
+
+    // Update agent stats with PROVIDER cost for consistency with agent card display
+    if (conversation.agentId) {
+      transactionOps.push(
+        prisma.aiAgent.update({
+          where: { id: conversation.agentId },
+          data: {
+            totalConversations: { increment: 1 },
+            totalMinutes: { increment: minutes },
+            totalCost: { increment: providerCostDollars }, // Use provider cost
+            lastConversationAt: new Date(),
+          },
+        })
+      )
+    }
+
+    await prisma.$transaction(transactionOps)
 
     console.log(
-      `[Billing] Usage processed: ${minutes} min, $${costDollars.toFixed(2)}, ` +
-      `billed to: ${usageResult.deductedFrom}`
+      `[Billing] Usage processed: ${minutes} min, provider cost: $${providerCostDollars.toFixed(2)}, ` +
+      `billed: $${(billedCostCents / 100).toFixed(2)}, billing_type: ${usageResult.deductedFrom}`
     )
 
     return {
