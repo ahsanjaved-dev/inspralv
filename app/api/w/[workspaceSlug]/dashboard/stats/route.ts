@@ -43,15 +43,16 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       .eq("workspace_id", workspaceId)
       .is("deleted_at", null)
 
-    // Query usage for this month
-    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-    const usageQuery = ctx.adminClient
-      .from("usage_tracking")
-      .select("resource_type, quantity, total_cost")
-      .eq("workspace_id", workspaceId)
-      .gte("recorded_at", startOfMonth)
+    // Query workspace for monthly usage stats
+    // These are updated by the billing system when calls complete
+    const workspaceQuery = ctx.adminClient
+      .from("workspaces")
+      .select("current_month_minutes, current_month_cost")
+      .eq("id", workspaceId)
+      .single()
 
     // Query conversations this month
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
     const conversationsThisMonthQuery = ctx.adminClient
       .from("conversations")
       .select("*", { count: "exact", head: true })
@@ -59,21 +60,12 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       .is("deleted_at", null)
       .gte("created_at", startOfMonth)
 
-    const [agentsResult, conversationsResult, usageResult, conversationsThisMonthResult] =
-      await Promise.all([agentQuery, conversationQuery, usageQuery, conversationsThisMonthQuery])
+    const [agentsResult, conversationsResult, workspaceResult, conversationsThisMonthResult] =
+      await Promise.all([agentQuery, conversationQuery, workspaceQuery, conversationsThisMonthQuery])
 
-    // Calculate usage metrics
-    let totalMinutes = 0
-    let totalCost = 0
-
-    if (usageResult.data) {
-      usageResult.data.forEach((record) => {
-        if (record.resource_type === "voice_minutes") {
-          totalMinutes += Number(record.quantity) || 0
-        }
-        totalCost += Number(record.total_cost) || 0
-      })
-    }
+    // Get monthly usage from workspace table (populated by billing system)
+    const totalMinutes = Number(workspaceResult.data?.current_month_minutes) || 0
+    const totalCost = Number(workspaceResult.data?.current_month_cost) || 0
 
     const stats: DashboardStats = {
       total_agents: agentsResult.count || 0,
