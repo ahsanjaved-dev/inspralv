@@ -31,7 +31,6 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Filter,
   CalendarIcon,
   RotateCcw,
   MessageSquare,
@@ -48,7 +47,7 @@ import type { AlgoliaSuggestion, AlgoliaSearchResults, AlgoliaCallHit } from "@/
 
 interface AlgoliaSearchPanelProps {
   agents: Array<{ id: string; name: string }>
-  onResultsChange: (results: AlgoliaCallHit[], totalHits: number, isSearching: boolean, searchFailed?: boolean) => void
+  onResultsChange: (results: AlgoliaCallHit[], totalHits: number, isSearching: boolean, searchFailed?: boolean, isBackgroundRefresh?: boolean) => void
   onViewCallDetail?: (conversationId: string) => void // Navigate to call detail
   className?: string
   /** Change this value to trigger a refresh of search results (e.g., when a new call completes) */
@@ -84,15 +83,21 @@ export function AlgoliaSearchPanel({
   const [currentPage, setCurrentPage] = useState(0)
   const [hitsPerPage, setHitsPerPage] = useState(20)
   
-  // Filter state
-  const [filters, setFilters] = useState<AlgoliaFilters>({
-    status: "all",
-    direction: "all",
-    agentId: "all",
-    startDate: undefined,
-    endDate: undefined,
+  // Filter state - default to today's date
+  const [filters, setFilters] = useState<AlgoliaFilters>(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const endOfDay = new Date()
+    endOfDay.setHours(23, 59, 59, 999)
+    return {
+      status: "all",
+      direction: "all",
+      agentId: "all",
+      startDate: today,
+      endDate: endOfDay,
+    }
   })
-  const [showFilters, setShowFilters] = useState(false)
+  // Filters are always visible now
   
   // Refs
   const inputRef = useRef<HTMLInputElement>(null)
@@ -139,13 +144,23 @@ export function AlgoliaSearchPanel({
     }
   }, [query, isConfigured, getAutocomplete])
 
+  // Track if this is the first search (initial load)
+  const isInitialSearchRef = useRef(true)
+  
   // Perform search function
-  const performSearch = useCallback(async (searchQuery: string) => {
+  // isBackgroundRefresh: true for auto-refresh/visibility changes, false for user actions
+  const performSearch = useCallback(async (searchQuery: string, isBackgroundRefresh: boolean = false) => {
     if (!isConfigured) return
 
     setIsLoading(true)
-    // Don't clear results here - keep existing data visible while loading
-    // The parent will show old data until new results arrive
+    
+    // Only notify parent that search is starting (to show skeleton) for:
+    // 1. Initial page load
+    // 2. User-initiated filter changes (not background refreshes)
+    const shouldShowSkeleton = isInitialSearchRef.current || !isBackgroundRefresh
+    if (shouldShowSkeleton) {
+      onResultsChangeRef.current([], 0, true, false, false)
+    }
 
     const searchFilters: SearchParams["filters"] = {}
     
@@ -157,6 +172,10 @@ export function AlgoliaSearchPanel({
         searchFilters.callType = "web"
       } else {
         searchFilters.direction = filters.direction
+        // When filtering for outbound, exclude web calls (they're stored as direction=outbound)
+        if (filters.direction === "outbound") {
+          searchFilters.excludeWebCalls = true
+        }
       }
     }
     if (filters.agentId !== "all") {
@@ -178,26 +197,47 @@ export function AlgoliaSearchPanel({
       })
 
       if (results) {
-        // Search succeeded - pass false for searchFailed
-        onResultsChangeRef.current(results.hits, results.nbHits, false, false)
+        // Search succeeded - pass false for searchFailed, include isBackgroundRefresh flag
+        onResultsChangeRef.current(results.hits, results.nbHits, false, false, isBackgroundRefresh)
       } else {
         // Search returned null - treat as failure
-        onResultsChangeRef.current([], 0, false, true)
+        onResultsChangeRef.current([], 0, false, true, isBackgroundRefresh)
       }
     } catch (error) {
       console.error("[Algolia] Search error:", error)
-      // Search failed - pass true for searchFailed to trigger DB fallback
-      onResultsChangeRef.current([], 0, false, true)
+      // Search failed - pass true for searchFailed
+      onResultsChangeRef.current([], 0, false, true, isBackgroundRefresh)
     } finally {
       setIsLoading(false)
+      // After first search completes, mark initial search as done
+      if (isInitialSearchRef.current) {
+        isInitialSearchRef.current = false
+      }
     }
   }, [isConfigured, currentPage, hitsPerPage, filters, search])
 
+  // Track the previous refreshTrigger to detect auto-refresh vs filter changes
+  const prevRefreshTriggerRef = useRef<number | undefined>(undefined)
+  // Track if this is the very first effect run (initial load)
+  const isFirstEffectRunRef = useRef(true)
+  
   // Trigger initial search and on filter/pagination changes
   // Also triggers when refreshTrigger changes (e.g., when a new call completes via realtime)
   useEffect(() => {
     if (isConfigured) {
-      performSearch(debouncedQuery)
+      // Determine if this is a background refresh (auto-refresh or visibility change)
+      // vs a user-initiated action (filter change, page change, etc.)
+      // First effect run is NEVER a background refresh (it's initial load)
+      let isBackgroundRefresh = false
+      if (isFirstEffectRunRef.current) {
+        isFirstEffectRunRef.current = false
+        isBackgroundRefresh = false // Initial load - show skeleton
+      } else if (prevRefreshTriggerRef.current !== undefined && prevRefreshTriggerRef.current !== refreshTrigger) {
+        isBackgroundRefresh = true // refreshTrigger changed - background refresh
+      }
+      prevRefreshTriggerRef.current = refreshTrigger
+      
+      performSearch(debouncedQuery, isBackgroundRefresh)
     }
     // Only trigger on filter/pagination changes, not on performSearch reference changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -209,7 +249,7 @@ export function AlgoliaSearchPanel({
     setShowSuggestions(false)
     setCurrentPage(0)
     setDebouncedQuery(query)
-    performSearch(query)
+    performSearch(query, false) // User action, not background refresh
   }
 
   // Handle suggestion selection
@@ -226,7 +266,7 @@ export function AlgoliaSearchPanel({
     setQuery(suggestion.text)
     setDebouncedQuery(suggestion.text)
     setCurrentPage(0)
-    performSearch(suggestion.text)
+    performSearch(suggestion.text, false) // User action, not background refresh
   }
 
   // Handle keyboard navigation
@@ -449,24 +489,8 @@ export function AlgoliaSearchPanel({
           )}
         </form>
 
-        {/* Filters Row */}
+        {/* Active Filters Row */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant={showFilters ? "secondary" : "outline"}
-            size="sm"
-            onClick={() => setShowFilters(!showFilters)}
-            className="gap-1"
-          >
-            <Filter className="h-4 w-4" />
-            Filters
-            {activeFilterCount > 0 && (
-              <Badge variant="default" className="h-5 w-5 p-0 flex items-center justify-center text-xs">
-                {activeFilterCount}
-              </Badge>
-            )}
-          </Button>
-
           {activeFilterCount > 0 && (
             <Button
               type="button"
@@ -480,57 +504,106 @@ export function AlgoliaSearchPanel({
             </Button>
           )}
 
-          {/* Active filter badges */}
+          {/* Active filter badges with remove popover */}
           {filters.status !== "all" && (
-            <Badge variant="secondary" className="gap-1">
-              Status: {filters.status}
-              <X
-                className="h-3 w-3 cursor-pointer"
-                onClick={() => setFilters((f) => ({ ...f, status: "all" }))}
-              />
-            </Badge>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Badge variant="secondary" className="cursor-pointer hover:bg-destructive/20 transition-colors">
+                  Status: {filters.status}
+                </Badge>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-2" side="top">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => setFilters((f) => ({ ...f, status: "all" }))}
+                >
+                  Remove filter
+                </Button>
+              </PopoverContent>
+            </Popover>
           )}
           {filters.direction !== "all" && (
-            <Badge variant="secondary" className="gap-1">
-              {filters.direction === "web" ? "Web Calls" : `Direction: ${filters.direction}`}
-              <X
-                className="h-3 w-3 cursor-pointer"
-                onClick={() => setFilters((f) => ({ ...f, direction: "all" }))}
-              />
-            </Badge>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Badge variant="secondary" className="cursor-pointer hover:bg-destructive/20 transition-colors">
+                  {filters.direction === "web" ? "Web Calls" : `Direction: ${filters.direction}`}
+                </Badge>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-2" side="top">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => setFilters((f) => ({ ...f, direction: "all" }))}
+                >
+                  Remove filter
+                </Button>
+              </PopoverContent>
+            </Popover>
           )}
           {filters.agentId !== "all" && (
-            <Badge variant="secondary" className="gap-1">
-              Agent: {agents.find((a) => a.id === filters.agentId)?.name || "Unknown"}
-              <X
-                className="h-3 w-3 cursor-pointer"
-                onClick={() => setFilters((f) => ({ ...f, agentId: "all" }))}
-              />
-            </Badge>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Badge variant="secondary" className="cursor-pointer hover:bg-destructive/20 transition-colors">
+                  Agent: {agents.find((a) => a.id === filters.agentId)?.name || "Unknown"}
+                </Badge>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-2" side="top">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => setFilters((f) => ({ ...f, agentId: "all" }))}
+                >
+                  Remove filter
+                </Button>
+              </PopoverContent>
+            </Popover>
           )}
           {filters.startDate && (
-            <Badge variant="secondary" className="gap-1">
-              From: {format(filters.startDate, "MMM d")}
-              <X
-                className="h-3 w-3 cursor-pointer"
-                onClick={() => setFilters((f) => ({ ...f, startDate: undefined }))}
-              />
-            </Badge>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Badge variant="secondary" className="cursor-pointer hover:bg-destructive/20 transition-colors">
+                  From: {format(filters.startDate, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd") ? "Today" : format(filters.startDate, "MMM d")}
+                </Badge>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-2" side="top">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => setFilters((f) => ({ ...f, startDate: undefined }))}
+                >
+                  Remove filter
+                </Button>
+              </PopoverContent>
+            </Popover>
           )}
           {filters.endDate && (
-            <Badge variant="secondary" className="gap-1">
-              To: {format(filters.endDate, "MMM d")}
-              <X
-                className="h-3 w-3 cursor-pointer"
-                onClick={() => setFilters((f) => ({ ...f, endDate: undefined }))}
-              />
-            </Badge>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Badge variant="secondary" className="cursor-pointer hover:bg-destructive/20 transition-colors">
+                  To: {format(filters.endDate, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd") ? "Today" : format(filters.endDate, "MMM d")}
+                </Badge>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-2" side="top">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => setFilters((f) => ({ ...f, endDate: undefined }))}
+                >
+                  Remove filter
+                </Button>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
 
-        {/* Expanded Filters */}
-        {showFilters && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 bg-muted/30 rounded-lg border">
+        {/* Filters - Always visible */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 bg-muted/30 rounded-lg border">
             <div className="space-y-1.5">
               <Label className="text-xs">Status</Label>
               <Select
@@ -618,7 +691,14 @@ export function AlgoliaSearchPanel({
                     mode="single"
                     selected={filters.startDate}
                     onSelect={(date) => {
-                      setFilters((f) => ({ ...f, startDate: date }))
+                      // Set to start of day (00:00:00)
+                      if (date) {
+                        const startOfDay = new Date(date)
+                        startOfDay.setHours(0, 0, 0, 0)
+                        setFilters((f) => ({ ...f, startDate: startOfDay }))
+                      } else {
+                        setFilters((f) => ({ ...f, startDate: undefined }))
+                      }
                       setCurrentPage(0)
                     }}
                     initialFocus
@@ -647,7 +727,14 @@ export function AlgoliaSearchPanel({
                     mode="single"
                     selected={filters.endDate}
                     onSelect={(date) => {
-                      setFilters((f) => ({ ...f, endDate: date }))
+                      // Set to end of day (23:59:59.999)
+                      if (date) {
+                        const endOfDay = new Date(date)
+                        endOfDay.setHours(23, 59, 59, 999)
+                        setFilters((f) => ({ ...f, endDate: endOfDay }))
+                      } else {
+                        setFilters((f) => ({ ...f, endDate: undefined }))
+                      }
                       setCurrentPage(0)
                     }}
                     initialFocus
@@ -656,7 +743,6 @@ export function AlgoliaSearchPanel({
               </Popover>
             </div>
           </div>
-        )}
 
         {/* Results Summary & Pagination */}
         {(searchResults || isLoading) && (

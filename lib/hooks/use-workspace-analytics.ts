@@ -82,13 +82,16 @@ export interface UseWorkspaceAnalyticsOptions {
 export function useWorkspaceAnalytics(options: UseWorkspaceAnalyticsOptions = {}) {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
-  const { days = 7, agent = "all" } = options
+  const { days = 1, agent = "all" } = options // Default to 1 day (today)
 
   return useQuery({
     queryKey: ["workspace-analytics", workspaceSlug, days, agent],
     queryFn: async () => {
       const searchParams = new URLSearchParams()
-      searchParams.set("days", String(days))
+      // days: 0 means "all time" - don't add days parameter to get all data
+      if (days > 0) {
+        searchParams.set("days", String(days))
+      }
       if (agent !== "all") {
         searchParams.set("agent", agent)
       }

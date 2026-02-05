@@ -136,8 +136,17 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const callType = searchParams.get("call_type")
     const agentId = searchParams.get("agent_id")
     const search = searchParams.get("search")
-    const startDate = searchParams.get("start_date")
-    const endDate = searchParams.get("end_date")
+    
+    // Date filters - DEFAULT TO TODAY if not provided
+    // This ensures we never return all historical data
+    const now = new Date()
+    const todayStartISO = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).toISOString()
+    const todayEndISO = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString()
+    
+    const startDate = searchParams.get("start_date") || todayStartISO
+    const endDate = searchParams.get("end_date") || todayEndISO
+    
+    console.log(`[Calls API] Date range: ${startDate} to ${endDate}`)
 
     // ============================================================================
     // Algolia-backed search (only when `search` is provided)
@@ -159,8 +168,9 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
             direction: direction || undefined,
             callType: callType || undefined,
             excludeWebFromOutbound: !!direction && direction === "outbound" && !callType,
-            startDate: startDate ? new Date(startDate) : undefined,
-            endDate: endDate ? new Date(endDate) : undefined,
+            // Always apply date filters (defaults to today if not provided)
+            startDate: new Date(startDate),
+            endDate: new Date(endDate),
             page: algoliaPage,
             hitsPerPage: pageSize,
           })
@@ -268,12 +278,9 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     if (agentId) {
       query = query.eq("agent_id", agentId)
     }
-    if (startDate) {
-      query = query.gte("created_at", startDate)
-    }
-    if (endDate) {
-      query = query.lte("created_at", endDate)
-    }
+    // Always apply date filters (defaults to today if not provided)
+    query = query.gte("created_at", startDate)
+    query = query.lte("created_at", endDate)
     
     // Full-text search on transcript (fallback path)
     if (search) {
