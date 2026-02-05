@@ -34,6 +34,7 @@ import { useState, useMemo } from "react"
 import { TestCallModal } from "@/components/agents/test-call-modal"
 import { TestOutboundCallModal } from "@/components/agents/test-outbound-call-modal"
 import { useTestCallValidation } from "../../../lib/hooks/use-test-call-validations"
+import { useOutboundCallValidation } from "../../../lib/hooks/use-outbound-call-validation"
 
 // Calendar tool names
 const CALENDAR_TOOL_NAMES = ["book_appointment", "cancel_appointment", "reschedule_appointment"]
@@ -70,9 +71,9 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
   const [isOutboundModalOpen, setIsOutboundModalOpen] = useState(false)
   
   const validation = useTestCallValidation(agent)
+  const outboundValidation = useOutboundCallValidation(agent)
   
-  // Check if agent can make outbound calls (both VAPI and Retell support outbound)
-  const canMakeOutboundCall = (agent.provider === "vapi" || agent.provider === "retell") && !!agent.external_agent_id
+  // Check if this is an outbound agent
   const isOutboundAgent = agent.agent_direction === "outbound"
   
   // Check if agent has calendar tools
@@ -228,10 +229,14 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
               variant="outline"
               size="sm"
               className="flex-1 min-w-[80px]"
-              disabled={!canMakeOutboundCall}
-              onClick={() => setIsOutboundModalOpen(true)}
+              disabled={outboundValidation.isLoading || !outboundValidation.canCall}
+              onClick={() => outboundValidation.canCall && setIsOutboundModalOpen(true)}
             >
-              <PhoneOutgoing className="h-3 w-3" />
+              {outboundValidation.isLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <PhoneOutgoing className="h-3 w-3" />
+              )}
               <span className="ml-1.5 truncate">Call Me</span>
             </Button>
           )}
@@ -254,12 +259,27 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
         )}
 
         {/* Disabled Reason - shown below buttons */}
+        {/* Show web call validation error */}
         {!validation.isLoading && !validation.canCall && validation.reason && (
           <div className="mt-3 flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 dark:bg-muted/30 rounded-md p-2 border border-border/50">
             <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-500 dark:text-amber-400" />
             <div>
               <span className="font-medium text-foreground/80">{validation.reason}:</span>{" "}
               {validation.solution}
+            </div>
+          </div>
+        )}
+        {/* Show outbound call validation error only if it's a different error than web call validation */}
+        {isOutboundAgent && 
+         !outboundValidation.isLoading && 
+         !outboundValidation.canCall && 
+         outboundValidation.reason && 
+         (validation.canCall || outboundValidation.reason !== validation.reason) && (
+          <div className="mt-3 flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 dark:bg-muted/30 rounded-md p-2 border border-border/50">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-500 dark:text-amber-400" />
+            <div>
+              <span className="font-medium text-foreground/80">{outboundValidation.reason}:</span>{" "}
+              {outboundValidation.solution}
             </div>
           </div>
         )}
@@ -271,7 +291,7 @@ export function WorkspaceAgentCard({ agent, onDelete, onToggleActive }: Workspac
       )}
       
       {/* Test Outbound Call Modal (Phone Call) */}
-      {canMakeOutboundCall && (
+      {outboundValidation.canCall && (
         <TestOutboundCallModal 
           agent={agent} 
           workspaceSlug={workspaceSlug}
