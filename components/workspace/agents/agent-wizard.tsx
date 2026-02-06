@@ -102,7 +102,7 @@ interface WizardFormData {
   // Step 1: Basic Info
   name: string
   description: string
-  provider: "vapi" | "retell"
+  provider: "vapi" | "retell" | "inspra"
   language: string
   // Agent Direction
   agentDirection: AgentDirection
@@ -171,6 +171,7 @@ const PROVIDERS = [
     badge: "Recommended",
     color: "bg-purple-100 dark:bg-purple-900/30",
     textColor: "text-purple-600",
+    comingSoon: false,
   },
   {
     id: "retell",
@@ -179,6 +180,16 @@ const PROVIDERS = [
     badge: "Natural voices",
     color: "bg-blue-100 dark:bg-blue-900/30",
     textColor: "text-blue-600",
+    comingSoon: false,
+  },
+  {
+    id: "inspra",
+    name: "Inspra",
+    description: "Enterprise voice AI platform with Australian accents",
+    badge: "Coming Soon",
+    color: "bg-emerald-100 dark:bg-emerald-900/30",
+    textColor: "text-emerald-600",
+    comingSoon: true,
   },
 ]
 
@@ -309,7 +320,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     ? (retellVoicesData?.voices || [])
     : formData.provider === "vapi"
       ? (elevenLabsVoicesData?.voices || getVoicesForProvider(formData.provider))
-      : getVoicesForProvider(formData.provider)
+      : (formData.provider === "inspra" ? getVoicesForProvider("vapi") : [])
   
   // Track if voices are loading for the current provider
   const isLoadingVoices = formData.provider === "retell" 
@@ -508,6 +519,12 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       } else if (formData.name.trim().length > 40) {
         newErrors.name = "Agent name must be 40 characters or less"
       }
+      // Block Inspra provider (coming soon)
+      if (formData.provider === "inspra") {
+        newErrors.provider = "Inspra integration is coming soon. Please select VAPI or Retell to continue."
+        toast.info("Inspra integration is coming soon!")
+        return false
+      }
       // Voice is required
       if (!formData.enableVoice) {
         newErrors.voice = "Voice configuration is required"
@@ -627,7 +644,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     const apiData: CreateWorkspaceAgentInput = {
       name: formData.name,
       description: formData.description || undefined,
-      provider: formData.provider,
+      provider: (formData.provider === "inspra" ? "vapi" : formData.provider) as "vapi" | "retell",
       voice_provider: "elevenlabs", // Default
       model_provider: "openai", // Default
       transcriber_provider: "deepgram", // Default
@@ -818,17 +835,27 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 {PROVIDERS.map((provider) => (
                   <div
                     key={provider.id}
-                    onClick={() =>
+                    onClick={() => {
+                      // Allow selection even for coming soon (to show the placeholder)
                       updateFormData("provider", provider.id as WizardFormData["provider"])
-                    }
+                    }}
                     className={cn(
                       "relative p-4 rounded-lg border-2 cursor-pointer transition-all",
                       formData.provider === provider.id
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:border-primary/50"
+                        ? provider.comingSoon
+                          ? "border-emerald-500 bg-emerald-500/5"
+                          : "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50",
+                      provider.comingSoon && "opacity-90"
                     )}
                   >
-                    <Badge className="absolute top-2 right-2 text-[10px]" variant="secondary">
+                    <Badge 
+                      className={cn(
+                        "absolute top-2 right-2 text-[10px]",
+                        provider.comingSoon && "bg-emerald-500/20 text-emerald-600 border-emerald-500/30"
+                      )} 
+                      variant={provider.comingSoon ? "outline" : "secondary"}
+                    >
                       {provider.badge}
                     </Badge>
                     <div className="flex items-center gap-3 mb-2">
@@ -852,29 +879,117 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               </div>
             </div>
 
-            {/* Language */}
-            <div className="space-y-2">
-              <Label>
-                Language <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={formData.language}
-                onValueChange={(v) => updateFormData("language", v)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.value} value={lang.value}>
-                      {lang.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Provider Error */}
+            {errors.provider && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <p className="text-sm">{errors.provider}</p>
+              </div>
+            )}
 
-            <Separator />
+            {/* Inspra Coming Soon Banner */}
+            {formData.provider === "inspra" && (
+              <div className="p-6 rounded-xl bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border-2 border-emerald-500/30">
+                <div className="flex items-start gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                    <span className="text-2xl font-bold text-white">I</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                        Inspra Voice AI
+                      </h3>
+                      <Badge className="bg-emerald-500/20 text-emerald-600 border-emerald-500/30">
+                        Coming Soon
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Enterprise-ready voice AI platform with natural-sounding Australian accents, 
+                      24/7 automated phone handling, and up to 40% increase in conversion rates.
+                    </p>
+                    
+                    {/* Key Features */}
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div className="flex items-center gap-2 text-sm">
+                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        </div>
+                        <span>Australian Accents</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        </div>
+                        <span>24/7 Operations</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        </div>
+                        <span>Lead Qualification</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        </div>
+                        <span>Smart Dashboard</span>
+                      </div>
+                    </div>
+
+                    {/* Use Cases */}
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <Badge variant="outline" className="text-xs">Real Estate</Badge>
+                      <Badge variant="outline" className="text-xs">Law Firms</Badge>
+                      <Badge variant="outline" className="text-xs">Dental Practices</Badge>
+                      <Badge variant="outline" className="text-xs">Plumbing Services</Badge>
+                      <Badge variant="outline" className="text-xs">Sales</Badge>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
+                        onClick={() => window.open("https://inspra.ai", "_blank")}
+                      >
+                        <Globe className="w-4 h-4 mr-2" />
+                        Learn More at inspra.ai
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        Integration coming in a future update
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Language - Only show for active providers */}
+            {formData.provider !== "inspra" && (
+              <>
+                <div className="space-y-2">
+                  <Label>
+                    Language <span className="text-destructive">*</span>
+                  </Label>
+                  <Select
+                    value={formData.language}
+                    onValueChange={(v) => updateFormData("language", v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LANGUAGES.map((lang) => (
+                        <SelectItem key={lang.value} value={lang.value}>
+                          {lang.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Separator />
 
             {/* Agent Direction Selection */}
             <div className="space-y-4">
@@ -1705,6 +1820,8 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 </div>
               </div>
             )}
+              </>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1892,7 +2009,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               <FunctionToolEditor
                 tools={formData.tools}
                 onChange={(tools) => updateFormData("tools", tools)}
-                provider={formData.provider}
+                provider={(formData.provider === "inspra" ? "vapi" : formData.provider) as "vapi" | "retell"}
                 calendarSettings={formData.calendarSettings}
                 onCalendarSettingsChange={(settings) => {
                   console.log('[AgentWizard] onCalendarSettingsChange called with:', {
@@ -2168,10 +2285,21 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
         <div className="flex gap-2">
           {currentStep < totalSteps ? (
-            <Button type="button" onClick={nextStep}>
-              Continue
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
+            formData.provider === "inspra" ? (
+              <Button 
+                type="button" 
+                disabled 
+                className="bg-emerald-500/20 text-emerald-600 cursor-not-allowed"
+              >
+                <AlertCircle className="w-4 h-4 mr-2" />
+                Select VAPI or Retell to Continue
+              </Button>
+            ) : (
+              <Button type="button" onClick={nextStep}>
+                Continue
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            )
           ) : (
             <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
               {isSubmitting ? (
@@ -2192,3 +2320,4 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     </div>
   )
 }
+

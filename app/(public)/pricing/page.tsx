@@ -1,11 +1,12 @@
 import Link from "next/link"
 import { getPartnerFromHost } from "@/lib/api/partner"
 import { workspacePlans, formatLimit } from "@/config/plans"
-import { Check, Sparkles, Building2, ArrowRight, Zap, Clock, Users } from "lucide-react"
+import { Check, Sparkles, Building2, ArrowRight, Zap, Clock, Users, Calculator } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { prisma } from "@/lib/prisma"
+import { CallCostCalculator } from "@/components/pricing/call-cost-calculator"
 
 interface AgencyPlan {
   id: string
@@ -196,6 +197,21 @@ export default async function PricingPage() {
               </Card>
             )
           })}
+        </div>
+
+        {/* Cost Calculator Section */}
+        <div className="mb-20">
+          <div className="text-center mb-8">
+            <Badge variant="secondary" className="mb-4 gap-2">
+              <Calculator className="h-3.5 w-3.5" />
+              Estimate Your Costs
+            </Badge>
+            <h2 className="text-2xl font-bold mb-2">Find the Right Plan for You</h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Use our calculator to estimate your monthly costs based on expected call volume.
+            </p>
+          </div>
+          <CallCostCalculator className="max-w-3xl mx-auto" />
         </div>
 
         {/* FAQ Section */}
@@ -393,6 +409,22 @@ function PlatformPricingPage() {
               </ul>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Cost Calculator Section */}
+        <div className="mb-20">
+          <div className="text-center mb-8">
+            <Badge variant="secondary" className="mb-4 gap-2">
+              <Calculator className="h-3.5 w-3.5" />
+              Estimate Your Costs
+            </Badge>
+            <h2 className="text-2xl font-bold mb-2">Find the Right Plan for You</h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Use our calculator to estimate your monthly costs based on expected call volume.
+              See exactly how much you'll save with Pro compared to pay-as-you-go.
+            </p>
+          </div>
+          <CallCostCalculator className="max-w-3xl mx-auto" />
         </div>
 
         {/* Feature Comparison */}
