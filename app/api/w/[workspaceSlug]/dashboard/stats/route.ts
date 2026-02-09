@@ -64,6 +64,16 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const workspaceId = ctx.workspace.id
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
 
+    // Get query parameters for date filtering
+    const filterParam = request.nextUrl.searchParams.get("filter") as DateFilter || "30d"
+    const startDateParam = request.nextUrl.searchParams.get("startDate")
+    const endDateParam = request.nextUrl.searchParams.get("endDate")
+    
+    // Get date range based on filter
+    const dateRange = getDateRange(filterParam, startDateParam || undefined, endDateParam || undefined)
+    const dateStart = dateRange.start
+    const dateEnd = dateRange.end
+
     // Query agents count
     const agentQuery = ctx.adminClient
       .from("ai_agents")

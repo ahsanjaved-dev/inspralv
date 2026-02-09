@@ -74,7 +74,6 @@ import { useWorkspaceSettings, useWorkspaceCustomVariables } from "@/lib/hooks/u
 import { toast } from "sonner"
 import {
   getVoicesForProvider,
-  getDefaultVoice,
   getVoiceCardColor,
   type VoiceOption,
 } from "@/lib/voice"
@@ -260,13 +259,11 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   const { data: workspace } = useWorkspaceSettings()
   const workspaceId = workspace?.id || ""
 
-  // Get initial default voice for VAPI
-  const initialDefaultVoice = getDefaultVoice("vapi")
-
   const [formData, setFormData] = useState<WizardFormData>({
     name: "",
     description: "",
     provider: "vapi",
+    language: "en-US",
     agentDirection: "inbound",
     allowOutbound: false,
     enablePhoneNumber: true, // Phone numbers shown directly now
@@ -898,9 +895,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
             {/* Inspra Coming Soon Banner */}
             {formData.provider === "inspra" && (
-              <div className="p-6 rounded-xl bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border-2 border-emerald-500/30">
+              <div className="p-6 rounded-xl bg-linear-to-br from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border-2 border-emerald-500/30">
                 <div className="flex items-start gap-4">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                  <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                     <span className="text-2xl font-bold text-white">I</span>
                   </div>
                   <div className="flex-1">
@@ -2062,8 +2059,8 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               {/* Variables Grid */}
               <div className="space-y-3">
                 {/* System Variables (auto-generated) */}
-                <div className="p-3.5 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/40 dark:to-cyan-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <Label className="text-xs font-bold text-blue-700 dark:text-blue-300 mb-3 block flex items-center gap-2">
+                <div className="p-3.5 bg-linear-to-r from-blue-50 to-cyan-50 dark:from-blue-950/40 dark:to-cyan-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <Label className="text-xs font-bold text-blue-700 dark:text-blue-300 mb-3 flex items-center gap-2">
                     <span className="text-sm">⚡</span>
                     System Variables
                     <span className="text-[9px] px-2 py-1 bg-blue-500/20 text-blue-700 dark:text-blue-300 rounded-full font-bold uppercase tracking-wider">Auto-generated</span>
@@ -2257,7 +2254,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 {formData.agentDirection === "outbound" && !formData.phoneNumberId && (
                   <div className="col-span-2 mt-2">
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200">
-                      <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                       <div className="text-sm">
                         <p className="font-medium">No phone number configured</p>
                         <p className="text-amber-700 dark:text-amber-300 mt-0.5">

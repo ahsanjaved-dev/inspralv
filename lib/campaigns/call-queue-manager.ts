@@ -37,6 +37,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createOutboundCall, type AssistantOverrides } from "@/lib/integrations/vapi/calls"
 import { createRetellOutboundCall } from "@/lib/integrations/retell/calls"
 import { format } from "date-fns"
+// @ts-ignore - date-fns-tz doesn't have proper type declarations
 import { toZonedTime, format as formatTz } from "date-fns-tz"
 
 // ============================================================================
