@@ -15,6 +15,7 @@ import type { VapiTool as FunctionToolsVapiTool } from "@/lib/integrations/funct
 import { env } from "@/lib/env"
 import { getVapiVoices, getDefaultVoice, findVoiceById } from "@/lib/voice"
 import { generateCalendarSystemPromptContext, CALENDAR_TOOL_NAMES } from "@/lib/integrations/calendar/vapi-tools"
+import { generateCalcomSystemPromptContext, CALCOM_TOOL_NAMES } from "@/lib/integrations/calcom"
 
 // ============================================================================
 // DEFAULT VOICE (Using ElevenLabs)
@@ -383,15 +384,19 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
       model: config.model_settings?.model || "gpt-4",
     }
 
-    // Check if agent has calendar tools to inject date context
+    // Check if agent has calendar or Cal.com tools to inject date context
     const allTools = (config.tools || []) as FunctionTool[]
     const hasCalendarTools = allTools.some((t) => 
       CALENDAR_TOOL_NAMES.includes(t.name as typeof CALENDAR_TOOL_NAMES[number])
     )
+    const hasCalcomTools = allTools.some((t) => 
+      CALCOM_TOOL_NAMES.includes(t.name as typeof CALCOM_TOOL_NAMES[number])
+    )
 
-    // Build system prompt with calendar context if needed
+    // Build system prompt with calendar/Cal.com context if needed
     let systemPrompt = config.system_prompt || ""
     
+    // Inject Google Calendar context if calendar tools are present
     if (hasCalendarTools) {
       // Get timezone from calendar settings if available
       const calendarTimezone = (config as any)?.calendar_settings?.timezone || "UTC"
@@ -401,6 +406,21 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
       systemPrompt = systemPrompt + calendarContext
       
       console.log("[VapiMapper] Agent has calendar tools, injecting date context. Today:", new Date().toISOString().split("T")[0])
+    }
+
+    // Inject Cal.com context if Cal.com tools are present
+    if (hasCalcomTools) {
+      // Get timezone from the first Cal.com tool or calendar settings
+      const calcomTool = allTools.find((t) => 
+        CALCOM_TOOL_NAMES.includes(t.name as typeof CALCOM_TOOL_NAMES[number])
+      )
+      const calcomTimezone = (calcomTool as any)?.timezone || (config as any)?.calendar_settings?.timezone || "UTC"
+      
+      // Append Cal.com context with current date
+      const calcomContext = generateCalcomSystemPromptContext(calcomTimezone)
+      systemPrompt = systemPrompt + calcomContext
+      
+      console.log("[VapiMapper] Agent has Cal.com tools, injecting date context. Today:", new Date().toISOString().split("T")[0])
     }
 
     if (systemPrompt) {

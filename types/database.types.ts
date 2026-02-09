@@ -1714,6 +1714,12 @@ export type FunctionToolType =
   | 'goHighLevelCalendarEventCreate'
   | 'goHighLevelContactCreate'
   | 'goHighLevelContactGet'
+  // Cal.com (Retell Native)
+  | 'check_availability_cal'
+  | 'book_appointment_cal'
+  // Cal.com (VAPI Custom Function)
+  | 'calcom_check_availability'
+  | 'calcom_book_appointment'
   // Other
   | 'mcp'
 
@@ -1844,6 +1850,25 @@ export interface FunctionTool {
     show_transferee_as_caller?: boolean
   }
 
+  // ============================================================================
+  // CAL.COM TOOL PROPERTIES (Retell Native)
+  // ============================================================================
+  
+  /** Cal.com API key (fetched from workspace integration, not stored in tool) */
+  cal_api_key?: string
+  /** Cal.com event type ID (required for Cal.com tools) */
+  event_type_id?: number
+  /** Timezone for Cal.com bookings (optional, defaults to UTC) */
+  timezone?: string
+  /** Custom booking fields to collect during appointment */
+  custom_fields?: Array<{
+    name: string
+    type: 'text' | 'email' | 'phone' | 'number' | 'textarea' | 'select'
+    label: string
+    required: boolean
+    options?: string[]  // For select fields
+  }>
+
   /** Digits to press (for press_digit / press_digits). */
   digits?: string
 
@@ -1925,6 +1950,12 @@ export const functionToolTypeSchema = z.enum([
   'goHighLevelCalendarEventCreate',
   'goHighLevelContactCreate',
   'goHighLevelContactGet',
+  // Cal.com (Retell Native)
+  'check_availability_cal',
+  'book_appointment_cal',
+  // Cal.com (VAPI Custom Function)
+  'calcom_check_availability',
+  'calcom_book_appointment',
   // Other
   'mcp',
 ])
@@ -1970,6 +2001,13 @@ export const functionToolSchema = z.object({
   cal_api_key: z.string().optional(),
   event_type_id: z.number().int().positive().optional(),
   timezone: z.string().optional(),
+  custom_fields: z.array(z.object({
+    name: z.string(),
+    type: z.enum(['text', 'email', 'phone', 'number', 'textarea', 'select']),
+    label: z.string(),
+    required: z.boolean(),
+    options: z.array(z.string()).optional(),
+  })).optional(),
 
   // Code Execution properties
   runtime: z.enum(['node18', 'python3.11']).optional(),
@@ -2669,6 +2707,7 @@ export const createWorkspaceIntegrationSchema = z.object({
     "zapier",
     "slack",
     "algolia",
+    "calcom",
   ] as const),
   name: z.string().min(1, "Connection name is required").max(255),
   default_secret_key: z.string().min(1, "Default secret API key is required"),

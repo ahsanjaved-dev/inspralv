@@ -30,7 +30,10 @@ export type VapiToolType =
   | 'book_appointment'
   | 'cancel_appointment'
   | 'reschedule_appointment'
-  // Calendar (Coming Soon - Cal.com)
+  // Calendar (Cal.com - Retell Native)
+  | 'check_availability_cal'
+  | 'book_appointment_cal'
+  // Calendar (Cal.com - VAPI Custom Implementation)
   | 'calcom_check_availability'
   | 'calcom_book_appointment'
   // Calendar (Coming Soon - General)
@@ -81,9 +84,9 @@ export type RetellToolType =
   | 'book_appointment'
   | 'cancel_appointment'
   | 'reschedule_appointment'
-  // Calendar (Coming Soon - Cal.com)
-  | 'calcom_check_availability'
-  | 'calcom_book_appointment'
+  // Calendar (Cal.com Native - Retell)
+  | 'check_availability_cal'
+  | 'book_appointment_cal'
   // Calendar (Coming Soon - General)
   | 'check_availability'
   // Communication
@@ -133,7 +136,10 @@ export const TOOL_CATEGORY_MAP: Record<VapiToolType, ToolCategory> = {
   book_appointment: 'calendar',
   cancel_appointment: 'calendar',
   reschedule_appointment: 'calendar',
-  // Calendar (Cal.com - Coming Soon)
+  // Calendar (Cal.com - Retell Native)
+  check_availability_cal: 'calendar',
+  book_appointment_cal: 'calendar',
+  // Calendar (Cal.com - VAPI Custom)
   calcom_check_availability: 'calendar',
   calcom_book_appointment: 'calendar',
   // Calendar (General - Coming Soon)

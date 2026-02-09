@@ -285,7 +285,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
       preferred_hours_start: "09:00",
       preferred_hours_end: "17:00",
-      timezone: "America/New_York",
+      timezone: "", // Empty - will be set to workspace timezone by CalendarToolsSelector
       min_notice_hours: 1,
       max_advance_days: 60,
       enable_owner_email: false,

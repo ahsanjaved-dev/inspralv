@@ -498,7 +498,7 @@ export async function safeRetellSync(
 
         // Step 1: Create LLM first
         log.info("Creating LLM on Retell")
-        const llmPayload = mapToRetellLLM(agent)
+        const llmPayload = await mapToRetellLLM(agent)
         log.debug("LLM Payload", { model: llmPayload.model, hasMCP: !!llmPayload.mcps?.length })
         const llmResponse = await createRetellLLMWithKey(llmPayload, secretKey)
 
@@ -579,7 +579,7 @@ export async function safeRetellSync(
         let llmUpdateFailed = false
         if (config.retell_llm_id) {
           log.info("Updating LLM on Retell", { llmId: config.retell_llm_id })
-          const llmPayload = mapToRetellLLM(agent)
+          const llmPayload = await mapToRetellLLM(agent)
           log.debug("LLM Payload", { model: llmPayload.model, hasMCP: !!llmPayload.mcps?.length })
           const llmUpdateResponse = await updateRetellLLMWithKey(config.retell_llm_id, llmPayload, secretKey)
           
@@ -677,7 +677,7 @@ export async function safeRetellSync(
         }
 
         log.info("Updating LLM tools on Retell", { llmId: toolsConfig.retell_llm_id })
-        const llmPayload = mapToRetellLLM(agent)
+        const llmPayload = await mapToRetellLLM(agent)
         log.debug("LLM Payload", { model: llmPayload.model, hasMCP: !!llmPayload.mcps?.length })
         const llmUpdateResponse = await updateRetellLLMWithKey(
           toolsConfig.retell_llm_id,

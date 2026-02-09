@@ -90,26 +90,26 @@ export const RETELL_TOOL_REGISTRY: Record<string, BuiltInToolDefinition> = {
   },
 
   // ========================================
-  // CAL.COM INTEGRATION (Coming Soon)
+  // CAL.COM INTEGRATION (Retell Native)
   // ========================================
-  calcom_check_availability: {
-    key: "calcom_check_availability",
+  check_availability_cal: {
+    key: "check_availability_cal",
     displayName: "Cal.com - Check Availability",
-    type: "calcom_check_availability",
+    type: "check_availability_cal",
     category: "calendar",
-    providers: { vapi: true, retell: true },
-    isNative: false,
-    description: "Check available time slots on Cal.com.",
+    providers: { vapi: false, retell: true },
+    isNative: true,
+    description: "Check available time slots for appointments on Cal.com.",
     icon: "CalendarSearch",
   },
-  calcom_book_appointment: {
-    key: "calcom_book_appointment",
+  book_appointment_cal: {
+    key: "book_appointment_cal",
     displayName: "Cal.com - Book Appointment",
-    type: "calcom_book_appointment",
+    type: "book_appointment_cal",
     category: "calendar",
-    providers: { vapi: true, retell: true },
-    isNative: false,
-    description: "Book an appointment through Cal.com.",
+    providers: { vapi: false, retell: true },
+    isNative: true,
+    description: "Book an appointment through Cal.com with event type and custom fields.",
     icon: "CalendarPlus",
   },
 

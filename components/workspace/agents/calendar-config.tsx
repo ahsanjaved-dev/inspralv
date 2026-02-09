@@ -51,6 +51,7 @@ import {
   getTimezoneOffset,
   getUserTimezone 
 } from "@/lib/utils/timezones"
+import { useWorkspaceSettings } from "@/lib/hooks/use-workspace-settings"
 
 // =============================================================================
 // CONSTANTS
@@ -193,6 +194,11 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
   const [calendarSource, setCalendarSource] = useState<'new' | 'existing'>('new')
   const [selectedExistingCalendarId, setSelectedExistingCalendarId] = useState<string | null>(null)
 
+  // Get workspace timezone for default calendar settings
+  const { data: workspace, isLoading: isLoadingWorkspace } = useWorkspaceSettings()
+  const workspaceSettings = workspace?.settings as { timezone?: string } | undefined
+  const workspaceTimezone = workspaceSettings?.timezone || "UTC"
+
   // Fetch existing config
   const { data: configData, isLoading: configLoading } = useQuery({
     queryKey: ["agent-calendar-config", agentId],
@@ -237,7 +243,7 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
     defaultValues: {
       google_credential_id: "",
       calendar_id: "",
-      timezone: "America/New_York",
+      timezone: "", // Empty - will be set to workspace timezone
       slot_duration_minutes: 30,
       buffer_between_slots_minutes: 0,
       preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
@@ -249,6 +255,17 @@ export function CalendarConfig({ workspaceSlug, agentId }: CalendarConfigProps) 
       owner_email: "",
     },
   })
+
+  // Set workspace timezone as default when workspace data loads (for new configs)
+  useEffect(() => {
+    if (isLoadingWorkspace || existingConfig) return
+    
+    // Only set timezone if form hasn't been modified and no existing config
+    const currentTimezone = form.getValues("timezone")
+    if (!currentTimezone) {
+      form.setValue("timezone", workspaceTimezone)
+    }
+  }, [workspaceTimezone, isLoadingWorkspace, existingConfig, form])
 
   // Update form when existing config loads
   useEffect(() => {

@@ -39,7 +39,7 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useWorkspaceAssignedIntegration } from "@/lib/hooks/use-workspace-assigned-integration"
 import { useAvailablePhoneNumbers } from "@/lib/hooks/use-workspace-agents"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { FunctionToolEditor } from "./function-tool-editor"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -49,6 +49,7 @@ import { cn } from "@/lib/utils"
 import { getVoicesForProvider, getVoiceCardColor, type VoiceOption } from "@/lib/voice"
 import { useRetellVoices } from "@/lib/hooks/use-retell-voices"
 import { useElevenLabsVoices } from "@/lib/hooks/use-elevenlabs-voices"
+import { useWorkspaceSettings } from "@/lib/hooks/use-workspace-settings"
 import type { RetellVoice } from "@/lib/integrations/retell/voices"
 import type { ElevenLabsVoice } from "@/lib/integrations/elevenlabs/voices"
 import { Play, Volume2, Search, Filter, RotateCcw } from "lucide-react"
@@ -105,17 +106,23 @@ export function WorkspaceAgentForm({
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
 
+  // Get workspace timezone for default calendar settings
+  const { data: workspace, isLoading: isLoadingWorkspace } = useWorkspaceSettings()
+  const workspaceSettings = workspace?.settings as { timezone?: string } | undefined
+  const workspaceTimezone = workspaceSettings?.timezone || "UTC"
+
   // Function tools state
   const [tools, setTools] = useState<FunctionTool[]>((initialData?.config as any)?.tools || [])
   
   // Calendar settings for calendar tools
+  // Use empty timezone initially - will be set to workspace timezone via useEffect
   const [calendarSettings, setCalendarSettings] = useState<CalendarToolSettings>({
     slot_duration_minutes: (initialData?.config as any)?.calendar_settings?.slot_duration_minutes || 30,
     buffer_between_slots_minutes: (initialData?.config as any)?.calendar_settings?.buffer_between_slots_minutes || 0,
     preferred_days: (initialData?.config as any)?.calendar_settings?.preferred_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
     preferred_hours_start: (initialData?.config as any)?.calendar_settings?.preferred_hours_start || "09:00",
     preferred_hours_end: (initialData?.config as any)?.calendar_settings?.preferred_hours_end || "17:00",
-    timezone: (initialData?.config as any)?.calendar_settings?.timezone || "America/New_York",
+    timezone: (initialData?.config as any)?.calendar_settings?.timezone || "", // Empty - will use workspace timezone
     min_notice_hours: (initialData?.config as any)?.calendar_settings?.min_notice_hours || 1,
     max_advance_days: (initialData?.config as any)?.calendar_settings?.max_advance_days || 60,
     // Email notification settings
@@ -126,6 +133,19 @@ export function WorkspaceAgentForm({
     existing_calendar_id: (initialData?.config as any)?.calendar_settings?.existing_calendar_id || undefined,
     existing_calendar_name: (initialData?.config as any)?.calendar_settings?.existing_calendar_name || undefined,
   })
+
+  // Set workspace timezone as default when workspace data loads
+  useEffect(() => {
+    if (isLoadingWorkspace) return
+    
+    // Only update timezone if it's empty (not already saved)
+    if (!calendarSettings.timezone) {
+      setCalendarSettings(prev => ({
+        ...prev,
+        timezone: workspaceTimezone
+      }))
+    }
+  }, [workspaceTimezone, isLoadingWorkspace, calendarSettings.timezone])
   
   // DEBUG: Wrapper to log tools changes
   const handleToolsChange = (newTools: FunctionTool[]) => {

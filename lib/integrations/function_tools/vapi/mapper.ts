@@ -19,6 +19,11 @@ import {
   getRescheduleAppointmentTool, 
   getCheckAvailabilityTool 
 } from '@/lib/integrations/calendar/vapi-tools'
+import {
+  CALCOM_TOOL_NAMES,
+  getCalcomCheckAvailabilityTool,
+  getCalcomBookAppointmentTool,
+} from '@/lib/integrations/calcom'
 
 // Integration tool types that require a credential
 const INTEGRATION_TOOL_TYPES = [
@@ -40,10 +45,17 @@ function isIntegrationToolType(type: string): boolean {
 }
 
 /**
- * Check if a tool is a calendar tool
+ * Check if a tool is a Google Calendar tool
  */
 function isCalendarTool(toolName: string): boolean {
   return CALENDAR_TOOL_NAMES.includes(toolName as typeof CALENDAR_TOOL_NAMES[number])
+}
+
+/**
+ * Check if a tool is a Cal.com tool
+ */
+function isCalcomToolType(toolName: string): boolean {
+  return CALCOM_TOOL_NAMES.includes(toolName as typeof CALCOM_TOOL_NAMES[number])
 }
 
 /**
@@ -60,6 +72,21 @@ function getDynamicCalendarToolDescription(toolName: string): string | undefined
       return getRescheduleAppointmentTool().description
     case 'check_availability':
       return getCheckAvailabilityTool().description
+    default:
+      return undefined
+  }
+}
+
+/**
+ * Get dynamic Cal.com tool definition with today's date
+ * This ensures the AI always knows the current date when using Cal.com tools
+ */
+function getDynamicCalcomToolDescription(toolName: string): string | undefined {
+  switch (toolName) {
+    case 'calcom_check_availability':
+      return getCalcomCheckAvailabilityTool().description
+    case 'calcom_book_appointment':
+      return getCalcomBookAppointmentTool().description
     default:
       return undefined
   }
@@ -183,13 +210,24 @@ export function mapFunctionToolToVapi(
   }
 
   // Handle custom function tools
-  // For calendar tools, use dynamic descriptions that include today's date
+  // For calendar and Cal.com tools, use dynamic descriptions that include today's date
   let toolDescription = tool.description
+  
+  // Check for Google Calendar tools
   if (isCalendarTool(tool.name)) {
     const dynamicDescription = getDynamicCalendarToolDescription(tool.name)
     if (dynamicDescription) {
       toolDescription = dynamicDescription
       console.log(`[VapiMapper] Using dynamic description for calendar tool: ${tool.name}, today: ${new Date().toISOString().split('T')[0]}`)
+    }
+  }
+  
+  // Check for Cal.com tools
+  if (isCalcomToolType(tool.name)) {
+    const dynamicDescription = getDynamicCalcomToolDescription(tool.name)
+    if (dynamicDescription) {
+      toolDescription = dynamicDescription
+      console.log(`[VapiMapper] Using dynamic description for Cal.com tool: ${tool.name}, today: ${new Date().toISOString().split('T')[0]}`)
     }
   }
   

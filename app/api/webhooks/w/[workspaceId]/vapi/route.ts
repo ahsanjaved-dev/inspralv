@@ -23,10 +23,11 @@ import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
 import { processCallCompletion } from "@/lib/billing/usage"
 import { indexCallLogToAlgolia } from "@/lib/algolia"
-import type { AgentProvider, Conversation } from "@/types/database.types"
+import type { AgentProvider, Conversation, FunctionTool } from "@/types/database.types"
 import { createClient } from "@supabase/supabase-js"
 import { handleCalendarToolCall, isCalendarConfigured } from "@/lib/integrations/calendar"
 import { isCalendarTool } from "@/lib/integrations/calendar/vapi-tools"
+import { isCalcomTool, handleCalcomToolCall } from "@/lib/integrations/calcom"
 
 export const dynamic = "force-dynamic"
 
@@ -1027,6 +1028,7 @@ async function handleFunctionCall(
 
       console.log(`[VAPI Webhook] Processing tool: ${toolName}, args:`, parsedArgs)
 
+      // Handle Google Calendar tools
       if (toolName && isCalendarTool(toolName)) {
         console.log(`[VAPI Webhook] Executing calendar tool: ${toolName} for agent ${agent.id}`)
 
@@ -1058,6 +1060,50 @@ async function handleFunctionCall(
           results.push({
             toolCallId,
             result: error instanceof Error ? error.message : "An error occurred while processing the request",
+          })
+        }
+      } 
+      // Handle Cal.com tools
+      else if (toolName && isCalcomTool(toolName)) {
+        console.log(`[VAPI Webhook] Executing Cal.com tool: ${toolName} for workspace ${workspaceId}`)
+
+        try {
+          // Get Cal.com tool configuration from agent config
+          const config = agent.config as any
+          const tools = (config?.tools || []) as FunctionTool[]
+          const calcomToolConfig = tools.find((t: FunctionTool) => t.name === toolName)
+          
+          // Inject event_type_id and timezone into args for the handler
+          const enrichedArgs = {
+            ...parsedArgs,
+            _event_type_id: calcomToolConfig?.event_type_id,
+            _timezone: calcomToolConfig?.timezone || "UTC",
+          }
+
+          const calcomResult = await handleCalcomToolCall(
+            toolName,
+            enrichedArgs,
+            { 
+              workspaceId, 
+              agentId: agent.id, 
+              callId: call.id,
+              conversationId: undefined 
+            }
+          )
+
+          console.log(`[VAPI Webhook] Cal.com tool result:`, calcomResult)
+
+          results.push({
+            toolCallId,
+            result: calcomResult.success 
+              ? calcomResult.result || "Operation completed successfully" 
+              : calcomResult.error || "Operation failed",
+          })
+        } catch (error) {
+          console.error(`[VAPI Webhook] Cal.com tool error:`, error)
+          results.push({
+            toolCallId,
+            result: error instanceof Error ? error.message : "An error occurred while processing your request",
           })
         }
       } else {
@@ -1131,7 +1177,7 @@ async function handleDirectFunctionCall(
 
   const toolName = toolCall?.name
 
-  // Check if this is a calendar tool
+  // Check if this is a Google Calendar tool
   if (toolName && isCalendarTool(toolName)) {
     console.log(`[VAPI Webhook] Processing calendar tool: ${toolName} for agent ${agent.id}`)
     
@@ -1175,7 +1221,53 @@ async function handleDirectFunctionCall(
     }
   }
 
-  // Forward non-calendar tools to user's webhook
+  // Check if this is a Cal.com tool
+  if (toolName && isCalcomTool(toolName)) {
+    console.log(`[VAPI Webhook] Processing Cal.com tool: ${toolName} for workspace ${workspaceId}`)
+
+    try {
+      // Get Cal.com tool configuration from agent config
+      const config = agent.config as any
+      const tools = (config?.tools || []) as FunctionTool[]
+      const calcomToolConfig = tools.find((t: FunctionTool) => t.name === toolName)
+
+      // Inject event_type_id and timezone into args for the handler
+      const enrichedArgs = {
+        ...(toolCall?.arguments || {}),
+        _event_type_id: calcomToolConfig?.event_type_id,
+        _timezone: calcomToolConfig?.timezone || "UTC",
+      }
+
+      const result = await handleCalcomToolCall(
+        toolName,
+        enrichedArgs,
+        {
+          workspaceId,
+          agentId: agent.id,
+          callId: callId,
+          conversationId: undefined,
+        }
+      )
+
+      // Return in VAPI's expected format
+      return {
+        results: [{
+          toolCallId: (payload as any).toolCall?.id || toolName,
+          result: result.success ? result.result : result.error,
+        }]
+      }
+    } catch (error) {
+      console.error(`[VAPI Webhook] Cal.com tool error:`, error)
+      return {
+        results: [{
+          toolCallId: (payload as any).toolCall?.id || toolName,
+          result: error instanceof Error ? error.message : "Cal.com operation failed",
+        }]
+      }
+    }
+  }
+
+  // Forward non-calendar/non-calcom tools to user's webhook
   const config = agent.config as any
   const webhookUrl = config?.tools_server_url
 

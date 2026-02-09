@@ -42,6 +42,8 @@ import {
 import { RETELL_TOOL_REGISTRY } from "@/lib/integrations/function_tools/retell/registry"
 import { SUGGESTED_PARAMETERS, getParameterCategories, type SuggestedParameter } from "@/lib/tools/registry"
 import { CalendarToolConfigDialog, isCalendarToolType, type CalendarToolSettings, type CalendarToolType, CALENDAR_TOOL_TYPES } from "./calendar-tool-config"
+import { CalcomToolConfigDialog } from "./calcom-tool-config-dialog"
+import { useWorkspaceSettings } from "@/lib/hooks/use-workspace-settings"
 
 // ============================================================================
 // AVAILABLE TOOLS CONFIG
@@ -52,9 +54,13 @@ import { CalendarToolConfigDialog, isCalendarToolType, type CalendarToolSettings
 const VAPI_AVAILABLE_TOOLS = [
   "endCall",
   "apiRequest",
+  // Google Calendar tools (via webhook)
   "book_appointment",
   "cancel_appointment",
   "reschedule_appointment",
+  // Cal.com tools (via webhook)
+  "calcom_check_availability",
+  "calcom_book_appointment",
 ]
 
 // Retell available tools
@@ -67,6 +73,9 @@ const RETELL_AVAILABLE_TOOLS = [
   "book_appointment",
   "cancel_appointment",
   "reschedule_appointment",
+  // Cal.com native tools (Retell native integration)
+  "check_availability_cal",
+  "book_appointment_cal",
 ]
 
 // ============================================================================
@@ -1071,6 +1080,11 @@ export function FunctionToolEditor({
   workspaceSlug,
   currentAgentId,
 }: FunctionToolEditorProps) {
+  // Get workspace timezone for default calendar settings
+  const { data: workspace, isLoading: isLoadingWorkspace } = useWorkspaceSettings()
+  const workspaceSettings = workspace?.settings as { timezone?: string } | undefined
+  const workspaceTimezone = workspaceSettings?.timezone || "UTC"
+
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [editingTool, setEditingTool] = useState<FunctionTool | null>(null)
   const [pendingTool, setPendingTool] = useState<FunctionTool | null>(null) // Tool not yet added, waiting for dialog save
@@ -1080,6 +1094,11 @@ export function FunctionToolEditor({
   const [showCalendarConfigDialog, setShowCalendarConfigDialog] = useState(false)
   const [selectedCalendarToolType, setSelectedCalendarToolType] = useState<CalendarToolType | null>(null)
   const [editingCalendarTool, setEditingCalendarTool] = useState<FunctionTool | null>(null)
+  
+  // Cal.com tool config dialog state
+  const [showCalcomConfigDialog, setShowCalcomConfigDialog] = useState(false)
+  const [editingCalcomTool, setEditingCalcomTool] = useState<FunctionTool | null>(null)
+  
   const [localCalendarSettings, setLocalCalendarSettings] = useState<CalendarToolSettings>(
     calendarSettings || {
       slot_duration_minutes: 30,
@@ -1087,7 +1106,7 @@ export function FunctionToolEditor({
       preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
       preferred_hours_start: "09:00",
       preferred_hours_end: "17:00",
-      timezone: "America/New_York",
+      timezone: "", // Empty - will be set to workspace timezone
       min_notice_hours: 1,
       max_advance_days: 60,
       enable_owner_email: false,
@@ -1098,12 +1117,24 @@ export function FunctionToolEditor({
     }
   )
   
-  // Sync calendar settings with props
+  // Sync calendar settings with props and workspace timezone
   useEffect(() => {
+    if (isLoadingWorkspace) return
+    
     if (calendarSettings) {
-      setLocalCalendarSettings(calendarSettings)
+      // Use workspace timezone as fallback if no timezone saved
+      setLocalCalendarSettings({
+        ...calendarSettings,
+        timezone: calendarSettings.timezone || workspaceTimezone
+      })
+    } else {
+      // No settings - use workspace timezone as default
+      setLocalCalendarSettings(prev => ({
+        ...prev,
+        timezone: prev.timezone || workspaceTimezone
+      }))
     }
-  }, [calendarSettings])
+  }, [calendarSettings, workspaceTimezone, isLoadingWorkspace])
 
   // Get available tools based on provider
   const availableToolKeys = provider === "retell" ? RETELL_AVAILABLE_TOOLS : VAPI_AVAILABLE_TOOLS
@@ -1162,8 +1193,18 @@ export function FunctionToolEditor({
   // Tools that require configuration before being added
   const TOOLS_REQUIRING_CONFIG = ["apiRequest", "transfer_call", "transferCall"]
   
-  // Calendar tool keys
+  // Calendar tool keys (Google Calendar via MCP)
   const CALENDAR_TOOL_KEYS = ["book_appointment", "cancel_appointment", "reschedule_appointment"]
+  
+  // Cal.com tool keys (Retell native + VAPI custom)
+  const CALCOM_TOOL_KEYS = [
+    // Retell native Cal.com tools
+    "check_availability_cal", 
+    "book_appointment_cal",
+    // VAPI Cal.com tools (via webhook)
+    "calcom_check_availability",
+    "calcom_book_appointment",
+  ]
 
   // Toggle a built-in tool
   const toggleBuiltInTool = (def: BuiltInToolDefinition) => {
@@ -1177,6 +1218,14 @@ export function FunctionToolEditor({
         setSelectedCalendarToolType(def.key as CalendarToolType)
         setEditingCalendarTool(null)
         setShowCalendarConfigDialog(true)
+        return
+      }
+      
+      // Check if it's a Cal.com tool
+      if (CALCOM_TOOL_KEYS.includes(def.key)) {
+        const newTool = createToolFromDefinition(def)
+        setEditingCalcomTool(newTool)
+        setShowCalcomConfigDialog(true)
         return
       }
       
@@ -1223,6 +1272,24 @@ export function FunctionToolEditor({
     setSelectedCalendarToolType(tool.name as CalendarToolType)
     setEditingCalendarTool(tool)
     setShowCalendarConfigDialog(true)
+  }
+  
+  // Handle save Cal.com tool
+  const handleSaveCalcomTool = (tool: FunctionTool) => {
+    const existingIndex = tools.findIndex((t) => t.id === tool.id)
+    if (existingIndex >= 0) {
+      const updated = [...tools]
+      updated[existingIndex] = tool
+      onChange(updated)
+    } else {
+      onChange([...tools, tool])
+    }
+  }
+  
+  // Handle edit Cal.com tool
+  const handleEditCalcomTool = (tool: FunctionTool) => {
+    setEditingCalcomTool(tool)
+    setShowCalcomConfigDialog(true)
   }
 
   // Check if a tool is a custom function
@@ -1310,7 +1377,15 @@ export function FunctionToolEditor({
                 key={tool.id}
                 tool={tool}
                 toolDef={getToolDef(tool)}
-                onEdit={() => isCalendarToolType(tool.name) ? handleEditCalendarTool(tool) : handleEditTool(tool)}
+                onEdit={() => {
+                  if (isCalendarToolType(tool.name)) {
+                    handleEditCalendarTool(tool)
+                  } else if (CALCOM_TOOL_KEYS.includes(tool.tool_type || "")) {
+                    handleEditCalcomTool(tool)
+                  } else {
+                    handleEditTool(tool)
+                  }
+                }}
                 onRemove={() => removeTool(tool.id)}
                 disabled={disabled}
                 isCustomFunction={isCustomFunction(tool)}
@@ -1430,6 +1505,15 @@ export function FunctionToolEditor({
           currentAgentId={currentAgentId}
         />
       )}
+      
+      {/* Cal.com Tool Config Dialog */}
+      <CalcomToolConfigDialog
+        open={showCalcomConfigDialog}
+        onOpenChange={setShowCalcomConfigDialog}
+        tool={editingCalcomTool}
+        onSave={handleSaveCalcomTool}
+        workspaceSlug={workspaceSlug || ""}
+      />
     </div>
   )
 }

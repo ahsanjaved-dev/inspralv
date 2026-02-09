@@ -27,6 +27,7 @@ import {
   ExternalLink,
   Building2,
   Settings,
+  Plug,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -132,6 +133,7 @@ export function WorkspaceSidebar({ partner, currentWorkspace, workspaces, isColl
     { title: "Analytics", href: `${baseUrl}/analytics`, icon: BarChart3 },
     { title: "Calls", href: `${baseUrl}/calls`, icon: Phone },
     ...(isWorkspaceAdmin ? [{ title: "Workspace Team", href: `${baseUrl}/members`, icon: Users }] : []),
+    ...(isWorkspaceAdmin ? [{ title: "Integrations", href: `${baseUrl}/integrations`, icon: Plug }] : []),
     ...(isWorkspaceAdmin ? [{ title: "Settings", href: `${baseUrl}/settings`, icon: Settings }] : []),
   ]
   

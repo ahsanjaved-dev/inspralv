@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ALL_TIMEZONES, TIMEZONE_REGIONS } from "@/lib/utils/timezones"
+import { ALL_TIMEZONES, TIMEZONE_REGIONS, getTimezonesByRegion } from "@/lib/utils/timezones"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -44,6 +44,7 @@ import { Switch } from "@/components/ui/switch"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { cn } from "@/lib/utils"
 import type { FunctionTool, FunctionToolParameterProperty } from "@/types/database.types"
+import { useWorkspaceSettings } from "@/lib/hooks/use-workspace-settings"
 
 // =============================================================================
 // CONSTANTS
@@ -214,18 +215,18 @@ function generateId(): string {
   return `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
-const DEFAULT_CALENDAR_SETTINGS: CalendarToolSettings = {
+// Default calendar settings - timezone will be overridden by workspace timezone
+const DEFAULT_CALENDAR_SETTINGS_BASE: Omit<CalendarToolSettings, 'timezone'> = {
   slot_duration_minutes: 30,
   buffer_between_slots_minutes: 0,
-  preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+  preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] as DayOfWeek[],
   preferred_hours_start: "09:00",
   preferred_hours_end: "17:00",
-  timezone: "America/New_York",
   min_notice_hours: 0, // Allow immediate bookings by default
   max_advance_days: 60,
   enable_owner_email: false,
   owner_email: undefined,
-  calendar_source: 'new',
+  calendar_source: 'new' as const,
   existing_calendar_id: undefined,
   existing_calendar_name: undefined,
 }
@@ -249,6 +250,12 @@ export function CalendarToolConfigDialog({
   const toolInfo = CALENDAR_TOOL_INFO[toolType]
   const builtInParams = BUILT_IN_PARAMETERS[toolType]
   const Icon = toolInfo.icon
+
+  // Fetch workspace settings to get timezone
+  const { data: workspace, isLoading: isLoadingWorkspace } = useWorkspaceSettings()
+  // Timezone is stored in workspace.settings.timezone (JSON field)
+  const workspaceSettings = workspace?.settings as { timezone?: string } | undefined
+  const workspaceTimezone = workspaceSettings?.timezone || "UTC"
 
   // Calendar source selection
   const [calendarSource, setCalendarSource] = useState<'new' | 'existing'>('new')
@@ -276,7 +283,7 @@ export function CalendarToolConfigDialog({
   const [preferredDays, setPreferredDays] = useState<DayOfWeek[]>(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"])
   const [preferredHoursStart, setPreferredHoursStart] = useState("09:00")
   const [preferredHoursEnd, setPreferredHoursEnd] = useState("17:00")
-  const [timezone, setTimezone] = useState("America/New_York")
+  const [timezone, setTimezone] = useState<string>("UTC")
   const [minNoticeHours, setMinNoticeHours] = useState("0")
   const [maxAdvanceDays, setMaxAdvanceDays] = useState("60")
   
@@ -322,48 +329,56 @@ export function CalendarToolConfigDialog({
     }
   }
 
-  // Load existing tool config
+  // Load existing tool config with workspace timezone as default
+  // IMPORTANT: Wait for workspace data to load before setting defaults
   useEffect(() => {
-    if (open) {
-      // Load calendar settings
-      const settings = calendarSettings || DEFAULT_CALENDAR_SETTINGS
-      setSlotDuration(String(settings.slot_duration_minutes))
-      setBufferMinutes(String(settings.buffer_between_slots_minutes))
-      setPreferredDays(settings.preferred_days)
-      setPreferredHoursStart(settings.preferred_hours_start)
-      setPreferredHoursEnd(settings.preferred_hours_end)
-      setTimezone(settings.timezone)
-      setMinNoticeHours(String(settings.min_notice_hours))
-      setMaxAdvanceDays(String(settings.max_advance_days))
-      
-      // Load email notification settings
-      setEnableOwnerEmail(settings.enable_owner_email || false)
-      setOwnerEmail(settings.owner_email || "")
-      
-      // Load calendar source settings
-      setCalendarSource(settings.calendar_source || 'new')
-      setSelectedExistingCalendarId(settings.existing_calendar_id || null)
+    // Don't set defaults until workspace data is loaded (to get correct timezone)
+    if (!open || isLoadingWorkspace) return
 
-      if (existingTool) {
-        // Load custom params (exclude built-in ones)
-        const builtInNames = new Set(builtInParams.map(p => p.name))
-        const existingProps = existingTool.parameters?.properties || {}
-        const custom = Object.entries(existingProps)
-          .filter(([name]) => !builtInNames.has(name))
-          .map(([name, prop]) => ({
-            name,
-            description: (prop as FunctionToolParameterProperty).description || "",
-            required: existingTool.parameters?.required?.includes(name) || false,
-          }))
-        setCustomParams(custom)
-      } else {
-        setCustomParams([])
-        setNewParamName("")
-        setNewParamDesc("")
-        setNewParamRequired(false)
-      }
+    // Always use workspace timezone as the base default for NEW tools
+    const defaultSettings = { ...DEFAULT_CALENDAR_SETTINGS_BASE, timezone: workspaceTimezone }
+    const settings = calendarSettings || defaultSettings
+    setSlotDuration(String(settings.slot_duration_minutes))
+    setBufferMinutes(String(settings.buffer_between_slots_minutes))
+    setPreferredDays(settings.preferred_days as DayOfWeek[])
+    setPreferredHoursStart(settings.preferred_hours_start)
+    setPreferredHoursEnd(settings.preferred_hours_end)
+    
+    // For timezone: 
+    // - If editing existing tool with saved settings, use the saved timezone (respect user's choice)
+    // - If no saved timezone (new tool or empty), default to workspace timezone
+    setTimezone(settings.timezone || workspaceTimezone)
+    
+    setMinNoticeHours(String(settings.min_notice_hours))
+    setMaxAdvanceDays(String(settings.max_advance_days))
+    
+    // Load email notification settings
+    setEnableOwnerEmail(settings.enable_owner_email || false)
+    setOwnerEmail(settings.owner_email || "")
+    
+    // Load calendar source settings
+    setCalendarSource(settings.calendar_source || 'new')
+    setSelectedExistingCalendarId(settings.existing_calendar_id || null)
+
+    if (existingTool) {
+      // Load custom params (exclude built-in ones)
+      const builtInNames = new Set(builtInParams.map(p => p.name))
+      const existingProps = existingTool.parameters?.properties || {}
+      const custom = Object.entries(existingProps)
+        .filter(([name]) => !builtInNames.has(name))
+        .map(([name, prop]) => ({
+          name,
+          description: (prop as FunctionToolParameterProperty).description || "",
+          required: existingTool.parameters?.required?.includes(name) || false,
+        }))
+      setCustomParams(custom)
+    } else {
+      setCustomParams([])
+      setNewParamName("")
+      setNewParamDesc("")
+      setNewParamRequired(false)
     }
-  }, [open, existingTool, builtInParams, calendarSettings])
+  }, [open, existingTool, builtInParams, calendarSettings, workspaceTimezone, isLoadingWorkspace])
 
 
   const toggleDay = (day: DayOfWeek) => {
@@ -952,19 +967,42 @@ export function CalendarToolsSelector({
   workspaceSlug,
   currentAgentId,
 }: CalendarToolsSelectorProps) {
+  // Fetch workspace settings to get timezone
+  const { data: workspace, isLoading: isLoadingWorkspace } = useWorkspaceSettings()
+  // Timezone is stored in workspace.settings.timezone (JSON field)
+  const workspaceSettings = workspace?.settings as { timezone?: string } | undefined
+  const workspaceTimezone = workspaceSettings?.timezone || "UTC"
+  
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [selectedToolType, setSelectedToolType] = useState<CalendarToolType | null>(null)
   const [editingTool, setEditingTool] = useState<FunctionTool | null>(null)
+  
+  // Initialize with empty timezone until workspace loads
   const [localCalendarSettings, setLocalCalendarSettings] = useState<CalendarToolSettings>(
-    calendarSettings || DEFAULT_CALENDAR_SETTINGS
+    calendarSettings || { ...DEFAULT_CALENDAR_SETTINGS_BASE, timezone: "" }
   )
 
-  // Sync local settings with props
+  // Sync local settings with props, always using workspace timezone as fallback
+  // IMPORTANT: Wait for workspace data to load before setting defaults
   useEffect(() => {
+    // Don't set defaults until workspace data is loaded
+    if (isLoadingWorkspace) return
+
     if (calendarSettings) {
-      setLocalCalendarSettings(calendarSettings)
+      // Use saved settings - respect user's timezone choice
+      // Only fallback to workspace timezone if no timezone was saved
+      setLocalCalendarSettings({
+        ...calendarSettings,
+        timezone: calendarSettings.timezone || workspaceTimezone
+      })
+    } else {
+      // No calendar settings yet - use workspace timezone as default
+      setLocalCalendarSettings({
+        ...DEFAULT_CALENDAR_SETTINGS_BASE,
+        timezone: workspaceTimezone
+      })
     }
-  }, [calendarSettings])
+  }, [calendarSettings, workspaceTimezone, isLoadingWorkspace])
 
   // Get selected calendar tools
   const selectedCalendarTools = selectedTools.filter(t => isCalendarToolType(t.name))

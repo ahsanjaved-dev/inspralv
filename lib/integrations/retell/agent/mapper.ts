@@ -8,6 +8,7 @@ import { mapFunctionToolsToRetell } from "@/lib/integrations/function_tools/rete
 import type { RetellGeneralTool } from "@/lib/integrations/function_tools/retell/types"
 import { env } from "@/lib/env"
 import { generateCalendarSystemPromptContext, CALENDAR_TOOL_NAMES } from "@/lib/integrations/calendar/vapi-tools"
+import { mapCalcomToolsToRetell, hasCalcomTools } from "@/lib/integrations/calcom/mapper"
 
 // Re-export for backwards compatibility
 export type { RetellGeneralTool }
@@ -302,7 +303,7 @@ function generateCustomFunctionPrompt(tools: FunctionTool[]): string {
   return prompt
 }
 
-export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
+export async function mapToRetellLLM(agent: AIAgent): Promise<RetellLLMPayload> {
   const config = agent.config || {}
 
   // Map model to Retell model name
@@ -368,10 +369,22 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
   // Add native tools to LLM configuration using the function_tools mapper
   // Only native Retell tools (end_call, transfer_call, etc.) go in general_tools
   // Custom functions are handled via MCP or webhook
+  // Cal.com tools are native Retell tools and go directly in general_tools
   if (config.tools && config.tools.length > 0) {
     const retellTools = mapFunctionToolsToRetell(config.tools)
-    if (retellTools.length > 0) {
-      payload.general_tools = retellTools
+    
+    // Add Cal.com native tools if present
+    const calcomTools = await mapCalcomToolsToRetell(config.tools, agent.workspace_id)
+    
+    // Combine native Retell tools with Cal.com tools
+    const allTools = [...retellTools, ...calcomTools as any]
+    
+    if (allTools.length > 0) {
+      payload.general_tools = allTools
+    }
+    
+    if (calcomTools.length > 0) {
+      console.log(`[RetellMapper] Added ${calcomTools.length} Cal.com tools to general_tools`)
     }
   }
 
