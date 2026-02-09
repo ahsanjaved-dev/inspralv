@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -38,7 +39,7 @@ import {
 } from "lucide-react"
 import { useAlgoliaSearch, type SearchParams } from "@/lib/hooks/use-algolia-search"
 import { cn } from "@/lib/utils"
-import { format } from "date-fns"
+import { format, startOfDay, endOfDay } from "date-fns"
 import type { AlgoliaSuggestion, AlgoliaSearchResults, AlgoliaCallHit } from "@/lib/algolia/types"
 
 // ============================================================================
@@ -73,30 +74,60 @@ export function AlgoliaSearchPanel({
   className,
   refreshTrigger,
 }: AlgoliaSearchPanelProps) {
+  // URL state for filter persistence
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+  
+  // Parse initial filters from URL params
+  const getInitialFilters = useCallback((): AlgoliaFilters => {
+    const status = searchParams.get("status") || "all"
+    const direction = searchParams.get("direction") || "all"
+    const agentId = searchParams.get("agentId") || "all"
+    const startDateStr = searchParams.get("startDate")
+    const endDateStr = searchParams.get("endDate")
+    
+    return {
+      status,
+      direction,
+      agentId,
+      startDate: startDateStr ? startOfDay(new Date(startDateStr)) : undefined,
+      endDate: endDateStr ? endOfDay(new Date(endDateStr)) : undefined,
+    }
+  }, [searchParams])
+  
   // Search state
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
+  const [query, setQuery] = useState(() => searchParams.get("q") || "")
+  const [debouncedQuery, setDebouncedQuery] = useState(() => searchParams.get("q") || "")
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
   
   // Pagination state
-  const [currentPage, setCurrentPage] = useState(0)
+  const [currentPage, setCurrentPage] = useState(() => {
+    const page = searchParams.get("page")
+    return page ? parseInt(page, 10) : 0
+  })
   const [hitsPerPage, setHitsPerPage] = useState(20)
   
-  // Filter state - default to today's date
-  const [filters, setFilters] = useState<AlgoliaFilters>(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const endOfDay = new Date()
-    endOfDay.setHours(23, 59, 59, 999)
-    return {
-      status: "all",
-      direction: "all",
-      agentId: "all",
-      startDate: today,
-      endDate: endOfDay,
-    }
-  })
+  // Filter state - NO default dates, read from URL
+  const [filters, setFilters] = useState<AlgoliaFilters>(getInitialFilters)
+  
+  // Update URL when filters change
+  const updateUrlParams = useCallback((newFilters: AlgoliaFilters, newQuery?: string, newPage?: number) => {
+    const params = new URLSearchParams()
+    
+    if (newFilters.status !== "all") params.set("status", newFilters.status)
+    if (newFilters.direction !== "all") params.set("direction", newFilters.direction)
+    if (newFilters.agentId !== "all") params.set("agentId", newFilters.agentId)
+    if (newFilters.startDate) params.set("startDate", newFilters.startDate.toISOString().split('T')[0]!)
+    if (newFilters.endDate) params.set("endDate", newFilters.endDate.toISOString().split('T')[0]!)
+    if (newQuery) params.set("q", newQuery)
+    if (newPage && newPage > 0) params.set("page", newPage.toString())
+    
+    const queryString = params.toString()
+    router.replace(`${pathname}${queryString ? `?${queryString}` : ''}`, { scroll: false })
+  }, [pathname, router])
+  
   // Filters are always visible now
   
   // Refs
@@ -304,18 +335,26 @@ export function AlgoliaSearchPanel({
     }
   }
 
+  // Sync filters to URL when they change
+  useEffect(() => {
+    updateUrlParams(filters, debouncedQuery, currentPage)
+  }, [filters, debouncedQuery, currentPage, updateUrlParams])
+  
   // Clear all filters
   const handleClearFilters = () => {
-    setFilters({
+    const clearedFilters = {
       status: "all",
       direction: "all",
       agentId: "all",
       startDate: undefined,
       endDate: undefined,
-    })
+    }
+    setFilters(clearedFilters)
     setQuery("")
     setDebouncedQuery("")
     setCurrentPage(0)
+    // Clear URL params
+    router.replace(pathname, { scroll: false })
   }
 
   // Get suggestion icon

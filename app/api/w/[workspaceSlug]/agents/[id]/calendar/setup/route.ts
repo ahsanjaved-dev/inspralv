@@ -207,6 +207,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       google_credential_id: credential.id,
       calendar_id: newCalendarId,
       calendar_name: calendarName, // Store the human-readable calendar name
+      created_with_email: credential.google_email, // Store the Google email for smart reactivation
       timezone,
       slot_duration_minutes,
       buffer_between_slots_minutes,

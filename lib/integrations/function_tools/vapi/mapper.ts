@@ -12,6 +12,13 @@ import { createDtmfTool } from './tools/call-control/dtmf'
 import { createFunctionTool } from './tools/api/function'
 import { createApiRequestTool } from './tools/api/api-request'
 import { createCodeTool } from './tools/code/code'
+import { 
+  CALENDAR_TOOL_NAMES, 
+  getBookAppointmentTool, 
+  getCancelAppointmentTool, 
+  getRescheduleAppointmentTool, 
+  getCheckAvailabilityTool 
+} from '@/lib/integrations/calendar/vapi-tools'
 
 // Integration tool types that require a credential
 const INTEGRATION_TOOL_TYPES = [
@@ -30,6 +37,32 @@ const INTEGRATION_TOOL_TYPES = [
 
 function isIntegrationToolType(type: string): boolean {
   return INTEGRATION_TOOL_TYPES.includes(type as typeof INTEGRATION_TOOL_TYPES[number])
+}
+
+/**
+ * Check if a tool is a calendar tool
+ */
+function isCalendarTool(toolName: string): boolean {
+  return CALENDAR_TOOL_NAMES.includes(toolName as typeof CALENDAR_TOOL_NAMES[number])
+}
+
+/**
+ * Get dynamic calendar tool definition with today's date
+ * This ensures the AI always knows the current date when using calendar tools
+ */
+function getDynamicCalendarToolDescription(toolName: string): string | undefined {
+  switch (toolName) {
+    case 'book_appointment':
+      return getBookAppointmentTool().description
+    case 'cancel_appointment':
+      return getCancelAppointmentTool().description
+    case 'reschedule_appointment':
+      return getRescheduleAppointmentTool().description
+    case 'check_availability':
+      return getCheckAvailabilityTool().description
+    default:
+      return undefined
+  }
 }
 
 // ============================================================================
@@ -150,9 +183,19 @@ export function mapFunctionToolToVapi(
   }
 
   // Handle custom function tools
+  // For calendar tools, use dynamic descriptions that include today's date
+  let toolDescription = tool.description
+  if (isCalendarTool(tool.name)) {
+    const dynamicDescription = getDynamicCalendarToolDescription(tool.name)
+    if (dynamicDescription) {
+      toolDescription = dynamicDescription
+      console.log(`[VapiMapper] Using dynamic description for calendar tool: ${tool.name}, today: ${new Date().toISOString().split('T')[0]}`)
+    }
+  }
+  
   return createFunctionTool({
     name: tool.name,
-    description: tool.description,
+    description: toolDescription,
     parameters: tool.parameters as ToolParameterSchema,
     server: tool.server_url || defaultServerUrl
       ? { url: tool.server_url || defaultServerUrl! }

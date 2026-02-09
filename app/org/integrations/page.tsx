@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +17,9 @@ import {
   Building2,
   AlertCircle,
   MoreVertical,
-  ExternalLink,
+  RefreshCw,
+  CheckCircle2,
+  Calendar,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -39,10 +42,12 @@ import {
   usePartnerIntegrations,
   useDeletePartnerIntegration,
   useSetDefaultIntegration,
+  useGoogleCredentialsStatus,
   type PartnerIntegration,
 } from "@/lib/hooks/use-partner-integrations"
 import { AddIntegrationDialog } from "@/components/org/integrations/add-integration-dialog"
 import { ManageIntegrationDialog } from "@/components/org/integrations/manage-integration-dialog"
+import { GoogleAccountSwitchDialog } from "@/components/org/integrations/google-account-switch-dialog"
 import { toast } from "sonner"
 
 // Provider configuration
@@ -80,7 +85,9 @@ const PROVIDERS = {
 }
 
 export default function OrgIntegrationsPage() {
+  const searchParams = useSearchParams()
   const { data: integrations, isLoading, error } = usePartnerIntegrations()
+  const { data: googleStatus, refetch: refetchGoogleStatus } = useGoogleCredentialsStatus()
   const deleteIntegration = useDeletePartnerIntegration()
   const setDefault = useSetDefaultIntegration()
 
@@ -91,6 +98,43 @@ export default function OrgIntegrationsPage() {
   const [selectedIntegration, setSelectedIntegration] = useState<PartnerIntegration | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [integrationToDelete, setIntegrationToDelete] = useState<PartnerIntegration | null>(null)
+  const [googleSwitchDialogOpen, setGoogleSwitchDialogOpen] = useState(false)
+
+  // Handle URL params from OAuth callback
+  useEffect(() => {
+    const success = searchParams.get('success')
+    const errorParam = searchParams.get('error')
+    const reactivated = searchParams.get('reactivated')
+    const deactivated = searchParams.get('deactivated')
+
+    if (success === 'google_calendar_connected') {
+      // Refetch Google status after successful connection
+      refetchGoogleStatus()
+      
+      if (reactivated && parseInt(reactivated) > 0) {
+        toast.success(`Google Calendar connected! ${reactivated} calendar configuration(s) were automatically restored.`)
+      } else if (deactivated && parseInt(deactivated) > 0) {
+        toast.success(`Google Calendar connected! ${deactivated} previous configuration(s) were deactivated.`)
+      } else {
+        toast.success('Google Calendar connected successfully!')
+      }
+      
+      // Clean up URL params
+      const url = new URL(window.location.href)
+      url.searchParams.delete('success')
+      url.searchParams.delete('reactivated')
+      url.searchParams.delete('deactivated')
+      window.history.replaceState({}, '', url.toString())
+    }
+
+    if (errorParam) {
+      toast.error(`Failed to connect Google Calendar: ${errorParam}`)
+      // Clean up URL params
+      const url = new URL(window.location.href)
+      url.searchParams.delete('error')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [searchParams, refetchGoogleStatus])
 
   // Group integrations by provider
   const integrationsByProvider = integrations?.reduce((acc, integration) => {
@@ -136,6 +180,20 @@ export default function OrgIntegrationsPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete integration")
     }
+  }
+
+  const handleGoogleConnect = () => {
+    // If there's an existing connection with agents, show the switch dialog
+    if (googleStatus?.isConnected && googleStatus?.activeAgentsCount > 0) {
+      setGoogleSwitchDialogOpen(true)
+    } else {
+      // Otherwise, directly redirect to OAuth
+      window.location.href = '/api/auth/google-calendar/authorize'
+    }
+  }
+
+  const handleGoogleSwitchConfirm = () => {
+    window.location.href = '/api/auth/google-calendar/authorize'
   }
 
   return (
@@ -197,6 +255,7 @@ export default function OrgIntegrationsPage() {
             const providerConfig = PROVIDERS[provider]
             const providerIntegrations = integrationsByProvider[provider] || []
             const hasIntegrations = providerIntegrations.length > 0
+            const isGoogleCalendar = provider === "google_calendar"
 
             return (
               <Card key={provider}>
@@ -276,16 +335,45 @@ export default function OrgIntegrationsPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {/* Google Calendar: Show Connect button */}
-                            {provider === "google_calendar" && (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => window.location.href = '/api/auth/google-calendar/authorize'}
-                              >
-                                <ExternalLink className="h-4 w-4 mr-1" />
-                                Connect Google
-                              </Button>
+                            {/* Google Calendar: Show connected account status and connect button */}
+                            {isGoogleCalendar && (
+                              <div className="flex items-center gap-3">
+                                {googleStatus?.isConnected ? (
+                                  <>
+                                    <div className="text-right mr-2">
+                                      <div className="flex items-center gap-1.5 text-sm">
+                                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                                        <span className="font-medium text-foreground">
+                                          {googleStatus.googleEmail}
+                                        </span>
+                                      </div>
+                                      {googleStatus.activeAgentsCount > 0 && (
+                                        <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
+                                          <Calendar className="h-3 w-3" />
+                                          {googleStatus.activeAgentsCount} agent{googleStatus.activeAgentsCount !== 1 ? "s" : ""} configured
+                                        </p>
+                                      )}
+                                    </div>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={handleGoogleConnect}
+                                    >
+                                      <RefreshCw className="h-4 w-4 mr-1" />
+                                      Switch Account
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={handleGoogleConnect}
+                                  >
+                                    <CheckCircle2 className="h-4 w-4 mr-1" />
+                                    Connect Google
+                                  </Button>
+                                )}
+                              </div>
                             )}
                             <Button
                               variant="outline"
@@ -344,6 +432,14 @@ export default function OrgIntegrationsPage() {
         integration={selectedIntegration}
       />
 
+      {/* Google Account Switch Dialog */}
+      <GoogleAccountSwitchDialog
+        open={googleSwitchDialogOpen}
+        onOpenChange={setGoogleSwitchDialogOpen}
+        status={googleStatus || null}
+        onConfirm={handleGoogleSwitchConfirm}
+      />
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
@@ -378,4 +474,3 @@ export default function OrgIntegrationsPage() {
     </div>
   )
 }
-

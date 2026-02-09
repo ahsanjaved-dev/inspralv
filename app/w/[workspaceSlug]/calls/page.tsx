@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect, useMemo } from "react"
-import { useRouter, useParams } from "next/navigation"
+import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -102,15 +102,20 @@ export default function CallsPage() {
   // Fallback/DB state - default to today's date
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // Get URL search params for filter persistence
+  const searchParams = useSearchParams()
+  
   const [dbFilters, setDbFilters] = useState<FallbackFilters>(() => {
-    const today = new Date()
+    // Read initial filters from URL params (no default dates)
+    const startDateStr = searchParams.get("startDate")
+    const endDateStr = searchParams.get("endDate")
     return {
-      search: "",
-      status: "all",
-      direction: "all",
-      agentId: "all",
-      startDate: startOfDay(today),
-      endDate: endOfDay(today),
+      search: searchParams.get("q") || "",
+      status: searchParams.get("status") || "all",
+      direction: searchParams.get("direction") || "all",
+      agentId: searchParams.get("agentId") || "all",
+      startDate: startDateStr ? startOfDay(new Date(startDateStr)) : undefined,
+      endDate: endDateStr ? endOfDay(new Date(endDateStr)) : undefined,
     }
   })
   
@@ -289,9 +294,24 @@ export default function CallsPage() {
     }
   }, [])
 
-  // Handle DB filter changes
+  // Handle DB filter changes - persist filters to URL for navigation persistence
   const handleDbFiltersChange = useCallback((filters: FallbackFilters) => {
     setDbFilters(filters)
+    
+    // Build URL params from filters
+    const params = new URLSearchParams()
+    if (filters.search) params.set("q", filters.search)
+    if (filters.status && filters.status !== "all") params.set("status", filters.status)
+    if (filters.direction && filters.direction !== "all") params.set("direction", filters.direction)
+    if (filters.agentId && filters.agentId !== "all") params.set("agentId", filters.agentId)
+    if (filters.startDate) params.set("startDate", filters.startDate.toISOString().split("T")[0]!)
+    if (filters.endDate) params.set("endDate", filters.endDate.toISOString().split("T")[0]!)
+    
+    // Update URL without triggering navigation (preserves scroll position)
+    const newUrl = params.toString() 
+      ? `${window.location.pathname}?${params.toString()}`
+      : window.location.pathname
+    window.history.replaceState({}, "", newUrl)
   }, [])
 
   // Navigate to org integrations
@@ -299,8 +319,10 @@ export default function CallsPage() {
     router.push("/org/integrations")
   }, [router])
 
-  // Handle view call detail - navigate to detail page
+  // Handle view call detail - navigate to detail page (preserves filters via URL)
   const handleViewCallDetail = useCallback((conversationId: string) => {
+    // The filters are already in the URL (via handleDbFiltersChange), 
+    // so when user navigates back, they'll be preserved
     router.push(`/w/${workspaceSlug}/calls/${conversationId}`)
   }, [router, workspaceSlug])
   
@@ -541,13 +563,13 @@ export default function CallsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="stat-label">Total Calls</p>
-              <p className="stat-value">
+              <div className="stat-value">
                 {isCurrentLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
                   filteredStats.total
                 )}
-              </p>
+              </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
               <Phone className="w-5 h-5 text-primary" />
@@ -559,13 +581,13 @@ export default function CallsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="stat-label">Completed</p>
-              <p className="stat-value">
+              <div className="stat-value">
                 {isCurrentLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
                   filteredStats.completed
                 )}
-              </p>
+              </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center">
               <CheckCircle className="w-5 h-5 text-green-600" />
@@ -577,13 +599,13 @@ export default function CallsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="stat-label">Failed</p>
-              <p className="stat-value">
+              <div className="stat-value">
                 {isCurrentLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
                   filteredStats.failed
                 )}
-              </p>
+              </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
               <XCircle className="w-5 h-5 text-red-600" />
@@ -595,13 +617,13 @@ export default function CallsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="stat-label">Avg Duration</p>
-              <p className="stat-value">
+              <div className="stat-value">
                 {isCurrentLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
                   formatDurationDisplay(filteredStats.avgDurationSeconds)
                 )}
-              </p>
+              </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
               <Clock className="w-5 h-5 text-blue-600" />
@@ -681,7 +703,7 @@ export default function CallsPage() {
                   <TableHead>Status</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Cost</TableHead>
-                  <TableHead>Time</TableHead>
+                  <TableHead>Date & Time</TableHead>
                   <TableHead className="w-20">Details</TableHead>
                 </TableRow>
               </TableHeader>
@@ -709,7 +731,7 @@ export default function CallsPage() {
                   <TableHead>Status</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Cost</TableHead>
-                  <TableHead>Time</TableHead>
+                  <TableHead>Date & Time</TableHead>
                   <TableHead className="w-20">Details</TableHead>
                 </TableRow>
               </TableHeader>
@@ -799,7 +821,7 @@ export default function CallsPage() {
                       {(() => {
                         const timestamp = getDisplayTimestamp(call)
                         if (timestamp) {
-                          return formatDistanceToNow(timestamp, { addSuffix: true })
+                          return format(timestamp, "d MMM yyyy, HH:mm")
                         }
                         return "N/A"
                       })()}

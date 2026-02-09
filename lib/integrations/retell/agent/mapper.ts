@@ -7,6 +7,7 @@ import type { AIAgent, AgentConfig, FunctionTool } from "@/types/database.types"
 import { mapFunctionToolsToRetell } from "@/lib/integrations/function_tools/retell"
 import type { RetellGeneralTool } from "@/lib/integrations/function_tools/retell/types"
 import { env } from "@/lib/env"
+import { generateCalendarSystemPromptContext, CALENDAR_TOOL_NAMES } from "@/lib/integrations/calendar/vapi-tools"
 
 // Re-export for backwards compatibility
 export type { RetellGeneralTool }
@@ -314,6 +315,23 @@ export function mapToRetellLLM(agent: AIAgent): RetellLLMPayload {
 
   // System prompt
   let systemPrompt = config.system_prompt || ""
+  
+  // Check if agent has calendar tools to inject date context
+  const allTools = (config.tools || []) as FunctionTool[]
+  const hasCalendarTools = allTools.some((t) => 
+    CALENDAR_TOOL_NAMES.includes(t.name as typeof CALENDAR_TOOL_NAMES[number])
+  )
+  
+  if (hasCalendarTools) {
+    // Get timezone from calendar settings if available
+    const calendarTimezone = (config as any)?.calendar_settings?.timezone || "UTC"
+    
+    // Append calendar context with current date
+    const calendarContext = generateCalendarSystemPromptContext(calendarTimezone)
+    systemPrompt = systemPrompt + calendarContext
+    
+    console.log("[RetellMapper] Agent has calendar tools, injecting date context. Today:", new Date().toISOString().split("T")[0])
+  }
   
   // Check if agent has custom function tools
   const hasCustomTools = config.tools && config.tools.length > 0 && hasCustomFunctionTools(config.tools)

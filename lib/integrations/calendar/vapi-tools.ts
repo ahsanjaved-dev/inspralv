@@ -6,6 +6,32 @@
 import type { FunctionTool, FunctionToolParameters } from '@/types/database.types'
 
 // =============================================================================
+// DATE HELPERS
+// =============================================================================
+
+/**
+ * Get today's date in YYYY-MM-DD format
+ * Used to inject current date into tool descriptions so AI knows the correct date
+ */
+function getTodayDate(): string {
+  const now = new Date()
+  return now.toISOString().split('T')[0]!
+}
+
+/**
+ * Get formatted today's date for display (e.g., "Monday, February 9, 2026")
+ */
+function getFormattedTodayDate(): string {
+  const now = new Date()
+  return now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
+// =============================================================================
 // TOOL PARAMETERS
 // =============================================================================
 
@@ -27,7 +53,7 @@ const bookAppointmentParameters: FunctionToolParameters = {
     },
     preferred_date: {
       type: 'string',
-      description: 'Preferred date for the appointment in YYYY-MM-DD format',
+      description: 'Preferred date for the appointment in YYYY-MM-DD format. MUST be today or a future date.',
     },
     preferred_time: {
       type: 'string',
@@ -106,16 +132,96 @@ const checkAvailabilityParameters: FunctionToolParameters = {
 }
 
 // =============================================================================
-// TOOL DEFINITIONS
+// TOOL DEFINITIONS (with dynamic date injection)
 // =============================================================================
 
 /**
- * Book Appointment Tool Definition
+ * Generate Book Appointment Tool Definition with current date
+ * The date is injected dynamically so the AI knows what "today" is
+ */
+export function getBookAppointmentTool(): Omit<FunctionTool, 'id'> {
+  const today = getTodayDate()
+  const formattedToday = getFormattedTodayDate()
+  
+  return {
+    name: 'book_appointment',
+    description:
+      `Book a new appointment for the caller. Use this when the caller wants to schedule or book an appointment. ` +
+      `IMPORTANT: Today's date is ${formattedToday} (${today}). All dates MUST be ${today} or later. ` +
+      `NEVER book appointments in the past. If the caller mentions a date that seems like it might be in the past, clarify with them. ` +
+      `You must collect the caller's full name, email address, preferred date and time before using this tool. ` +
+      `If the requested time is not available, the tool will return alternative available slots.`,
+    parameters: bookAppointmentParameters,
+    tool_type: 'function',
+    enabled: true,
+  }
+}
+
+/**
+ * Generate Cancel Appointment Tool Definition
+ */
+export function getCancelAppointmentTool(): Omit<FunctionTool, 'id'> {
+  return {
+    name: 'cancel_appointment',
+    description:
+      'Cancel an existing appointment. Use this when the caller wants to cancel their scheduled appointment. ' +
+      'You need at least the caller\'s email to look up their appointment. ' +
+      'If they have multiple appointments, ask for the appointment date to identify the correct one.',
+    parameters: cancelAppointmentParameters,
+    tool_type: 'function',
+    enabled: true,
+  }
+}
+
+/**
+ * Generate Reschedule Appointment Tool Definition with current date
+ */
+export function getRescheduleAppointmentTool(): Omit<FunctionTool, 'id'> {
+  const today = getTodayDate()
+  const formattedToday = getFormattedTodayDate()
+  
+  return {
+    name: 'reschedule_appointment',
+    description:
+      `Reschedule an existing appointment to a new date and time. Use this when the caller wants to change their appointment. ` +
+      `IMPORTANT: Today's date is ${formattedToday} (${today}). The NEW date MUST be ${today} or later. ` +
+      `You need the caller's email to find their existing appointment, and the new preferred date and time. ` +
+      `If the new time is not available, the tool will return alternative available slots.`,
+    parameters: rescheduleAppointmentParameters,
+    tool_type: 'function',
+    enabled: true,
+  }
+}
+
+/**
+ * Generate Check Availability Tool Definition with current date
+ */
+export function getCheckAvailabilityTool(): Omit<FunctionTool, 'id'> {
+  const today = getTodayDate()
+  const formattedToday = getFormattedTodayDate()
+  
+  return {
+    name: 'check_availability',
+    description:
+      `Check available appointment slots for a specific date. Use this to find available times before booking. ` +
+      `IMPORTANT: Today's date is ${formattedToday} (${today}). Only check availability for ${today} or future dates. ` +
+      `Returns available time slots within the agent's configured business hours.`,
+    parameters: checkAvailabilityParameters,
+    tool_type: 'function',
+    enabled: true,
+  }
+}
+
+/**
+ * Static tool definitions for backwards compatibility
+ * NOTE: These use static descriptions. Prefer using the get*Tool() functions above
+ * for dynamic date injection.
  */
 export const BOOK_APPOINTMENT_TOOL: Omit<FunctionTool, 'id'> = {
   name: 'book_appointment',
   description:
     'Book a new appointment for the caller. Use this when the caller wants to schedule or book an appointment. ' +
+    'IMPORTANT: Only book appointments for TODAY or FUTURE dates. NEVER book in the past. ' +
     'You must collect the caller\'s full name, email address, preferred date and time before using this tool. ' +
     'If the requested time is not available, the tool will return alternative available slots.',
   parameters: bookAppointmentParameters,
@@ -123,9 +229,6 @@ export const BOOK_APPOINTMENT_TOOL: Omit<FunctionTool, 'id'> = {
   enabled: true,
 }
 
-/**
- * Cancel Appointment Tool Definition
- */
 export const CANCEL_APPOINTMENT_TOOL: Omit<FunctionTool, 'id'> = {
   name: 'cancel_appointment',
   description:
@@ -137,13 +240,11 @@ export const CANCEL_APPOINTMENT_TOOL: Omit<FunctionTool, 'id'> = {
   enabled: true,
 }
 
-/**
- * Reschedule Appointment Tool Definition
- */
 export const RESCHEDULE_APPOINTMENT_TOOL: Omit<FunctionTool, 'id'> = {
   name: 'reschedule_appointment',
   description:
     'Reschedule an existing appointment to a new date and time. Use this when the caller wants to change their appointment. ' +
+    'IMPORTANT: The NEW date must be TODAY or in the FUTURE. NEVER reschedule to a past date. ' +
     'You need the caller\'s email to find their existing appointment, and the new preferred date and time. ' +
     'If the new time is not available, the tool will return alternative available slots.',
   parameters: rescheduleAppointmentParameters,
@@ -151,13 +252,11 @@ export const RESCHEDULE_APPOINTMENT_TOOL: Omit<FunctionTool, 'id'> = {
   enabled: true,
 }
 
-/**
- * Check Availability Tool Definition
- */
 export const CHECK_AVAILABILITY_TOOL: Omit<FunctionTool, 'id'> = {
   name: 'check_availability',
   description:
     'Check available appointment slots for a specific date. Use this to find available times before booking. ' +
+    'IMPORTANT: Only check dates that are TODAY or in the FUTURE. ' +
     'Returns available time slots within the agent\'s configured business hours.',
   parameters: checkAvailabilityParameters,
   tool_type: 'function',
@@ -165,7 +264,21 @@ export const CHECK_AVAILABILITY_TOOL: Omit<FunctionTool, 'id'> = {
 }
 
 /**
- * All calendar tools grouped
+ * Get all calendar tools with dynamic date injection
+ * Use this function instead of CALENDAR_TOOLS for proper date awareness
+ */
+export function getCalendarTools(): Omit<FunctionTool, 'id'>[] {
+  return [
+    getBookAppointmentTool(),
+    getCancelAppointmentTool(),
+    getRescheduleAppointmentTool(),
+    getCheckAvailabilityTool(),
+  ]
+}
+
+/**
+ * All calendar tools grouped (static - for backwards compatibility)
+ * NOTE: Prefer using getCalendarTools() for dynamic date injection
  */
 export const CALENDAR_TOOLS = [
   BOOK_APPOINTMENT_TOOL,
@@ -248,7 +361,8 @@ export function calendarToolToVapiFormat(
 }
 
 /**
- * Generate all calendar tools in VAPI format
+ * Generate all calendar tools in VAPI format with dynamic date injection
+ * This ensures the AI knows today's date when making calendar decisions
  */
 export function generateVapiCalendarTools(serverUrl: string): Array<{
   type: 'function'
@@ -262,7 +376,9 @@ export function generateVapiCalendarTools(serverUrl: string): Array<{
   }
   async?: boolean
 }> {
-  return CALENDAR_TOOLS.map((tool) => calendarToolToVapiFormat(tool, serverUrl))
+  // Use dynamic tool definitions with current date
+  const dynamicTools = getCalendarTools()
+  return dynamicTools.map((tool) => calendarToolToVapiFormat(tool, serverUrl))
 }
 
 // =============================================================================
@@ -298,12 +414,14 @@ export function calendarToolToMCPFormat(
 }
 
 /**
- * Generate all calendar tools in MCP format for Retell
+ * Generate all calendar tools in MCP format for Retell with dynamic date injection
  * @param webhookUrl - The MCP execute webhook URL (e.g., /api/webhooks/mcp/execute)
  * @returns Array of calendar tools in MCP format
  */
 export function generateMCPCalendarTools(webhookUrl: string): MCPToolInput[] {
-  return CALENDAR_TOOLS.map((tool) => calendarToolToMCPFormat(tool, webhookUrl))
+  // Use dynamic tool definitions with current date
+  const dynamicTools = getCalendarTools()
+  return dynamicTools.map((tool) => calendarToolToMCPFormat(tool, webhookUrl))
 }
 
 /**
@@ -316,8 +434,51 @@ export function getEnabledCalendarToolsForMCP(
   enabledTools: string[],
   webhookUrl: string
 ): MCPToolInput[] {
-  return CALENDAR_TOOLS
+  // Use dynamic tool definitions with current date
+  const dynamicTools = getCalendarTools()
+  return dynamicTools
     .filter((tool) => enabledTools.includes(tool.name))
     .map((tool) => calendarToolToMCPFormat(tool, webhookUrl))
+}
+
+// =============================================================================
+// CALENDAR SYSTEM PROMPT CONTEXT
+// =============================================================================
+
+/**
+ * Generate calendar context to be appended to agent system prompts
+ * This ensures the AI knows today's date and follows proper date validation
+ */
+export function generateCalendarSystemPromptContext(timezone?: string): string {
+  const today = getTodayDate()
+  const formattedToday = getFormattedTodayDate()
+  const tz = timezone || 'UTC'
+  
+  return `
+
+## CALENDAR & APPOINTMENT BOOKING RULES
+
+**CRITICAL DATE INFORMATION:**
+- Today's date is: ${formattedToday}
+- Today in YYYY-MM-DD format: ${today}
+- Timezone: ${tz}
+
+**MANDATORY RULES:**
+1. ALL appointments MUST be scheduled for TODAY (${today}) or FUTURE dates
+2. NEVER accept or book appointments for dates before ${today}
+3. If a caller mentions a date like "February 10" without a year, assume the CURRENT or NEXT occurrence of that date (never past)
+4. If a date sounds like it might be in the past, ASK the caller to confirm: "Just to confirm, you'd like to schedule for [date] in [year], correct?"
+5. Always verify availability BEFORE confirming any booking
+
+**DATE FORMAT:**
+- Use YYYY-MM-DD format for dates (e.g., ${today})
+- Use HH:MM format for times in 24-hour format (e.g., 14:30 for 2:30 PM)
+
+**BOOKING FLOW:**
+1. Collect: Full name, email, preferred date and time
+2. Check availability using check_availability tool
+3. If available, book using book_appointment tool
+4. If not available, suggest alternative times from the response
+`
 }
 

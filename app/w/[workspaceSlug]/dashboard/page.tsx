@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -25,9 +25,10 @@ import {
   CheckCircle,
   XCircle,
   Monitor,
+  CalendarIcon,
 } from "lucide-react"
 import Link from "next/link"
-import { useDashboardData } from "@/lib/hooks/use-dashboard-data"
+import { useDashboardData, type DashboardDateFilter } from "@/lib/hooks/use-dashboard-data"
 import { useDashboardCharts, formatDuration, formatRelativeTime } from "@/lib/hooks/use-dashboard-charts"
 import {
   Select,
@@ -36,10 +37,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import { format } from "date-fns"
+import { format, startOfDay, endOfDay } from "date-fns"
 
 // ============================================================================
 // ROLE BADGE COMPONENT
@@ -403,12 +410,31 @@ function RecentCallsList({ calls, isLoading, baseUrl }: RecentCallsProps) {
 // MAIN DASHBOARD PAGE
 // ============================================================================
 
+// Filter label mapping
+const filterLabels: Record<DashboardDateFilter, string> = {
+  today: "Today",
+  "7d": "Last 7 Days",
+  "30d": "Last 30 Days",
+  manual: "Custom Range",
+  all: "All Time",
+}
+
 export default function WorkspaceDashboardPage() {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
   const baseUrl = `/w/${workspaceSlug}`
 
-  const [chartDays, setChartDays] = useState<number>(7)
+  // Date filter state - default to "today"
+  const [dateFilter, setDateFilter] = useState<DashboardDateFilter>("today")
+  const [manualStartDate, setManualStartDate] = useState<Date | undefined>(undefined)
+  const [manualEndDate, setManualEndDate] = useState<Date | undefined>(undefined)
+
+  // Compute filter options for both hooks (shared filter)
+  const filterOptions = useMemo(() => ({
+    filter: dateFilter,
+    startDate: dateFilter === "manual" ? manualStartDate : undefined,
+    endDate: dateFilter === "manual" ? manualEndDate : undefined,
+  }), [dateFilter, manualStartDate, manualEndDate])
 
   const { 
     workspace: workspaceStats, 
@@ -418,12 +444,13 @@ export default function WorkspaceDashboardPage() {
     isLoadingWorkspace,
     isLoadingPartner,
     error 
-  } = useDashboardData()
+  } = useDashboardData(filterOptions)
 
+  // Charts now use the same filter as workspace overview
   const { 
     data: chartsData, 
     isLoading: isLoadingCharts 
-  } = useDashboardCharts(chartDays)
+  } = useDashboardCharts(filterOptions)
 
   const { workspaceRole, partnerRole, canViewPartnerStats, isWorkspaceAdmin, isPartnerAdmin } = roles
 
@@ -472,9 +499,88 @@ export default function WorkspaceDashboardPage() {
 
       {/* Workspace Stats - Always visible for workspace members */}
       <div>
-        <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-lg font-semibold">Workspace Overview</h2>
-          <Badge variant="secondary" className="text-xs">This Workspace</Badge>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">Workspace Overview</h2>
+            <Badge variant="secondary" className="text-xs">This Workspace</Badge>
+          </div>
+          
+          {/* Date Filter Controls */}
+          <div className="flex items-center gap-2">
+            <Select
+              value={dateFilter}
+              onValueChange={(value) => {
+                setDateFilter(value as DashboardDateFilter)
+                // Clear manual dates if not in manual mode
+                if (value !== "manual") {
+                  setManualStartDate(undefined)
+                  setManualEndDate(undefined)
+                }
+              }}
+            >
+              <SelectTrigger className="w-[140px] h-9">
+                <SelectValue placeholder="Select period" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="7d">Last 7 Days</SelectItem>
+                <SelectItem value="30d">Last 30 Days</SelectItem>
+                <SelectItem value="manual">Custom Range</SelectItem>
+                <SelectItem value="all">All Time</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            {/* Manual Date Pickers */}
+            {dateFilter === "manual" && (
+              <div className="flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "h-9 w-[130px] justify-start text-left font-normal",
+                        !manualStartDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {manualStartDate ? format(manualStartDate, "MMM d, yyyy") : "Start"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={manualStartDate}
+                      onSelect={(date) => setManualStartDate(date ? startOfDay(date) : undefined)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <span className="text-muted-foreground">to</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "h-9 w-[130px] justify-start text-left font-normal",
+                        !manualEndDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {manualEndDate ? format(manualEndDate, "MMM d, yyyy") : "End"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={manualEndDate}
+                      onSelect={(date) => setManualEndDate(date ? endOfDay(date) : undefined)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
+          </div>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -490,31 +596,31 @@ export default function WorkspaceDashboardPage() {
 
           {/* Conversations */}
           <StatCard
-            label="Total Conversations"
-            value={workspaceStats?.total_conversations ?? 0}
+            label="Conversations"
+            value={workspaceStats?.conversations_this_month ?? 0}
             icon={MessageSquare}
             iconClassName="bg-blue-500/10 text-blue-600"
-            trend="All time"
+            trend={filterLabels[dateFilter]}
             isLoading={isLoadingWorkspace}
           />
 
-          {/* Minutes this month */}
+          {/* Minutes */}
           <StatCard
-            label="Minutes This Month"
+            label="Minutes"
             value={Math.round(workspaceStats?.minutes_this_month ?? 0)}
             icon={Clock}
             iconClassName="bg-amber-500/10 text-amber-600"
-            trend="Current billing period"
+            trend={filterLabels[dateFilter]}
             isLoading={isLoadingWorkspace}
           />
 
-          {/* Cost this month */}
+          {/* Cost */}
           <StatCard
-            label="Cost This Month"
+            label="Cost"
             value={`$${(workspaceStats?.cost_this_month ?? 0).toFixed(2)}`}
             icon={DollarSign}
             iconClassName="bg-green-500/10 text-green-600"
-            trend="Current billing period"
+            trend={filterLabels[dateFilter]}
             isLoading={isLoadingWorkspace}
           />
         </div>
@@ -576,19 +682,9 @@ export default function WorkspaceDashboardPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Calls Over Time</CardTitle>
-              <Select 
-                value={chartDays.toString()} 
-                onValueChange={(value) => setChartDays(parseInt(value, 10))}
-              >
-                <SelectTrigger className="w-32 h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="7">Last 7 days</SelectItem>
-                  <SelectItem value="14">Last 14 days</SelectItem>
-                  <SelectItem value="30">Last 30 days</SelectItem>
-                </SelectContent>
-              </Select>
+              <Badge variant="secondary">
+                {filterLabels[dateFilter]}
+              </Badge>
             </div>
           </CardHeader>
           <CardContent>
@@ -605,7 +701,7 @@ export default function WorkspaceDashboardPage() {
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Call Outcomes</CardTitle>
               <Badge variant="secondary">
-                Last {chartDays} days
+                {filterLabels[dateFilter]}
               </Badge>
             </div>
           </CardHeader>

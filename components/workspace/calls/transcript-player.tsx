@@ -599,7 +599,7 @@ export function TranscriptPlayer({
                           ? "text-emerald-600 dark:text-emerald-400" 
                           : "text-violet-600 dark:text-violet-400"
                       )}>
-                        {isUser ? "Human" : "Agent"}
+                        {isUser ? "User" : "Agent"}
                       </span>
                       
                       {/* Timestamp */}

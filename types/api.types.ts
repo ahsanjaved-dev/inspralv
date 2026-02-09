@@ -44,7 +44,7 @@ export const calendarSettingsSchema = z.object({
   preferred_days: z.array(z.enum(["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"])).optional().default(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]),
   preferred_hours_start: z.string().optional().default("09:00"),
   preferred_hours_end: z.string().optional().default("17:00"),
-  timezone: z.string().optional().default("America/New_York"),
+  timezone: z.string().optional().default("Australia/Melbourne"),
   min_notice_hours: z.number().min(0).max(168).optional().default(0),
   max_advance_days: z.number().min(1).max(365).optional().default(60),
   // Email notification settings

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { useParams } from "next/navigation"
+import { type DashboardDateFilter, type DashboardFilterOptions } from "./use-dashboard-data"
 
 // ============================================================================
 // TYPES
@@ -41,6 +42,7 @@ export interface DashboardChartsData {
     days: number
     start_date: string
     end_date: string
+    filter: DashboardDateFilter
   }
   summary: {
     total_calls: number
@@ -57,15 +59,31 @@ export interface DashboardChartsData {
 // HOOK: Fetch dashboard chart data
 // ============================================================================
 
-export function useDashboardCharts(days: number = 7) {
+export function useDashboardCharts(filterOptions?: DashboardFilterOptions) {
   const { workspaceSlug } = useParams()
+  
+  // Default to "today" filter if not provided
+  const filter = filterOptions?.filter ?? "today"
+  const startDate = filterOptions?.startDate
+  const endDate = filterOptions?.endDate
+
+  // Build query string for charts API
+  const buildChartsUrl = () => {
+    const params = new URLSearchParams()
+    params.set("filter", filter)
+    if (filter === "manual" && startDate) {
+      params.set("startDate", startDate.toISOString())
+    }
+    if (filter === "manual" && endDate) {
+      params.set("endDate", endDate.toISOString())
+    }
+    return `/api/w/${workspaceSlug}/dashboard/charts?${params.toString()}`
+  }
 
   return useQuery<DashboardChartsData>({
-    queryKey: ["dashboard-charts", workspaceSlug, days],
+    queryKey: ["dashboard-charts", workspaceSlug, filter, startDate?.toISOString(), endDate?.toISOString()],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/w/${workspaceSlug}/dashboard/charts?days=${days}`
-      )
+      const res = await fetch(buildChartsUrl())
 
       if (!res.ok) {
         throw new Error("Failed to fetch dashboard charts")

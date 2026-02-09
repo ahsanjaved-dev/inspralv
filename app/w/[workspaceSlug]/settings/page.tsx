@@ -49,8 +49,14 @@ import { PasswordStrengthIndicator } from "@/components/auth/password-strength"
 import { validatePassword } from "@/lib/auth/password"
 import { CustomVariablesSection } from "@/components/workspace/settings/custom-variables-section"
 
-// Common timezones
+// Common timezones - Australia/Melbourne is the default
 const timezones = [
+  { value: "Australia/Melbourne", label: "Melbourne (AEST) - Default" },
+  { value: "Australia/Sydney", label: "Sydney (AEST)" },
+  { value: "Australia/Brisbane", label: "Brisbane (AEST)" },
+  { value: "Australia/Perth", label: "Perth (AWST)" },
+  { value: "Australia/Adelaide", label: "Adelaide (ACST)" },
+  { value: "Pacific/Auckland", label: "Auckland (NZST)" },
   { value: "UTC", label: "UTC (Coordinated Universal Time)" },
   { value: "America/New_York", label: "Eastern Time (US & Canada)" },
   { value: "America/Chicago", label: "Central Time (US & Canada)" },
@@ -75,10 +81,6 @@ const timezones = [
   { value: "Asia/Shanghai", label: "Shanghai (CST)" },
   { value: "Asia/Hong_Kong", label: "Hong Kong (HKT)" },
   { value: "Asia/Seoul", label: "Seoul (KST)" },
-  { value: "Australia/Sydney", label: "Sydney (AEST)" },
-  { value: "Australia/Melbourne", label: "Melbourne (AEST)" },
-  { value: "Australia/Perth", label: "Perth (AWST)" },
-  { value: "Pacific/Auckland", label: "Auckland (NZST)" },
 ]
 
 export default function WorkspaceSettingsPage() {
@@ -93,7 +95,7 @@ export default function WorkspaceSettingsPage() {
   // General settings state
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
-  const [timezone, setTimezone] = useState("UTC")
+  const [timezone, setTimezone] = useState("Australia/Melbourne")
   const [hasChanges, setHasChanges] = useState(false)
 
   // Password change state

@@ -13,7 +13,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Maximize2, Minimize2, Variable, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { STANDARD_CAMPAIGN_VARIABLES, type CustomVariableDefinition, type AgentCustomVariableDefinition } from "@/types/database.types"
+import { STANDARD_CAMPAIGN_VARIABLES, SYSTEM_VARIABLES, type CustomVariableDefinition, type AgentCustomVariableDefinition } from "@/types/database.types"
 
 // ============================================================================
 // TYPES
@@ -43,6 +43,7 @@ interface VariableSuggestion {
   description: string
   isCustom: boolean
   isAgentLevel?: boolean
+  isSystem?: boolean
   insertText: string
 }
 
@@ -107,6 +108,17 @@ export function SystemPromptEditor({
   // Build all available variables
   const allVariables = useMemo((): VariableSuggestion[] => {
     const vars: VariableSuggestion[] = []
+    
+    // Add system variables first (auto-generated runtime variables)
+    SYSTEM_VARIABLES.forEach(v => {
+      vars.push({
+        name: v.name,
+        description: v.description,
+        isCustom: false,
+        isSystem: true,
+        insertText: `{{${v.name}}}`,
+      })
+    })
     
     // Add standard campaign variables
     STANDARD_CAMPAIGN_VARIABLES.forEach(v => {
@@ -315,7 +327,7 @@ export function SystemPromptEditor({
       <div 
         data-suggestions-dropdown
         className={cn(
-          "fixed z-9999 bg-popover border border-border/50 rounded-xl shadow-2xl",
+          "fixed bg-popover border border-border/50 rounded-xl shadow-2xl",
           "w-[280px]",
           "animate-in fade-in-0 slide-in-from-top-2 duration-150",
           "flex flex-col"
@@ -324,6 +336,7 @@ export function SystemPromptEditor({
           top: dropdownPosition.top,
           left: dropdownPosition.left,
           maxHeight: "min(380px, calc(100vh - 100px))",
+          zIndex: 9999, // High z-index to appear above dialogs
         }}
         onClick={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()} // Prevent scroll from closing dropdown
@@ -357,9 +370,11 @@ export function SystemPromptEditor({
                 type="button"
                 className={cn(
                   "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all",
-                  index === selectedIndex 
-                    ? "bg-primary text-primary-foreground" 
-                    : "hover:bg-muted/60"
+                  suggestion.isSystem && !suggestion.isCustom
+                    ? "bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/40 dark:to-cyan-950/40 border border-blue-200 dark:border-blue-800"
+                    : index === selectedIndex 
+                      ? "bg-primary text-primary-foreground" 
+                      : "hover:bg-muted/60"
                 )}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -368,23 +383,38 @@ export function SystemPromptEditor({
                 onMouseEnter={() => setSelectedIndex(index)}
               >
                 <div className={cn(
-                  "shrink-0 w-7 h-7 rounded-md flex items-center justify-center",
-                  index === selectedIndex ? "bg-primary-foreground/20" : "bg-primary/10"
+                  "shrink-0 w-7 h-7 rounded-md flex items-center justify-center font-bold text-xs",
+                  suggestion.isSystem && !suggestion.isCustom
+                    ? "bg-blue-500/20 text-blue-600 dark:text-blue-400"
+                    : index === selectedIndex 
+                      ? "bg-primary-foreground/20" 
+                      : "bg-primary/10"
                 )}>
-                  <Variable className={cn(
-                    "h-3.5 w-3.5",
-                    index === selectedIndex ? "text-primary-foreground" : "text-primary"
-                  )} />
+                  {suggestion.isSystem ? "∑" : <Variable className="h-3.5 w-3.5" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <code className={cn(
-                      "text-[13px] font-mono font-medium",
-                      index === selectedIndex ? "text-primary-foreground" : "text-foreground"
+                      "text-[13px] font-mono font-bold",
+                      suggestion.isSystem && !suggestion.isCustom
+                        ? "text-blue-700 dark:text-blue-300"
+                        : index === selectedIndex 
+                          ? "text-primary-foreground" 
+                          : "text-foreground"
                     )}>
                       {suggestion.name}
                     </code>
-                    {suggestion.isCustom && (
+                    {suggestion.isSystem && (
+                      <span className={cn(
+                        "text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider",
+                        index === selectedIndex 
+                          ? "bg-primary-foreground/30 text-primary-foreground" 
+                          : "bg-blue-500/20 text-blue-700 dark:bg-blue-500/30 dark:text-blue-300"
+                      )}>
+                        System
+                      </span>
+                    )}
+                    {suggestion.isCustom && !suggestion.isSystem && (
                       <span className={cn(
                         "text-[9px] px-1 py-0.5 rounded font-medium",
                         index === selectedIndex 
@@ -397,7 +427,11 @@ export function SystemPromptEditor({
                   </div>
                   <p className={cn(
                     "text-[11px] truncate",
-                    index === selectedIndex ? "text-primary-foreground/70" : "text-muted-foreground"
+                    suggestion.isSystem && !suggestion.isCustom
+                      ? "text-blue-600/80 dark:text-blue-300/80"
+                      : index === selectedIndex 
+                        ? "text-primary-foreground/70" 
+                        : "text-muted-foreground"
                   )}>
                     {suggestion.description}
                   </p>

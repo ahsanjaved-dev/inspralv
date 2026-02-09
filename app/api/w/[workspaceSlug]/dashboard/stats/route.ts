@@ -2,10 +2,44 @@ import { NextRequest } from "next/server"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import { hasWorkspacePermission, type WorkspaceRole } from "@/lib/rbac/permissions"
+import { startOfDay, endOfDay, subDays } from "date-fns"
 import type { DashboardStats } from "@/types/database.types"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string }>
+}
+
+// Date filter type
+type DateFilter = "today" | "7d" | "30d" | "all" | "manual"
+
+function getDateRange(filter: DateFilter, startDate?: string, endDate?: string): { start: Date | null; end: Date | null } {
+  const now = new Date()
+  
+  switch (filter) {
+    case "today":
+      return {
+        start: startOfDay(now),
+        end: endOfDay(now),
+      }
+    case "7d":
+      return {
+        start: startOfDay(subDays(now, 6)),
+        end: endOfDay(now),
+      }
+    case "30d":
+      return {
+        start: startOfDay(subDays(now, 29)),
+        end: endOfDay(now),
+      }
+    case "manual":
+      return {
+        start: startDate ? startOfDay(new Date(startDate)) : null,
+        end: endDate ? endOfDay(new Date(endDate)) : null,
+      }
+    case "all":
+    default:
+      return { start: null, end: null }
+  }
 }
 
 export async function GET(request: NextRequest, { params }: RouteContext) {
@@ -29,55 +63,74 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
     const workspaceId = ctx.workspace.id
 
-    // Query agents count
+    // Parse date filter from query params
+    const { searchParams } = new URL(request.url)
+    const filterParam = (searchParams.get("filter") || "today") as DateFilter
+    const startDateParam = searchParams.get("startDate") || undefined
+    const endDateParam = searchParams.get("endDate") || undefined
+    
+    const { start: dateStart, end: dateEnd } = getDateRange(filterParam, startDateParam, endDateParam)
+
+    // Query agents count (not filtered by date - agents are resources, not time-based)
     const agentQuery = ctx.adminClient
       .from("ai_agents")
       .select("*", { count: "exact", head: true })
       .eq("workspace_id", workspaceId)
       .is("deleted_at", null)
 
-    // Query conversations count
-    const conversationQuery = ctx.adminClient
+    // Query total conversations count (all time for reference)
+    const totalConversationQuery = ctx.adminClient
       .from("conversations")
       .select("*", { count: "exact", head: true })
       .eq("workspace_id", workspaceId)
       .is("deleted_at", null)
 
-    // Query workspace for monthly usage stats
-    // These are updated by the billing system when calls complete
-    const workspaceQuery = ctx.adminClient
-      .from("workspaces")
-      .select("current_month_minutes, current_month_cost")
-      .eq("id", workspaceId)
-      .single()
-
-    // Query conversations this month
-    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-    const conversationsThisMonthQuery = ctx.adminClient
+    // Query conversations within the date filter
+    let filteredConversationQuery = ctx.adminClient
       .from("conversations")
-      .select("*", { count: "exact", head: true })
+      .select("duration_seconds, total_cost", { count: "exact" })
       .eq("workspace_id", workspaceId)
       .is("deleted_at", null)
-      .gte("created_at", startOfMonth)
+    
+    if (dateStart) {
+      filteredConversationQuery = filteredConversationQuery.gte("created_at", dateStart.toISOString())
+    }
+    if (dateEnd) {
+      filteredConversationQuery = filteredConversationQuery.lte("created_at", dateEnd.toISOString())
+    }
 
-    const [agentsResult, conversationsResult, workspaceResult, conversationsThisMonthResult] =
-      await Promise.all([agentQuery, conversationQuery, workspaceQuery, conversationsThisMonthQuery])
+    const [agentsResult, totalConversationsResult, filteredConversationsResult] =
+      await Promise.all([agentQuery, totalConversationQuery, filteredConversationQuery])
 
-    // Get monthly usage from workspace table (populated by billing system)
-    const totalMinutes = Number(workspaceResult.data?.current_month_minutes) || 0
-    const totalCost = Number(workspaceResult.data?.current_month_cost) || 0
+    // Calculate minutes and cost from filtered conversations
+    const filteredConversations = filteredConversationsResult.data || []
+    const filteredMinutes = filteredConversations.reduce(
+      (sum, c) => sum + ((c.duration_seconds || 0) / 60), 
+      0
+    )
+    const filteredCost = filteredConversations.reduce(
+      (sum, c) => sum + (Number(c.total_cost) || 0), 
+      0
+    )
 
     const stats: DashboardStats = {
       total_agents: agentsResult.count || 0,
-      total_conversations: conversationsResult.count || 0,
-      total_minutes: totalMinutes,
-      total_cost: totalCost,
-      conversations_this_month: conversationsThisMonthResult.count || 0,
-      minutes_this_month: totalMinutes,
-      cost_this_month: totalCost,
+      total_conversations: totalConversationsResult.count || 0,
+      total_minutes: filteredMinutes,
+      total_cost: filteredCost,
+      conversations_this_month: filteredConversationsResult.count || 0, // Now represents filtered period
+      minutes_this_month: filteredMinutes,
+      cost_this_month: filteredCost,
     }
 
-    return apiResponse(stats)
+    return apiResponse({
+      ...stats,
+      filter: filterParam,
+      dateRange: {
+        start: dateStart?.toISOString() || null,
+        end: dateEnd?.toISOString() || null,
+      },
+    })
   } catch (error) {
     console.error("GET /api/w/[slug]/dashboard/stats error:", error)
     return serverError()
