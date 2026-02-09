@@ -28,6 +28,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     }
 
     const workspaceId = ctx.workspace.id
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
 
     // Query agents count
     const agentQuery = ctx.adminClient
@@ -36,43 +37,39 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       .eq("workspace_id", workspaceId)
       .is("deleted_at", null)
 
-    // Query conversations count
+    // Query conversations count (all time)
     const conversationQuery = ctx.adminClient
       .from("conversations")
       .select("*", { count: "exact", head: true })
       .eq("workspace_id", workspaceId)
       .is("deleted_at", null)
 
-    // Query workspace for monthly usage stats
-    // These are updated by the billing system when calls complete
-    const workspaceQuery = ctx.adminClient
-      .from("workspaces")
-      .select("current_month_minutes, current_month_cost")
-      .eq("id", workspaceId)
-      .single()
-
-    // Query conversations this month
-    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-    const conversationsThisMonthQuery = ctx.adminClient
+    // Query conversations this month with duration and cost data
+    // This replaces the workspace table lookup to avoid stale data from billing race conditions
+    const monthlyConversationsQuery = ctx.adminClient
       .from("conversations")
-      .select("*", { count: "exact", head: true })
+      .select("duration_seconds, total_cost")
       .eq("workspace_id", workspaceId)
+      .eq("status", "completed")
       .is("deleted_at", null)
       .gte("created_at", startOfMonth)
 
-    const [agentsResult, conversationsResult, workspaceResult, conversationsThisMonthResult] =
-      await Promise.all([agentQuery, conversationQuery, workspaceQuery, conversationsThisMonthQuery])
+    const [agentsResult, conversationsResult, monthlyConversationsResult] =
+      await Promise.all([agentQuery, conversationQuery, monthlyConversationsQuery])
 
-    // Get monthly usage from workspace table (populated by billing system)
-    const totalMinutes = Number(workspaceResult.data?.current_month_minutes) || 0
-    const totalCost = Number(workspaceResult.data?.current_month_cost) || 0
+    // Compute monthly usage directly from conversations (source of truth)
+    // This ensures stats are always up-to-date even when billing hasn't finished processing
+    const monthlyRows = monthlyConversationsResult.data || []
+    const conversationsThisMonth = monthlyRows.length
+    const totalMinutes = monthlyRows.reduce((sum, r) => sum + (r.duration_seconds || 0), 0) / 60
+    const totalCost = monthlyRows.reduce((sum, r) => sum + (r.total_cost || 0), 0)
 
     const stats: DashboardStats = {
       total_agents: agentsResult.count || 0,
       total_conversations: conversationsResult.count || 0,
       total_minutes: totalMinutes,
       total_cost: totalCost,
-      conversations_this_month: conversationsThisMonthResult.count || 0,
+      conversations_this_month: conversationsThisMonth,
       minutes_this_month: totalMinutes,
       cost_this_month: totalCost,
     }

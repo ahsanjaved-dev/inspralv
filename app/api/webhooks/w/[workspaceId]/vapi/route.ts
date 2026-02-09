@@ -895,13 +895,10 @@ async function handleEndOfCallReport(
     .eq("id", conversationData.id)
     .single()
 
-  // Update agent stats (conversations count, minutes, cost)
-  // This is critical for showing accurate stats on agent cards
-  if (agentData?.id && finalConversation) {
-    await updateAgentStats(supabase, agentData.id, {
-      duration_seconds: durationSeconds,
-      total_cost: finalConversation.total_cost || messageCost || 0,
-    })
+  // Recalculate agent stats from conversations (source of truth)
+  // This is idempotent — safe to call from both webhook and ingest endpoint
+  if (agentData?.id) {
+    await recalculateAgentStats(supabase, agentData.id)
   }
 
   // Index to Algolia AFTER billing (so cost is correct)
@@ -1217,48 +1214,66 @@ async function handleDirectFunctionCall(
 // =============================================================================
 
 /**
- * Update agent stats (total_conversations, total_minutes, total_cost)
- * These are denormalized fields on the ai_agents table for quick display on agent cards
+ * Recalculate agent stats from conversations table (source of truth).
+ * This replaces the old incremental approach which was prone to double-counting
+ * when both webhooks and the ingest endpoint updated stats for the same call.
+ * 
+ * By computing from conversations, this function is IDEMPOTENT — calling it
+ * multiple times produces the same correct result.
  */
-async function updateAgentStats(
+async function recalculateAgentStats(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  agentId: string,
-  data: { duration_seconds: number; total_cost: number }
+  agentId: string
 ) {
   try {
-    // Get current agent stats
-    const { data: agent, error: fetchError } = await supabase
-      .from("ai_agents")
-      .select("total_conversations, total_minutes, total_cost")
-      .eq("id", agentId)
-      .single()
+    // Compute stats from conversations (the source of truth)
+    const { data: stats, error: statsError } = await supabase
+      .from("conversations")
+      .select("duration_seconds, total_cost, started_at")
+      .eq("agent_id", agentId)
+      .eq("status", "completed")
 
-    if (fetchError || !agent) {
-      console.error(`[VAPI Webhook] Failed to fetch agent for stats update:`, fetchError)
+    if (statsError) {
+      console.error(`[VAPI Webhook] Failed to query conversations for stats:`, statsError)
       return
     }
 
-    // Calculate new values
-    const newMinutes = data.duration_seconds / 60
+    const rows = stats || []
+    const totalConversations = rows.length
+    const totalMinutes = rows.reduce((sum, r) => sum + (r.duration_seconds || 0), 0) / 60
+    const totalCost = rows.reduce((sum, r) => sum + (r.total_cost || 0), 0)
 
-    // Update stats
+    // Find the most recent conversation timestamp
+    const lastConversationAt = rows.length > 0
+      ? rows
+          .map((r) => r.started_at)
+          .filter(Boolean)
+          .sort()
+          .pop() || new Date().toISOString()
+      : undefined
+
+    // Update agent with recalculated stats
+    const updatePayload: Record<string, unknown> = {
+      total_conversations: totalConversations,
+      total_minutes: totalMinutes,
+      total_cost: totalCost,
+    }
+    if (lastConversationAt) {
+      updatePayload.last_conversation_at = lastConversationAt
+    }
+
     const { error: updateError } = await supabase
       .from("ai_agents")
-      .update({
-        total_conversations: (agent.total_conversations || 0) + 1,
-        total_minutes: (agent.total_minutes || 0) + newMinutes,
-        total_cost: (agent.total_cost || 0) + data.total_cost,
-        last_conversation_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", agentId)
 
     if (updateError) {
       console.error(`[VAPI Webhook] Failed to update agent stats:`, updateError)
     } else {
-      console.log(`[VAPI Webhook] Agent stats updated: +1 call, +${newMinutes.toFixed(2)} min, +$${data.total_cost.toFixed(4)}`)
+      console.log(`[VAPI Webhook] Agent stats recalculated: ${totalConversations} calls, ${totalMinutes.toFixed(2)} min, $${totalCost.toFixed(4)}`)
     }
   } catch (error) {
-    console.error(`[VAPI Webhook] Error updating agent stats:`, error)
+    console.error(`[VAPI Webhook] Error recalculating agent stats:`, error)
   }
 }
 

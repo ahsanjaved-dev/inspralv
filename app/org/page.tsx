@@ -304,58 +304,60 @@ export default function OrgOverviewPage() {
         </div>
       </div>
 
-      {/* Plan Card */}
-      <Card className="border-primary/20 bg-gradient-to-r from-primary/5 via-transparent to-transparent">
-        <CardContent className="py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Sparkles className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold">{planLimits.planName}</h3>
-                  {planLimits.hasActiveSubscription ? (
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      Active
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
-                      <AlertCircle className="h-3 w-3 mr-1" />
-                      Inactive
-                    </Badge>
-                  )}
+      {/* Plan Card - hidden for platform partner (billing-exempt) */}
+      {!authContext?.partner?.is_platform_partner && (
+        <Card className="border-primary/20 bg-gradient-to-r from-primary/5 via-transparent to-transparent">
+          <CardContent className="py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Sparkles className="h-6 w-6 text-primary" />
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {planLimits.isUnlimited ? (
-                    "Unlimited workspaces included"
-                  ) : (
-                    <>
-                      {planLimits.maxWorkspaces} workspaces included
-                      {stats.workspacesRemaining > 0 && (
-                        <span className="text-primary ml-1">
-                          • {stats.workspacesRemaining} remaining
-                        </span>
-                      )}
-                      {stats.workspacesRemaining === 0 && (
-                        <span className="text-amber-500 ml-1">
-                          • Limit reached
-                        </span>
-                      )}
-                    </>
-                  )}
-                </p>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold">{planLimits.planName}</h3>
+                    {planLimits.hasActiveSubscription ? (
+                      <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Active
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        Inactive
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {planLimits.isUnlimited ? (
+                      "Unlimited workspaces included"
+                    ) : (
+                      <>
+                        {planLimits.maxWorkspaces} workspaces included
+                        {stats.workspacesRemaining > 0 && (
+                          <span className="text-primary ml-1">
+                            • {stats.workspacesRemaining} remaining
+                          </span>
+                        )}
+                        {stats.workspacesRemaining === 0 && (
+                          <span className="text-amber-500 ml-1">
+                            • Limit reached
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/org/billing">Manage Plan</Link>
+                </Button>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/org/billing">Manage Plan</Link>
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

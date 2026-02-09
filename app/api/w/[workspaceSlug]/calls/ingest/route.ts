@@ -33,6 +33,7 @@ import {
 } from "@/lib/integrations/vapi/calls"
 import { fetchCallSentiment } from "@/lib/integrations/sentiment"
 import { indexCallLogToAlgolia } from "@/lib/algolia/call-logs"
+import { processCallCompletion } from "@/lib/billing/usage"
 import type { AIAgent } from "@/types/database.types"
 
 interface RouteContext {
@@ -82,9 +83,28 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       .eq("workspace_id", ctx.workspace.id)
       .single()
     
-    // If the call already exists and has complete data, skip polling
+    // If the call already exists and has complete data, skip polling but still
+    // run billing + recalculate agent stats to handle the race condition where
+    // the webhook's end-of-call-report handler hasn't finished processing yet.
     if (existingCall && existingCall.transcript && existingCall.status === "completed") {
       console.log("[CallIngest] Call already fully ingested via webhook:", call_id)
+      
+      // Run billing first (idempotent) — ensures conversation.total_cost is set
+      // to partner cost before we recalculate agent stats
+      await processCallCompletion({
+        conversationId: existingCall.id,
+        workspaceId: ctx.workspace.id,
+        partnerId: ctx.partner.id,
+        durationSeconds: existingCall.duration_seconds || 0,
+        provider,
+        externalCallId: call_id,
+      }).catch((err) => {
+        console.error("[CallIngest] Billing failed (will be retried by webhook):", err)
+      })
+
+      // Recalculate agent stats from conversations (now with correct partner cost)
+      await recalculateAgentStats(ctx.adminClient, agent_id)
+      
       return apiResponse({
         success: true,
         message: "Call already ingested via webhook",
@@ -232,6 +252,19 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           console.error("[CallIngest] Algolia indexing failed (update):", err)
         })
 
+        // Run billing (idempotent) then recalculate agent stats
+        await processCallCompletion({
+          conversationId: updatedConversation.id,
+          workspaceId: ctx.workspace.id,
+          partnerId: ctx.partner.id,
+          durationSeconds: conversationData.duration_seconds || 0,
+          provider,
+          externalCallId: call_id,
+        }).catch((err) => {
+          console.error("[CallIngest] Billing failed (will be retried by webhook):", err)
+        })
+        await recalculateAgentStats(ctx.adminClient, agent_id)
+
         return apiResponse({
           success: true,
           message: "Call updated successfully",
@@ -245,6 +278,19 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           },
         })
       }
+
+      // Call exists but no backfill needed — still run billing + recalculate stats
+      await processCallCompletion({
+        conversationId: existingCall.id,
+        workspaceId: ctx.workspace.id,
+        partnerId: ctx.partner.id,
+        durationSeconds: existingCall.duration_seconds || 0,
+        provider,
+        externalCallId: call_id,
+      }).catch((err) => {
+        console.error("[CallIngest] Billing failed (will be retried by webhook):", err)
+      })
+      await recalculateAgentStats(ctx.adminClient, agent_id)
 
       console.log("[CallIngest] Call already exists:", call_id)
       return apiResponse({
@@ -273,11 +319,24 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       cost: conversationData.total_cost,
     })
 
-    // Update agent stats
-    await updateAgentStats(ctx.adminClient, agent_id, conversationData)
+    // Process billing (idempotent) — sets conversation cost to partner rate
+    // and updates workspace monthly usage. This replaces updateWorkspaceUsage
+    // since processCallCompletion handles workspace usage tracking too.
+    await processCallCompletion({
+      conversationId: conversation.id,
+      workspaceId: ctx.workspace.id,
+      partnerId: ctx.partner.id,
+      durationSeconds: conversationData.duration_seconds || 0,
+      provider,
+      externalCallId: call_id,
+    }).catch((err) => {
+      console.error("[CallIngest] Billing failed, falling back to manual usage update:", err)
+      // Fallback: update workspace usage directly if billing fails
+      updateWorkspaceUsage(ctx.adminClient, ctx.workspace.id, conversationData, provider)
+    })
 
-    // Update workspace usage
-    await updateWorkspaceUsage(ctx.adminClient, ctx.workspace.id, conversationData, provider)
+    // Recalculate agent stats from conversations (source of truth, now with partner cost)
+    await recalculateAgentStats(ctx.adminClient, agent_id)
 
     // Index to Algolia (async, don't block response)
     indexCallLogToAlgolia({
@@ -405,34 +464,63 @@ async function getApiKeyForAgent(
   return null
 }
 
-async function updateAgentStats(
+/**
+ * Recalculate agent stats from conversations table (source of truth).
+ * This replaces the old incremental approach which was prone to double-counting
+ * when both webhooks and the ingest endpoint updated stats for the same call.
+ *
+ * By computing from conversations, this function is IDEMPOTENT — calling it
+ * multiple times produces the same correct result.
+ */
+async function recalculateAgentStats(
   adminClient: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>,
-  agentId: string,
-  conversationData: ConversationInsertData
+  agentId: string
 ) {
   try {
-    // Get current agent stats
-    const { data: agent } = await adminClient
-      .from("ai_agents")
-      .select("total_conversations, total_minutes, total_cost")
-      .eq("id", agentId)
-      .single()
+    // Compute stats from conversations (the source of truth)
+    const { data: stats, error: statsError } = await adminClient
+      .from("conversations")
+      .select("duration_seconds, total_cost, started_at")
+      .eq("agent_id", agentId)
+      .eq("status", "completed")
 
-    if (!agent) return
+    if (statsError) {
+      console.error("[CallIngest] Failed to query conversations for stats:", statsError)
+      return
+    }
 
-    // Update stats
-    const newMinutes = conversationData.duration_seconds / 60
+    const rows = stats || []
+    const totalConversations = rows.length
+    const totalMinutes = rows.reduce((sum, r) => sum + (r.duration_seconds || 0), 0) / 60
+    const totalCost = rows.reduce((sum, r) => sum + (r.total_cost || 0), 0)
+
+    // Find the most recent conversation timestamp
+    const lastConversationAt = rows.length > 0
+      ? rows
+          .map((r) => r.started_at)
+          .filter(Boolean)
+          .sort()
+          .pop() || new Date().toISOString()
+      : undefined
+
+    // Update agent with recalculated stats
+    const updatePayload: Record<string, unknown> = {
+      total_conversations: totalConversations,
+      total_minutes: totalMinutes,
+      total_cost: totalCost,
+    }
+    if (lastConversationAt) {
+      updatePayload.last_conversation_at = lastConversationAt
+    }
+
     await adminClient
       .from("ai_agents")
-      .update({
-        total_conversations: (agent.total_conversations || 0) + 1,
-        total_minutes: (agent.total_minutes || 0) + newMinutes,
-        total_cost: (agent.total_cost || 0) + conversationData.total_cost,
-        last_conversation_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", agentId)
+
+    console.log(`[CallIngest] Agent stats recalculated: ${totalConversations} calls, ${totalMinutes.toFixed(2)} min, $${totalCost.toFixed(4)}`)
   } catch (error) {
-    console.error("[CallIngest] Failed to update agent stats:", error)
+    console.error("[CallIngest] Failed to recalculate agent stats:", error)
   }
 }
 
