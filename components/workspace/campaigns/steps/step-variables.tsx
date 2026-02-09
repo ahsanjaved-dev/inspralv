@@ -83,7 +83,7 @@ export function StepVariables({
           Standard Variables
         </Label>
         <p className="text-sm text-muted-foreground mb-4">
-          Built-in variables mapped from standard CSV columns
+          Built-in variables including runtime context and standard CSV columns
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -91,11 +91,11 @@ export function StepVariables({
             <Badge
               key={v.name}
               variant="secondary"
-              className={`text-sm py-1.5 px-3 ${usedVariables.has(v.name) ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+              className={`text-sm py-1.5 px-3 ${usedVariables.has(v.name.toLowerCase()) ? 'ring-2 ring-primary ring-offset-2' : ''}`}
               title={v.description}
             >
               {`{{${v.name}}}`}
-              {usedVariables.has(v.name) && <span className="ml-1 text-xs">✓</span>}
+              {usedVariables.has(v.name.toLowerCase()) && <span className="ml-1 text-xs">✓</span>}
             </Badge>
           ))}
         </div>

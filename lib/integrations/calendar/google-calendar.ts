@@ -235,7 +235,7 @@ export async function listCalendars(
 export async function createCalendar(
   accessToken: string,
   calendarName: string,
-  timezone: string = 'UTC',
+  timezone: string = 'Australia/Melbourne',
   description?: string
 ): Promise<CalendarServiceResult<{ id: string; summary: string }>> {
   try {

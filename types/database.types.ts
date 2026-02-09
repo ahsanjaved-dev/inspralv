@@ -2141,10 +2141,35 @@ export interface WorkspaceSettings {
 }
 
 /**
- * Standard variables that are always available in campaigns
- * These are built-in and cannot be deleted
+ * Standard variables that are always available in campaigns and agent prompts.
+ * These are built-in and cannot be deleted.
+ * Includes both recipient data variables and runtime context variables.
  */
 export const STANDARD_CAMPAIGN_VARIABLES: Omit<CustomVariableDefinition, 'id' | 'created_at'>[] = [
+  {
+    name: "CURRENT_DATE_TIME",
+    description: "Current date & time in workspace timezone (auto-populated at runtime)",
+    default_value: "",
+    is_required: false,
+    category: "standard",
+    is_standard: true,
+  },
+  {
+    name: "CUSTOMER_PHONE",
+    description: "Customer/lead phone number (the person being called)",
+    default_value: "",
+    is_required: false,
+    category: "standard",
+    is_standard: true,
+  },
+  {
+    name: "AGENT_PHONE",
+    description: "Agent's assigned phone number (your business number)",
+    default_value: "",
+    is_required: false,
+    category: "standard",
+    is_standard: true,
+  },
   {
     name: "first_name",
     description: "Recipient's first name",
@@ -2174,14 +2199,6 @@ export const STANDARD_CAMPAIGN_VARIABLES: Omit<CustomVariableDefinition, 'id' | 
     description: "Recipient's company name",
     default_value: "",
     is_required: false,
-    category: "standard",
-    is_standard: true,
-  },
-  {
-    name: "phone_number",
-    description: "Recipient's phone number",
-    default_value: "",
-    is_required: true,
     category: "standard",
     is_standard: true,
   },
@@ -3011,7 +3028,7 @@ export const businessHoursScheduleSchema = z.object({
 
 export const businessHoursConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  timezone: z.string().default("UTC"),
+  timezone: z.string().default("Australia/Melbourne"),
   schedule: businessHoursScheduleSchema.default({
     monday: [],
     tuesday: [],
@@ -3065,7 +3082,7 @@ export const createCampaignSchema = z.object({
   business_hours_only: z.boolean().default(false),
   business_hours_start: z.string().optional().nullable(),
   business_hours_end: z.string().optional().nullable(),
-  timezone: z.string().default("UTC"),
+  timezone: z.string().default("Australia/Melbourne"),
   concurrency_limit: z.number().int().min(1).max(10).default(1),
   max_attempts: z.number().int().min(1).max(5).default(3),
   retry_delay_minutes: z.number().int().min(5).default(30),
@@ -3096,7 +3113,7 @@ export const createCampaignWizardSchema = z.object({
   business_hours_only: z.boolean().default(false),
   business_hours_start: z.string().optional().nullable(),
   business_hours_end: z.string().optional().nullable(),
-  timezone: z.string().default("UTC"),
+  timezone: z.string().default("Australia/Melbourne"),
   concurrency_limit: z.number().int().min(1).max(10).default(1),
   max_attempts: z.number().int().min(1).max(5).default(3),
   retry_delay_minutes: z.number().int().min(5).default(30),

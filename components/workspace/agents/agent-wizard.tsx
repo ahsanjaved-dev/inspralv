@@ -51,6 +51,7 @@ import {
   Search,
   Filter,
   RotateCcw,
+  Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { functionToolsArraySchema, type CreateWorkspaceAgentInput } from "@/types/api.types"
@@ -73,7 +74,6 @@ import { useWorkspaceSettings, useWorkspaceCustomVariables } from "@/lib/hooks/u
 import { toast } from "sonner"
 import {
   getVoicesForProvider,
-  getDefaultVoice,
   getVoiceCardColor,
   type VoiceOption,
 } from "@/lib/voice"
@@ -103,7 +103,6 @@ interface WizardFormData {
   name: string
   description: string
   provider: "vapi" | "retell" | "inspra"
-  language: string
   // Agent Direction
   agentDirection: AgentDirection
   allowOutbound: boolean // For inbound agents, allow outbound campaigns
@@ -116,7 +115,6 @@ interface WizardFormData {
   // Voice Configuration
   enableVoice: boolean
   voice: string
-  voiceSpeed: number
   // CRM/Webhook URL for call data forwarding
   crmWebhookUrl: string
   // Step 2: Prompts & Tools
@@ -193,18 +191,6 @@ const PROVIDERS = [
   },
 ]
 
-const LANGUAGES = [
-  { value: "en-US", label: "English (US)" },
-  { value: "en-GB", label: "English (UK)" },
-  { value: "es-ES", label: "Spanish (Spain)" },
-  { value: "es-MX", label: "Spanish (Mexico)" },
-  { value: "fr-FR", label: "French" },
-  { value: "de-DE", label: "German" },
-  { value: "it-IT", label: "Italian" },
-  { value: "pt-BR", label: "Portuguese (Brazil)" },
-  { value: "ja-JP", label: "Japanese" },
-  { value: "zh-CN", label: "Chinese (Simplified)" },
-]
 
 const PROMPT_TEMPLATES = {
   support: `You are a helpful customer support agent for [Company Name]. Your goal is to assist customers with their inquiries in a friendly and professional manner.
@@ -259,14 +245,10 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   const { data: workspace } = useWorkspaceSettings()
   const workspaceId = workspace?.id || ""
 
-  // Get initial default voice for VAPI
-  const initialDefaultVoice = getDefaultVoice("vapi")
-
   const [formData, setFormData] = useState<WizardFormData>({
     name: "",
     description: "",
     provider: "vapi",
-    language: "en-US",
     agentDirection: "inbound",
     allowOutbound: false,
     enablePhoneNumber: true, // Phone numbers shown directly now
@@ -275,7 +257,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     knowledgeDocumentIds: [],
     enableVoice: true, // Voice is always enabled - shown directly
     voice: "", // Empty until user selects
-    voiceSpeed: 1,
     crmWebhookUrl: "", // CRM/Webhook URL for call data forwarding
     systemPrompt: "",
     greeting: "Hello! Thank you for calling. How can I help you today?",
@@ -288,7 +269,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
       preferred_hours_start: "09:00",
       preferred_hours_end: "17:00",
-      timezone: "America/New_York",
+      timezone: "Australia/Melbourne",
       min_notice_hours: 1,
       max_advance_days: 60,
       enable_owner_email: false,
@@ -657,9 +638,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
         // For OUTBOUND agents, don't send first_message so the agent waits for recipient to speak first
         first_message: formData.agentDirection === "outbound" ? undefined : formData.greeting,
         voice_id: formData.voice,
-        voice_settings: {
-          speed: formData.voiceSpeed,
-        },
         // Include function tools if any are configured
         tools,
         // Include knowledge base configuration
@@ -889,9 +867,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
             {/* Inspra Coming Soon Banner */}
             {formData.provider === "inspra" && (
-              <div className="p-6 rounded-xl bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border-2 border-emerald-500/30">
+              <div className="p-6 rounded-xl bg-linear-to-br from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border-2 border-emerald-500/30">
                 <div className="flex items-start gap-4">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                  <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                     <span className="text-2xl font-bold text-white">I</span>
                   </div>
                   <div className="flex-1">
@@ -965,31 +943,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               </div>
             )}
 
-            {/* Language - Only show for active providers */}
+            {/* Active providers section */}
             {formData.provider !== "inspra" && (
               <>
-                <div className="space-y-2">
-                  <Label>
-                    Language <span className="text-destructive">*</span>
-                  </Label>
-                  <Select
-                    value={formData.language}
-                    onValueChange={(v) => updateFormData("language", v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LANGUAGES.map((lang) => (
-                        <SelectItem key={lang.value} value={lang.value}>
-                          {lang.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Separator />
 
             {/* Agent Direction Selection */}
             <div className="space-y-4">
@@ -1195,26 +1151,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                         )
                       })()}
 
-                      {/* Voice Speed */}
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Voice Speed</Label>
-                        <Select
-                          value={String(formData.voiceSpeed)}
-                          onValueChange={(v) => updateFormData("voiceSpeed", parseFloat(v))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="0.8">Slow</SelectItem>
-                            <SelectItem value="1">Balanced</SelectItem>
-                            <SelectItem value="1.2">Fast</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          Controls how fast the agent speaks
-                        </p>
-                      </div>
                     </div>
                   )}
 
@@ -2192,12 +2128,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                   </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Language</p>
-                  <p className="font-medium">
-                    {LANGUAGES.find((l) => l.value === formData.language)?.label || "-"}
-                  </p>
-                </div>
-                <div>
                   <p className="text-muted-foreground">Voice</p>
                   <p className="font-medium">
                     {availableVoices.find((v) => {
@@ -2223,7 +2153,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                 {formData.agentDirection === "outbound" && !formData.phoneNumberId && (
                   <div className="col-span-2 mt-2">
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200">
-                      <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                       <div className="text-sm">
                         <p className="font-medium">No phone number configured</p>
                         <p className="text-amber-700 dark:text-amber-300 mt-0.5">

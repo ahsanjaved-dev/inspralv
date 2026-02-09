@@ -241,6 +241,7 @@ export async function setupAgentCalendar(params: SetupAgentCalendarParams): Prom
       google_credential_id: credential.id,
       calendar_id: newCalendarId,
       calendar_name: calendarName, // Store the human-readable calendar name
+      created_with_email: credential.google_email, // Store the Google email for smart reactivation
       timezone,
       slot_duration_minutes,
       buffer_between_slots_minutes,

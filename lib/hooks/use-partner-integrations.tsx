@@ -299,3 +299,47 @@ export function useRemoveWorkspaceIntegration(workspaceId: string) {
   })
 }
 
+// =============================================================================
+// HOOKS - Google Calendar Credentials Status
+// =============================================================================
+
+export interface GoogleCredentialsStatus {
+  isConnected: boolean
+  googleEmail: string | null
+  credentialId: string | null
+  lastUsedAt: string | null
+  tokenExpiry: string | null
+  affectedAgents: Array<{
+    id: string
+    name: string
+    workspaceId: string
+    workspaceName: string
+    calendarId: string
+    calendarName: string | null
+    isActive: boolean
+    createdWithEmail: string | null
+  }>
+  affectedAgentsCount: number
+  activeAgentsCount: number
+  inactiveAgentsCount: number
+}
+
+/**
+ * Hook to get Google Calendar credentials status
+ * Returns connected email, affected agents, and counts
+ */
+export function useGoogleCredentialsStatus() {
+  return useQuery<GoogleCredentialsStatus>({
+    queryKey: ["google-credentials-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/partner/google-credentials/status")
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Failed to fetch Google credentials status")
+      }
+      const json = await res.json()
+      return json.data
+    },
+  })
+}
+

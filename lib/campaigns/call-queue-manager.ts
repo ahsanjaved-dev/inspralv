@@ -36,6 +36,9 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createOutboundCall, type AssistantOverrides } from "@/lib/integrations/vapi/calls"
 import { createRetellOutboundCall } from "@/lib/integrations/retell/calls"
+import { format } from "date-fns"
+// @ts-ignore - date-fns-tz doesn't have proper type declarations
+import { toZonedTime, format as formatTz } from "date-fns-tz"
 
 // ============================================================================
 // CONFIGURATION
@@ -126,6 +129,10 @@ export interface VapiConfig {
   modelProvider?: string
   /** Agent's model name (e.g., "gpt-4") */
   modelName?: string
+  /** Agent's phone number (for {{AGENT_PHONE}} variable) */
+  agentPhoneNumber?: string
+  /** Workspace timezone (for {{CURRENT_DATE_TIME}} variable) */
+  timezone?: string
 }
 
 export interface RetellConfig {
@@ -135,6 +142,8 @@ export interface RetellConfig {
   fromNumber: string
   /** Dynamic variables for the LLM (Retell-specific) */
   retellLlmDynamicVariables?: Record<string, unknown>
+  /** Workspace timezone (for {{CURRENT_DATE_TIME}} variable) */
+  timezone?: string
 }
 
 /** Provider-agnostic config for campaign calls */
@@ -316,26 +325,64 @@ function isConcurrencyLimitError(error: string | undefined): boolean {
 }
 
 /**
+ * Context for variable substitution (runtime values not available from recipient data)
+ */
+interface SubstitutionContext {
+  /** Agent's phone number (for {{AGENT_PHONE}}) */
+  agentPhoneNumber?: string
+  /** Workspace timezone (for {{CURRENT_DATE_TIME}}) - defaults to Australia/Melbourne */
+  timezone?: string
+}
+
+/**
+ * Format current date/time in the workspace timezone
+ */
+function formatCurrentDateTime(timezone: string = "Australia/Melbourne"): string {
+  try {
+    const now = new Date()
+    const zonedTime = toZonedTime(now, timezone)
+    return formatTz(zonedTime, "d MMM yyyy, HH:mm", { timeZone: timezone })
+  } catch {
+    // Fallback to UTC if timezone is invalid
+    return format(new Date(), "d MMM yyyy, HH:mm")
+  }
+}
+
+/**
  * Substitute dynamic variables in a system prompt template.
  * 
  * Variables are in the format {{variable_name}} and are replaced with values
  * from the recipient's data (first_name, last_name, email, company, custom_variables).
  * 
+ * System variables:
+ * - {{CURRENT_DATE_TIME}} - Current date/time in workspace timezone
+ * - {{CUSTOMER_PHONE}} - Customer/lead phone number (the person being called)
+ * - {{AGENT_PHONE}} - Agent's assigned phone number
+ * 
  * @param template - The system prompt template with {{variable}} placeholders
  * @param call - The recipient data containing variable values
+ * @param context - Additional context for system variables
  * @returns The substituted system prompt
  */
-function substituteVariables(template: string, call: QueuedCall): string {
+function substituteVariables(
+  template: string, 
+  call: QueuedCall,
+  context: SubstitutionContext = {}
+): string {
   if (!template) return template
   
-  // Build a map of all available variables
+  // Build a map of all available variables (standard + custom)
   const variables: Record<string, string> = {
-    // Standard variables
+    // Standard variables (includes runtime context and recipient data)
+    CURRENT_DATE_TIME: formatCurrentDateTime(context.timezone),
+    CUSTOMER_PHONE: call.phone || "",
+    AGENT_PHONE: context.agentPhoneNumber || "",
     first_name: call.firstName || "",
     last_name: call.lastName || "",
     email: call.email || "",
     company: call.company || "",
-    phone_number: call.phone || "",
+    // Backwards-compatible aliases
+    phone_number: call.phone || "", // Legacy alias for CUSTOMER_PHONE
     // Full name convenience variable
     full_name: [call.firstName, call.lastName].filter(Boolean).join(" ") || "",
   }
@@ -350,10 +397,11 @@ function substituteVariables(template: string, call: QueuedCall): string {
     }
   }
   
-  // Replace all {{variable_name}} patterns (case-insensitive)
+  // Replace all {{variable_name}} patterns
+  // Use case-insensitive matching so both {{CUSTOMER_PHONE}} and {{customer_phone}} work
   let result = template
+  
   for (const [key, value] of Object.entries(variables)) {
-    // Match {{key}} with optional whitespace inside braces
     const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi")
     result = result.replace(pattern, value)
   }
@@ -387,7 +435,10 @@ async function startSingleCallVapi(
   let assistantOverrides: { model?: { systemPrompt?: string; provider?: string; model?: string } } | undefined
   
   if (vapiConfig.systemPromptTemplate) {
-    const substitutedPrompt = substituteVariables(vapiConfig.systemPromptTemplate, call)
+    const substitutedPrompt = substituteVariables(vapiConfig.systemPromptTemplate, call, {
+      agentPhoneNumber: vapiConfig.agentPhoneNumber,
+      timezone: vapiConfig.timezone,
+    })
     
     if (substitutedPrompt) {
       assistantOverrides = {
@@ -443,13 +494,17 @@ async function startSingleCallRetell(
   const adminClient = createAdminClient()
   const now = new Date().toISOString()
   
-  // Build dynamic variables for Retell LLM
+  // Build dynamic variables for Retell LLM (standard + custom variables)
   const dynamicVariables: Record<string, unknown> = {
+    // Standard variables (runtime context + recipient data)
+    CURRENT_DATE_TIME: formatCurrentDateTime(retellConfig.timezone),
+    CUSTOMER_PHONE: call.phone || "",
+    AGENT_PHONE: retellConfig.fromNumber || "",
     first_name: call.firstName || "",
     last_name: call.lastName || "",
     email: call.email || "",
     company: call.company || "",
-    phone_number: call.phone || "",
+    phone_number: call.phone || "", // Legacy alias for CUSTOMER_PHONE
     full_name: [call.firstName, call.lastName].filter(Boolean).join(" ") || "",
     ...(call.customVariables || {}),
   }
@@ -867,16 +922,20 @@ export async function getVapiConfigForCampaign(
   const agent = campaign.agent as any
   const agentConfig = agent.config as Record<string, unknown> | null
   
-  // Get workspace's VAPI integration
+  // Get workspace's VAPI integration and settings (including timezone)
   const { data: workspace } = await adminClient
     .from("workspaces")
-    .select("partner_id")
+    .select("partner_id, settings")
     .eq("id", campaign.workspace_id)
     .single()
   
   if (!workspace?.partner_id) {
     return null
   }
+  
+  // Extract workspace timezone (defaults to Australia/Melbourne)
+  const workspaceSettings = workspace.settings as { timezone?: string } | null
+  const timezone = workspaceSettings?.timezone || "Australia/Melbourne"
   
   // Get VAPI integration config
   const { data: assignment } = await adminClient
@@ -908,17 +967,28 @@ export async function getVapiConfigForCampaign(
     return null
   }
   
-  // Get phone number ID
+  // Get phone number ID and the actual phone number for AGENT_PHONE variable
   let phoneNumberId = config.shared_outbound_phone_number_id
+  let agentPhoneNumber: string | undefined
   
   if (!phoneNumberId && agent.assigned_phone_number_id) {
     const { data: phoneNumber } = await adminClient
       .from("phone_numbers")
-      .select("external_id")
+      .select("external_id, phone_number")
       .eq("id", agent.assigned_phone_number_id)
       .single()
     
     phoneNumberId = phoneNumber?.external_id
+    agentPhoneNumber = phoneNumber?.phone_number || undefined
+  } else if (phoneNumberId) {
+    // Try to get the actual phone number string from shared_outbound_phone_number_id
+    const { data: sharedPhone } = await adminClient
+      .from("phone_numbers")
+      .select("phone_number")
+      .eq("external_id", phoneNumberId)
+      .single()
+    
+    agentPhoneNumber = sharedPhone?.phone_number || undefined
   }
   
   if (!phoneNumberId) {
@@ -932,7 +1002,7 @@ export async function getVapiConfigForCampaign(
   const modelProvider = agent.model_provider || "openai"
   const modelName = modelSettings?.model || "gpt-4"
   
-  console.log(`[CallQueue] VAPI config resolved: assistantId=${agent.external_agent_id}, phoneNumberId=${phoneNumberId}, hasSystemPrompt=${!!systemPromptTemplate}`)
+  console.log(`[CallQueue] VAPI config resolved: assistantId=${agent.external_agent_id}, phoneNumberId=${phoneNumberId}, hasSystemPrompt=${!!systemPromptTemplate}, timezone=${timezone}`)
   
   return {
     provider: "vapi",
@@ -943,6 +1013,9 @@ export async function getVapiConfigForCampaign(
     systemPromptTemplate,
     modelProvider,
     modelName,
+    // System variable context
+    agentPhoneNumber,
+    timezone,
   }
 }
 
@@ -982,16 +1055,20 @@ export async function getRetellConfigForCampaign(
   
   const agent = campaign.agent as any
   
-  // Get workspace's partner_id
+  // Get workspace's partner_id and settings (including timezone)
   const { data: workspace } = await adminClient
     .from("workspaces")
-    .select("partner_id")
+    .select("partner_id, settings")
     .eq("id", campaign.workspace_id)
     .single()
   
   if (!workspace?.partner_id) {
     return null
   }
+  
+  // Extract workspace timezone (defaults to Australia/Melbourne)
+  const workspaceSettings = workspace.settings as { timezone?: string } | null
+  const timezone = workspaceSettings?.timezone || "Australia/Melbourne"
   
   // Get Retell integration config
   const { data: assignment } = await adminClient
@@ -1060,13 +1137,15 @@ export async function getRetellConfigForCampaign(
     return null
   }
   
-  console.log(`[CallQueue] Retell config resolved: agentId=${agent.external_agent_id}, fromNumber=${fromNumber}`)
+  console.log(`[CallQueue] Retell config resolved: agentId=${agent.external_agent_id}, fromNumber=${fromNumber}, timezone=${timezone}`)
   
   return {
     provider: "retell",
     apiKey: apiKeys.default_secret_key,
     agentId: agent.external_agent_id,
     fromNumber,
+    // System variable context
+    timezone,
   }
 }
 

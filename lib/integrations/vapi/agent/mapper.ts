@@ -14,6 +14,7 @@ import { DEFAULT_END_CALL_TOOL } from "@/lib/integrations/function_tools/vapi/to
 import type { VapiTool as FunctionToolsVapiTool } from "@/lib/integrations/function_tools/vapi/types"
 import { env } from "@/lib/env"
 import { getVapiVoices, getDefaultVoice, findVoiceById } from "@/lib/voice"
+import { generateCalendarSystemPromptContext, CALENDAR_TOOL_NAMES } from "@/lib/integrations/calendar/vapi-tools"
 
 // ============================================================================
 // DEFAULT VOICE (Using ElevenLabs)
@@ -382,8 +383,28 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
       model: config.model_settings?.model || "gpt-4",
     }
 
-    if (config.system_prompt) {
-      payload.model.systemPrompt = config.system_prompt
+    // Check if agent has calendar tools to inject date context
+    const allTools = (config.tools || []) as FunctionTool[]
+    const hasCalendarTools = allTools.some((t) => 
+      CALENDAR_TOOL_NAMES.includes(t.name as typeof CALENDAR_TOOL_NAMES[number])
+    )
+
+    // Build system prompt with calendar context if needed
+    let systemPrompt = config.system_prompt || ""
+    
+    if (hasCalendarTools) {
+      // Get timezone from calendar settings if available
+      const calendarTimezone = (config as any)?.calendar_settings?.timezone || "Australia/Melbourne"
+      
+      // Append calendar context with current date
+      const calendarContext = generateCalendarSystemPromptContext(calendarTimezone)
+      systemPrompt = systemPrompt + calendarContext
+      
+      console.log("[VapiMapper] Agent has calendar tools, injecting date context. Today:", new Date().toISOString().split("T")[0])
+    }
+
+    if (systemPrompt) {
+      payload.model.systemPrompt = systemPrompt
     }
 
     if (config.model_settings) {
@@ -394,7 +415,7 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
     // Tools: support both inline tools and API-managed toolIds.
     // - Native/built-in tools (endCall, transferCall, dtmf, handoff, etc.) are sent inline in `model.tools`
     // - Custom "function" tools can be created via VAPI /tool and attached via `model.toolIds`
-    const allTools = (config.tools || []) as FunctionTool[]
+    // Note: allTools is already defined above for calendar check
     const enabledTools = allTools.filter((t) => t.enabled !== false)
 
     const functionToolIds = enabledTools

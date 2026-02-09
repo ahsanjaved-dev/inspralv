@@ -103,7 +103,7 @@ const DAY_MAP: Record<string, DayOfWeek> = {
 
 export function isWithinBusinessHours(
   config: BusinessHoursConfig | null | undefined,
-  timezone: string = "UTC"
+  timezone: string = "Australia/Melbourne"
 ): boolean {
   if (!config || !config.enabled) {
     return true
@@ -150,7 +150,7 @@ export function isWithinBusinessHours(
 
 export function getNextBusinessHourWindow(
   config: BusinessHoursConfig | null | undefined,
-  timezone: string = "UTC"
+  timezone: string = "Australia/Melbourne"
 ): Date | null {
   if (!config || !config.enabled) {
     return null
@@ -227,7 +227,7 @@ export function getNextBusinessHourWindow(
  */
 export function getNextBusinessHoursInfo(
   config: BusinessHoursConfig | null | undefined,
-  timezone: string = "UTC"
+  timezone: string = "Australia/Melbourne"
 ): { dayName: string; startTime: string } | null {
   if (!config || !config.enabled) {
     return null
@@ -318,10 +318,39 @@ interface CallAttemptResult {
 }
 
 /**
+ * Get current date/time information for variable substitution
+ */
+function getDateVariables(): Record<string, string> {
+  const now = new Date()
+  return {
+    // ISO date format (YYYY-MM-DD)
+    today_date: now.toISOString().split('T')[0]!,
+    current_date: now.toISOString().split('T')[0]!,
+    // Formatted date (Monday, February 9, 2026)
+    today_formatted: now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }),
+    // Year only
+    current_year: String(now.getFullYear()),
+    // Time
+    current_time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+  }
+}
+
+/**
  * Substitute dynamic variables in a system prompt template.
  * 
  * Variables are in the format {{variable_name}} and are replaced with values
  * from the recipient's variables object.
+ * 
+ * Built-in date variables (always available):
+ * - {{TODAY_DATE}} / {{CURRENT_DATE}} - Today's date in YYYY-MM-DD format
+ * - {{TODAY_FORMATTED}} - Today's date formatted (e.g., "Monday, February 9, 2026")
+ * - {{CURRENT_YEAR}} - Current year (e.g., "2026")
+ * - {{CURRENT_TIME}} - Current time (e.g., "2:30 PM")
  * 
  * @param template - The system prompt template with {{variable}} placeholders
  * @param variables - Key-value pairs of variable values
@@ -340,6 +369,12 @@ function substituteVariables(template: string, variables: Record<string, string>
   const firstName = normalizedVars.first_name || ""
   const lastName = normalizedVars.last_name || ""
   normalizedVars.full_name = [firstName, lastName].filter(Boolean).join(" ")
+  
+  // Add built-in date variables (IMPORTANT: These help AI agents know the current date)
+  const dateVars = getDateVariables()
+  for (const [key, value] of Object.entries(dateVars)) {
+    normalizedVars[key] = value
+  }
   
   // Replace all {{variable_name}} patterns (case-insensitive)
   let result = template
@@ -492,7 +527,7 @@ export async function processBatchCalls(
 ): Promise<VapiBatchResult> {
   const {
     businessHoursConfig,
-    timezone = "UTC",
+    timezone = "Australia/Melbourne",
     skipBusinessHoursCheck = false,
     shouldContinue,
   } = config
@@ -511,7 +546,7 @@ export async function processBatchCalls(
   // Business hours check
   // IMPORTANT: Use the timezone from business hours config if available
   // This ensures we check against the timezone the user configured in the schedule step
-  const effectiveTimezone = businessHoursConfig?.timezone || timezone || "UTC"
+  const effectiveTimezone = businessHoursConfig?.timezone || timezone || "Australia/Melbourne"
   if (!skipBusinessHoursCheck && businessHoursConfig?.enabled) {
     const withinHours = isWithinBusinessHours(businessHoursConfig, effectiveTimezone)
     

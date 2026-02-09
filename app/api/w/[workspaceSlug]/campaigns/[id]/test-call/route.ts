@@ -315,7 +315,7 @@ export async function POST(
       scheduled_start_at: null,
       scheduled_expires_at: null,
       business_hours_config: businessHoursConfig,
-      timezone: campaign.timezone || "UTC",
+      timezone: campaign.timezone || "Australia/Melbourne",
     }
 
     // Default variables if not provided

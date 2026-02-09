@@ -2,10 +2,44 @@ import { NextRequest } from "next/server"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, unauthorized, forbidden, serverError } from "@/lib/api/helpers"
 import { hasWorkspacePermission, type WorkspaceRole } from "@/lib/rbac/permissions"
+import { startOfDay, endOfDay, subDays } from "date-fns"
 import type { DashboardStats } from "@/types/database.types"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string }>
+}
+
+// Date filter type
+type DateFilter = "today" | "7d" | "30d" | "all" | "manual"
+
+function getDateRange(filter: DateFilter, startDate?: string, endDate?: string): { start: Date | null; end: Date | null } {
+  const now = new Date()
+  
+  switch (filter) {
+    case "today":
+      return {
+        start: startOfDay(now),
+        end: endOfDay(now),
+      }
+    case "7d":
+      return {
+        start: startOfDay(subDays(now, 6)),
+        end: endOfDay(now),
+      }
+    case "30d":
+      return {
+        start: startOfDay(subDays(now, 29)),
+        end: endOfDay(now),
+      }
+    case "manual":
+      return {
+        start: startDate ? startOfDay(new Date(startDate)) : null,
+        end: endDate ? endOfDay(new Date(endDate)) : null,
+      }
+    case "all":
+    default:
+      return { start: null, end: null }
+  }
 }
 
 export async function GET(request: NextRequest, { params }: RouteContext) {
@@ -29,6 +63,16 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
     const workspaceId = ctx.workspace.id
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+
+    // Get query parameters for date filtering
+    const filterParam = request.nextUrl.searchParams.get("filter") as DateFilter || "30d"
+    const startDateParam = request.nextUrl.searchParams.get("startDate")
+    const endDateParam = request.nextUrl.searchParams.get("endDate")
+    
+    // Get date range based on filter
+    const dateRange = getDateRange(filterParam, startDateParam || undefined, endDateParam || undefined)
+    const dateStart = dateRange.start
+    const dateEnd = dateRange.end
 
     // Query agents count
     const agentQuery = ctx.adminClient
@@ -74,7 +118,14 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       cost_this_month: totalCost,
     }
 
-    return apiResponse(stats)
+    return apiResponse({
+      ...stats,
+      filter: filterParam,
+      dateRange: {
+        start: dateStart?.toISOString() || null,
+        end: dateEnd?.toISOString() || null,
+      },
+    })
   } catch (error) {
     console.error("GET /api/w/[slug]/dashboard/stats error:", error)
     return serverError()

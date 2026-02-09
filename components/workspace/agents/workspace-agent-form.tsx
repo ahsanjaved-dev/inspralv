@@ -115,7 +115,7 @@ export function WorkspaceAgentForm({
     preferred_days: (initialData?.config as any)?.calendar_settings?.preferred_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
     preferred_hours_start: (initialData?.config as any)?.calendar_settings?.preferred_hours_start || "09:00",
     preferred_hours_end: (initialData?.config as any)?.calendar_settings?.preferred_hours_end || "17:00",
-    timezone: (initialData?.config as any)?.calendar_settings?.timezone || "America/New_York",
+    timezone: (initialData?.config as any)?.calendar_settings?.timezone || "Australia/Melbourne",
     min_notice_hours: (initialData?.config as any)?.calendar_settings?.min_notice_hours || 1,
     max_advance_days: (initialData?.config as any)?.calendar_settings?.max_advance_days || 60,
     // Email notification settings

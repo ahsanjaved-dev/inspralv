@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect } from "react"
+import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -76,28 +77,54 @@ export function FallbackSearchPanel({
   showAlgoliaBanner = true,
   onConfigureAlgolia,
 }: FallbackSearchPanelProps) {
-  // Filter state - default to today's date
-  const [search, setSearch] = useState("")
-  const [status, setStatus] = useState("all")
-  const [direction, setDirection] = useState("all")
-  const [agentId, setAgentId] = useState("all")
-  const [startDate, setStartDate] = useState<Date | undefined>(() => startOfDay(new Date()))
-  const [endDate, setEndDate] = useState<Date | undefined>(() => endOfDay(new Date()))
-  // Filters are always visible now
+  // URL state for filter persistence
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+  
+  // Parse initial values from URL
+  const [search, setSearch] = useState(() => searchParams.get("q") || "")
+  const [status, setStatus] = useState(() => searchParams.get("status") || "all")
+  const [direction, setDirection] = useState(() => searchParams.get("direction") || "all")
+  const [agentId, setAgentId] = useState(() => searchParams.get("agentId") || "all")
+  const [startDate, setStartDate] = useState<Date | undefined>(() => {
+    const dateStr = searchParams.get("startDate")
+    return dateStr ? startOfDay(new Date(dateStr)) : undefined
+  })
+  const [endDate, setEndDate] = useState<Date | undefined>(() => {
+    const dateStr = searchParams.get("endDate")
+    return dateStr ? endOfDay(new Date(dateStr)) : undefined
+  })
+  
+  // Update URL when filters change
+  const updateUrlParams = useCallback((newFilters: FallbackFilters) => {
+    const params = new URLSearchParams()
+    
+    if (newFilters.status !== "all") params.set("status", newFilters.status)
+    if (newFilters.direction !== "all") params.set("direction", newFilters.direction)
+    if (newFilters.agentId !== "all") params.set("agentId", newFilters.agentId)
+    if (newFilters.startDate) params.set("startDate", newFilters.startDate.toISOString().split('T')[0]!)
+    if (newFilters.endDate) params.set("endDate", newFilters.endDate.toISOString().split('T')[0]!)
+    if (newFilters.search) params.set("q", newFilters.search)
+    
+    const queryString = params.toString()
+    router.replace(`${pathname}${queryString ? `?${queryString}` : ''}`, { scroll: false })
+  }, [pathname, router])
 
-  // Notify parent of initial filters on mount
+  // Notify parent of initial filters on mount (from URL)
   useEffect(() => {
-    onFiltersChange({
-      search: "",
-      status: "all",
-      direction: "all",
-      agentId: "all",
-      startDate: startOfDay(new Date()),
-      endDate: endOfDay(new Date()),
-    })
+    const initialFilters = {
+      search: searchParams.get("q") || "",
+      status: searchParams.get("status") || "all",
+      direction: searchParams.get("direction") || "all",
+      agentId: searchParams.get("agentId") || "all",
+      startDate: searchParams.get("startDate") ? startOfDay(new Date(searchParams.get("startDate")!)) : undefined,
+      endDate: searchParams.get("endDate") ? endOfDay(new Date(searchParams.get("endDate")!)) : undefined,
+    }
+    onFiltersChange(initialFilters)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Notify parent of filter changes
+  // Notify parent of filter changes and update URL
   const updateFilters = useCallback((newFilters: Partial<FallbackFilters>) => {
     const filters: FallbackFilters = {
       search: newFilters.search ?? search,
@@ -108,7 +135,8 @@ export function FallbackSearchPanel({
       endDate: newFilters.endDate !== undefined ? newFilters.endDate : endDate,
     }
     onFiltersChange(filters)
-  }, [search, status, direction, agentId, startDate, endDate, onFiltersChange])
+    updateUrlParams(filters)
+  }, [search, status, direction, agentId, startDate, endDate, onFiltersChange, updateUrlParams])
 
   // Handle search submit
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -153,24 +181,24 @@ export function FallbackSearchPanel({
 
   // Clear all filters (reset to today)
   const handleClearFilters = () => {
-    const today = new Date()
-    const todayStart = startOfDay(today)
-    const todayEnd = endOfDay(today)
     setSearch("")
     setStatus("all")
     setDirection("all")
     setAgentId("all")
-    setStartDate(todayStart)
-    setEndDate(todayEnd)
-    onFiltersChange({
+    setStartDate(undefined)
+    setEndDate(undefined)
+    const clearedFilters = {
       search: "",
       status: "all",
       direction: "all",
       agentId: "all",
-      startDate: todayStart,
-      endDate: todayEnd,
-    })
+      startDate: undefined,
+      endDate: undefined,
+    }
+    onFiltersChange(clearedFilters)
     onPageChange(1)
+    // Clear URL params
+    router.replace(pathname, { scroll: false })
   }
 
   // Count active filters
