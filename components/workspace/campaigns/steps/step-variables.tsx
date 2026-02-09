@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import type { WizardFormData } from "@/lib/stores/campaign-wizard-store"
 import { useWorkspaceCustomVariables } from "@/lib/hooks/use-workspace-settings"
-import { STANDARD_CAMPAIGN_VARIABLES, SYSTEM_VARIABLES } from "@/types/database.types"
+import { STANDARD_CAMPAIGN_VARIABLES } from "@/types/database.types"
 
 interface StepVariablesProps {
   formData: WizardFormData
@@ -76,41 +76,14 @@ export function StepVariables({
         </AlertDescription>
       </Alert>
 
-      {/* System Variables Section */}
-      <div className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/40 dark:to-cyan-950/40 rounded-lg border-2 border-blue-200 dark:border-blue-800">
-        <Label className="text-base font-bold flex items-center gap-2 mb-3 text-blue-700 dark:text-blue-300">
-          <span className="text-lg">⚡</span>
-          System Variables
-          <span className="text-xs px-2 py-1 bg-blue-500/20 text-blue-700 dark:text-blue-300 rounded-full font-bold uppercase tracking-wider">Auto-generated</span>
-        </Label>
-        <p className="text-sm text-blue-600 dark:text-blue-300/80 mb-4 leading-relaxed">
-          {'Automatically populated at runtime • {{CURRENT_DATE_TIME}} = call date/time in workspace timezone • {{CUSTOMER_PHONE}} = recipient\'s phone number • {{AGENT_PHONE}} = agent\'s assigned phone number'}
-        </p>
-
-        <div className="flex flex-wrap gap-2.5">
-          {SYSTEM_VARIABLES.map((v) => (
-            <Badge
-              key={v.name}
-              variant="secondary"
-              className={`text-sm py-2 px-3.5 bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 font-mono font-bold shadow-sm hover:shadow-md transition-all ${usedVariables.has(v.name.toLowerCase()) ? 'ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-950' : ''}`}
-              title={v.description}
-            >
-              <Sparkles className="w-3.5 h-3.5 mr-1.5 text-blue-500 flex-shrink-0" />
-              {`{{${v.name}}}`}
-              {usedVariables.has(v.name.toLowerCase()) && <span className="ml-2 text-xs">✓</span>}
-            </Badge>
-          ))}
-        </div>
-      </div>
-
       {/* Standard Variables Section */}
       <div>
         <Label className="text-base font-medium flex items-center gap-2 mb-3">
           <Lock className="h-4 w-4" />
-          Batch Variables
+          Standard Variables
         </Label>
         <p className="text-sm text-muted-foreground mb-4">
-          Built-in variables mapped from standard CSV columns
+          Built-in variables including runtime context and standard CSV columns
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -118,11 +91,11 @@ export function StepVariables({
             <Badge
               key={v.name}
               variant="secondary"
-              className={`text-sm py-1.5 px-3 ${usedVariables.has(v.name) ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+              className={`text-sm py-1.5 px-3 ${usedVariables.has(v.name.toLowerCase()) ? 'ring-2 ring-primary ring-offset-2' : ''}`}
               title={v.description}
             >
               {`{{${v.name}}}`}
-              {usedVariables.has(v.name) && <span className="ml-1 text-xs">✓</span>}
+              {usedVariables.has(v.name.toLowerCase()) && <span className="ml-1 text-xs">✓</span>}
             </Badge>
           ))}
         </div>

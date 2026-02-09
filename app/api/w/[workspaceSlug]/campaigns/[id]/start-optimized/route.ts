@@ -358,7 +358,7 @@ export async function POST(
       maxAttempts: campaign.max_attempts || 3,
       retryDelayMinutes: campaign.retry_delay_minutes || 30,
       businessHoursConfig: campaign.business_hours_config as BusinessHoursConfig | null,
-      timezone: campaign.timezone || "UTC",
+      timezone: campaign.timezone || "Australia/Melbourne",
       chunkSize: options.chunkSize,
       delayBetweenChunksMs: 2000,
       delayBetweenCallsMs: 500,

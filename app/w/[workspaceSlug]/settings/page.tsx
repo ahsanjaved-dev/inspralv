@@ -112,7 +112,7 @@ export default function WorkspaceSettingsPage() {
       setName(workspace.name || "")
       setDescription(workspace.description || "")
       const workspaceSettings = workspace.settings as Record<string, unknown> | null
-      setTimezone((workspaceSettings?.timezone as string) || "UTC")
+      setTimezone((workspaceSettings?.timezone as string) || "Australia/Melbourne")
     }
   }, [workspace])
 
@@ -120,7 +120,7 @@ export default function WorkspaceSettingsPage() {
   useEffect(() => {
     if (workspace) {
       const workspaceSettings = workspace.settings as Record<string, unknown> | null
-      const currentTimezone = (workspaceSettings?.timezone as string) || "UTC"
+      const currentTimezone = (workspaceSettings?.timezone as string) || "Australia/Melbourne"
       
       const nameChanged = name !== (workspace.name || "")
       const descChanged = description !== (workspace.description || "")

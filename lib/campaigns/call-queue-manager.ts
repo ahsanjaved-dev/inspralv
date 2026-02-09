@@ -325,7 +325,7 @@ function isConcurrencyLimitError(error: string | undefined): boolean {
 }
 
 /**
- * Context for system variable substitution
+ * Context for variable substitution (runtime values not available from recipient data)
  */
 interface SubstitutionContext {
   /** Agent's phone number (for {{AGENT_PHONE}}) */
@@ -371,19 +371,18 @@ function substituteVariables(
 ): string {
   if (!template) return template
   
-  // Build a map of all available variables
+  // Build a map of all available variables (standard + custom)
   const variables: Record<string, string> = {
-    // System variables (auto-generated at runtime)
+    // Standard variables (includes runtime context and recipient data)
     CURRENT_DATE_TIME: formatCurrentDateTime(context.timezone),
     CUSTOMER_PHONE: call.phone || "",
     AGENT_PHONE: context.agentPhoneNumber || "",
-    
-    // Standard campaign variables
     first_name: call.firstName || "",
     last_name: call.lastName || "",
     email: call.email || "",
     company: call.company || "",
-    phone_number: call.phone || "", // Alias for CUSTOMER_PHONE (backwards compatible)
+    // Backwards-compatible aliases
+    phone_number: call.phone || "", // Legacy alias for CUSTOMER_PHONE
     // Full name convenience variable
     full_name: [call.firstName, call.lastName].filter(Boolean).join(" ") || "",
   }
@@ -398,22 +397,13 @@ function substituteVariables(
     }
   }
   
-  // Replace all {{variable_name}} patterns (case-insensitive for standard vars, case-sensitive for system vars)
+  // Replace all {{variable_name}} patterns
+  // Use case-insensitive matching so both {{CUSTOMER_PHONE}} and {{customer_phone}} work
   let result = template
   
-  // First, replace system variables (case-sensitive, uppercase)
-  const systemVars = ["CURRENT_DATE_TIME", "CUSTOMER_PHONE", "AGENT_PHONE"]
-  for (const key of systemVars) {
-    const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g")
-    result = result.replace(pattern, variables[key] || "")
-  }
-  
-  // Then replace other variables (case-insensitive)
   for (const [key, value] of Object.entries(variables)) {
-    if (!systemVars.includes(key)) {
-      const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi")
-      result = result.replace(pattern, value)
-    }
+    const pattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi")
+    result = result.replace(pattern, value)
   }
   
   // Log substitution for debugging
@@ -504,18 +494,17 @@ async function startSingleCallRetell(
   const adminClient = createAdminClient()
   const now = new Date().toISOString()
   
-  // Build dynamic variables for Retell LLM (including system variables)
+  // Build dynamic variables for Retell LLM (standard + custom variables)
   const dynamicVariables: Record<string, unknown> = {
-    // System variables (auto-generated at runtime)
+    // Standard variables (runtime context + recipient data)
     CURRENT_DATE_TIME: formatCurrentDateTime(retellConfig.timezone),
     CUSTOMER_PHONE: call.phone || "",
     AGENT_PHONE: retellConfig.fromNumber || "",
-    // Standard campaign variables
     first_name: call.firstName || "",
     last_name: call.lastName || "",
     email: call.email || "",
     company: call.company || "",
-    phone_number: call.phone || "", // Alias for CUSTOMER_PHONE
+    phone_number: call.phone || "", // Legacy alias for CUSTOMER_PHONE
     full_name: [call.firstName, call.lastName].filter(Boolean).join(" ") || "",
     ...(call.customVariables || {}),
   }

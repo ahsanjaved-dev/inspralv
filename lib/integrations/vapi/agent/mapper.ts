@@ -394,7 +394,7 @@ export function mapToVapi(agent: AIAgent): VapiAssistantPayload {
     
     if (hasCalendarTools) {
       // Get timezone from calendar settings if available
-      const calendarTimezone = (config as any)?.calendar_settings?.timezone || "UTC"
+      const calendarTimezone = (config as any)?.calendar_settings?.timezone || "Australia/Melbourne"
       
       // Append calendar context with current date
       const calendarContext = generateCalendarSystemPromptContext(calendarTimezone)

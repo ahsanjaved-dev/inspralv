@@ -115,7 +115,7 @@ export async function POST(
     const businessHoursConfig = campaign.business_hours_config as BusinessHoursConfig | null
     // IMPORTANT: Use the timezone from business hours config (set by user in the schedule step)
     // Fall back to campaign.timezone only if business hours config doesn't have a timezone
-    const campaignTimezone = (businessHoursConfig as any)?.timezone || campaign.timezone || "UTC"
+    const campaignTimezone = (businessHoursConfig as any)?.timezone || campaign.timezone || "Australia/Melbourne"
     
     console.log("[CampaignStart:Scalable] Business hours check:", {
       enabled: businessHoursConfig?.enabled,

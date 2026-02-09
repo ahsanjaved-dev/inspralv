@@ -376,7 +376,7 @@ export async function POST(
 
     // IMPORTANT: Use the timezone from business hours config if available
     // This ensures the campaign timezone matches what the user selected in the schedule step
-    const effectiveTimezone = businessHoursConfig?.timezone || rest.timezone || "UTC"
+    const effectiveTimezone = businessHoursConfig?.timezone || rest.timezone || "Australia/Melbourne"
 
     // Prepare campaign data
     const campaignData = {

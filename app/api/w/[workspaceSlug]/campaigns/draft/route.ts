@@ -198,7 +198,7 @@ export async function POST(
           pending_calls: 0,
           // Required fields with default values
           schedule_type: campaignData.schedule_type || "immediate",
-          timezone: campaignData.timezone || "UTC",
+          timezone: campaignData.timezone || "Australia/Melbourne",
           concurrency_limit: 1,
           max_attempts: 3,
           retry_delay_minutes: 30,

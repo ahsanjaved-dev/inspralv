@@ -133,7 +133,7 @@ export async function startScheduledCampaigns(): Promise<StartScheduledResult> {
 
         // Check business hours if configured
         const businessHoursConfig = campaign.business_hours_config as BusinessHoursConfig | null
-        const effectiveTimezone = (businessHoursConfig as any)?.timezone || campaign.timezone || "UTC"
+        const effectiveTimezone = (businessHoursConfig as any)?.timezone || campaign.timezone || "Australia/Melbourne"
 
         if (businessHoursConfig?.enabled) {
           if (!isWithinBusinessHours(businessHoursConfig, effectiveTimezone)) {

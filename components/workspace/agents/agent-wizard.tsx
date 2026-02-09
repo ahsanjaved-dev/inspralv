@@ -64,7 +64,7 @@ import type {
   CustomVariableDefinition,
   AgentCustomVariableDefinition,
 } from "@/types/database.types"
-import { STANDARD_CAMPAIGN_VARIABLES, SYSTEM_VARIABLES } from "@/types/database.types"
+import { STANDARD_CAMPAIGN_VARIABLES } from "@/types/database.types"
 import { FunctionToolEditor } from "./function-tool-editor"
 import { SystemPromptEditor } from "./system-prompt-editor"
 import { AgentCustomVariablesSection } from "./agent-custom-variables-section"
@@ -103,7 +103,6 @@ interface WizardFormData {
   name: string
   description: string
   provider: "vapi" | "retell" | "inspra"
-  language: string
   // Agent Direction
   agentDirection: AgentDirection
   allowOutbound: boolean // For inbound agents, allow outbound campaigns
@@ -116,7 +115,6 @@ interface WizardFormData {
   // Voice Configuration
   enableVoice: boolean
   voice: string
-  voiceSpeed: number
   // CRM/Webhook URL for call data forwarding
   crmWebhookUrl: string
   // Step 2: Prompts & Tools
@@ -193,18 +191,6 @@ const PROVIDERS = [
   },
 ]
 
-const LANGUAGES = [
-  { value: "en-US", label: "English (US)" },
-  { value: "en-GB", label: "English (UK)" },
-  { value: "es-ES", label: "Spanish (Spain)" },
-  { value: "es-MX", label: "Spanish (Mexico)" },
-  { value: "fr-FR", label: "French" },
-  { value: "de-DE", label: "German" },
-  { value: "it-IT", label: "Italian" },
-  { value: "pt-BR", label: "Portuguese (Brazil)" },
-  { value: "ja-JP", label: "Japanese" },
-  { value: "zh-CN", label: "Chinese (Simplified)" },
-]
 
 const PROMPT_TEMPLATES = {
   support: `You are a helpful customer support agent for [Company Name]. Your goal is to assist customers with their inquiries in a friendly and professional manner.
@@ -263,7 +249,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     name: "",
     description: "",
     provider: "vapi",
-    language: "en-US",
     agentDirection: "inbound",
     allowOutbound: false,
     enablePhoneNumber: true, // Phone numbers shown directly now
@@ -272,7 +257,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     knowledgeDocumentIds: [],
     enableVoice: true, // Voice is always enabled - shown directly
     voice: "", // Empty until user selects
-    voiceSpeed: 1,
     crmWebhookUrl: "", // CRM/Webhook URL for call data forwarding
     systemPrompt: "",
     greeting: "Hello! Thank you for calling. How can I help you today?",
@@ -285,7 +269,7 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
       preferred_days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
       preferred_hours_start: "09:00",
       preferred_hours_end: "17:00",
-      timezone: "America/New_York",
+      timezone: "Australia/Melbourne",
       min_notice_hours: 1,
       max_advance_days: 60,
       enable_owner_email: false,
@@ -353,17 +337,8 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   // Fetch workspace custom variables
   const { customVariables: workspaceCustomVariables } = useWorkspaceCustomVariables()
 
-  // System variables (auto-generated at runtime)
-  const systemVariables = SYSTEM_VARIABLES.map((v, i) => ({
-    ...v,
-    id: `system-${i}`,
-    created_at: new Date().toISOString(),
-    is_system: true,
-  }))
-
   // Combine standard and workspace custom variables for display
   const allAvailableVariables = [
-    ...systemVariables,
     ...STANDARD_CAMPAIGN_VARIABLES.map((v, i) => ({
       ...v,
       id: `standard-${i}`,
@@ -663,9 +638,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
         // For OUTBOUND agents, don't send first_message so the agent waits for recipient to speak first
         first_message: formData.agentDirection === "outbound" ? undefined : formData.greeting,
         voice_id: formData.voice,
-        voice_settings: {
-          speed: formData.voiceSpeed,
-        },
         // Include function tools if any are configured
         tools,
         // Include knowledge base configuration
@@ -971,31 +943,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
               </div>
             )}
 
-            {/* Language - Only show for active providers */}
+            {/* Active providers section */}
             {formData.provider !== "inspra" && (
               <>
-                <div className="space-y-2">
-                  <Label>
-                    Language <span className="text-destructive">*</span>
-                  </Label>
-                  <Select
-                    value={formData.language}
-                    onValueChange={(v) => updateFormData("language", v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LANGUAGES.map((lang) => (
-                        <SelectItem key={lang.value} value={lang.value}>
-                          {lang.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Separator />
 
             {/* Agent Direction Selection */}
             <div className="space-y-4">
@@ -1201,26 +1151,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                         )
                       })()}
 
-                      {/* Voice Speed */}
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Voice Speed</Label>
-                        <Select
-                          value={String(formData.voiceSpeed)}
-                          onValueChange={(v) => updateFormData("voiceSpeed", parseFloat(v))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="0.8">Slow</SelectItem>
-                            <SelectItem value="1">Balanced</SelectItem>
-                            <SelectItem value="1.2">Fast</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          Controls how fast the agent speaks
-                        </p>
-                      </div>
                     </div>
                   )}
 
@@ -2058,40 +1988,9 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
               {/* Variables Grid */}
               <div className="space-y-3">
-                {/* System Variables (auto-generated) */}
-                <div className="p-3.5 bg-linear-to-r from-blue-50 to-cyan-50 dark:from-blue-950/40 dark:to-cyan-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <Label className="text-xs font-bold text-blue-700 dark:text-blue-300 mb-3 flex items-center gap-2">
-                    <span className="text-sm">⚡</span>
-                    System Variables
-                    <span className="text-[9px] px-2 py-1 bg-blue-500/20 text-blue-700 dark:text-blue-300 rounded-full font-bold uppercase tracking-wider">Auto-generated</span>
-                  </Label>
-                  <div className="flex flex-wrap gap-2 mb-2.5">
-                    {systemVariables.map((variable) => (
-                      <Button
-                        key={variable.id}
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        className="font-mono text-xs bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-slate-800 shadow-sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(`{{${variable.name}}}`)
-                          toast.success(`Copied {{${variable.name}}} to clipboard`)
-                        }}
-                        title={variable.description}
-                      >
-                        <Sparkles className="h-3.5 w-3.5 mr-1.5 text-blue-500" />
-                        <code className="text-blue-700 dark:text-blue-300 font-bold">{`{{${variable.name}}}`}</code>
-                      </Button>
-                    ))}
-                  </div>
-                  <p className="text-[10px] text-blue-600 dark:text-blue-300/80 leading-relaxed">
-                    🔄 Auto-populated at runtime • {"{"}{"{"} CURRENT_DATE_TIME {"}"}{"}"}  = call date/time • {"{"}{"{"} CUSTOMER_PHONE {"}"}{"}"}  = recipient number • {"{"}{"{"} AGENT_PHONE {"}"}{"}"}  = agent's number
-                  </p>
-                </div>
-
                 {/* Standard Variables */}
-                <div className="pt-3 border-t">
-                  <Label className="text-xs text-muted-foreground mb-2 block">Batch Variables</Label>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-2 block">Standard Variables</Label>
                   <div className="flex flex-wrap gap-2">
                     {allAvailableVariables
                       .filter((v) => v.is_standard)

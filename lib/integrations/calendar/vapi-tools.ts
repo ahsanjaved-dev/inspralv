@@ -452,7 +452,7 @@ export function getEnabledCalendarToolsForMCP(
 export function generateCalendarSystemPromptContext(timezone?: string): string {
   const today = getTodayDate()
   const formattedToday = getFormattedTodayDate()
-  const tz = timezone || 'UTC'
+  const tz = timezone || 'Australia/Melbourne'
   
   return `
 

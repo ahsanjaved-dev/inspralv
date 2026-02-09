@@ -218,7 +218,7 @@ async function handleBookAppointment(
     // If slot not available, provide alternatives
     if (result.alternativeSlots && result.alternativeSlots.length > 0) {
       const calendarConfig = await getAgentCalendarConfig(agentId)
-      const timezone = calendarConfig?.timezone || 'UTC'
+      const timezone = calendarConfig?.timezone || 'Australia/Melbourne'
       
       const alternativesText = formatAvailableSlotsForLLM(
         result.alternativeSlots,
@@ -360,7 +360,7 @@ async function handleRescheduleAppointment(
     // If new slot not available, provide alternatives
     if (result.alternativeSlots && result.alternativeSlots.length > 0) {
       const calendarConfig = await getAgentCalendarConfig(agentId)
-      const timezone = calendarConfig?.timezone || 'UTC'
+      const timezone = calendarConfig?.timezone || 'Australia/Melbourne'
       
       const alternativesText = formatAvailableSlotsForLLM(
         result.alternativeSlots,

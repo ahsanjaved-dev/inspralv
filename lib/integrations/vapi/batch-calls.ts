@@ -103,7 +103,7 @@ const DAY_MAP: Record<string, DayOfWeek> = {
 
 export function isWithinBusinessHours(
   config: BusinessHoursConfig | null | undefined,
-  timezone: string = "UTC"
+  timezone: string = "Australia/Melbourne"
 ): boolean {
   if (!config || !config.enabled) {
     return true
@@ -150,7 +150,7 @@ export function isWithinBusinessHours(
 
 export function getNextBusinessHourWindow(
   config: BusinessHoursConfig | null | undefined,
-  timezone: string = "UTC"
+  timezone: string = "Australia/Melbourne"
 ): Date | null {
   if (!config || !config.enabled) {
     return null
@@ -227,7 +227,7 @@ export function getNextBusinessHourWindow(
  */
 export function getNextBusinessHoursInfo(
   config: BusinessHoursConfig | null | undefined,
-  timezone: string = "UTC"
+  timezone: string = "Australia/Melbourne"
 ): { dayName: string; startTime: string } | null {
   if (!config || !config.enabled) {
     return null
@@ -527,7 +527,7 @@ export async function processBatchCalls(
 ): Promise<VapiBatchResult> {
   const {
     businessHoursConfig,
-    timezone = "UTC",
+    timezone = "Australia/Melbourne",
     skipBusinessHoursCheck = false,
     shouldContinue,
   } = config
@@ -546,7 +546,7 @@ export async function processBatchCalls(
   // Business hours check
   // IMPORTANT: Use the timezone from business hours config if available
   // This ensures we check against the timezone the user configured in the schedule step
-  const effectiveTimezone = businessHoursConfig?.timezone || timezone || "UTC"
+  const effectiveTimezone = businessHoursConfig?.timezone || timezone || "Australia/Melbourne"
   if (!skipBusinessHoursCheck && businessHoursConfig?.enabled) {
     const withinHours = isWithinBusinessHours(businessHoursConfig, effectiveTimezone)
     

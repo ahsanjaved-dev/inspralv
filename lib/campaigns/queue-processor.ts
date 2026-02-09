@@ -383,7 +383,7 @@ export async function processQueueChunk(campaignId: string): Promise<ProcessChun
   // IMPORTANT: Use the timezone from business hours config if available
   // This ensures we check against the timezone the user configured in the schedule step
   const businessHoursConfig = campaign.business_hours_config
-  const effectiveTimezone = (businessHoursConfig as any)?.timezone || campaign.timezone || "UTC"
+  const effectiveTimezone = (businessHoursConfig as any)?.timezone || campaign.timezone || "Australia/Melbourne"
 
   if (businessHoursConfig && !isWithinBusinessHours(businessHoursConfig, effectiveTimezone)) {
     // Calculate next business hours window

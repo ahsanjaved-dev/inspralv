@@ -176,7 +176,7 @@ async function withRetry<T>(
 
 function isWithinBusinessHours(
   config: BusinessHoursConfig | null | undefined,
-  timezone: string = "UTC"
+  timezone: string = "Australia/Melbourne"
 ): boolean {
   if (!config || !config.enabled) {
     return true
@@ -243,7 +243,7 @@ export class BatchProcessor {
       initialRetryDelay: config.initialRetryDelay ?? 1000,
       maxRetryDelay: config.maxRetryDelay ?? 30000,
       businessHoursConfig: config.businessHoursConfig ?? null,
-      timezone: config.timezone ?? "UTC",
+      timezone: config.timezone ?? "Australia/Melbourne",
     }
     this.callbacks = callbacks
     this.rateLimiter = new TokenBucket(this.config.callsPerSecond)
@@ -260,7 +260,7 @@ export class BatchProcessor {
     // Check business hours
     // IMPORTANT: Use the timezone from business hours config if available
     // This ensures we check against the timezone the user configured in the schedule step
-    const effectiveTimezone = this.config.businessHoursConfig?.timezone || this.config.timezone || "UTC"
+    const effectiveTimezone = this.config.businessHoursConfig?.timezone || this.config.timezone || "Australia/Melbourne"
     if (!isWithinBusinessHours(this.config.businessHoursConfig, effectiveTimezone)) {
       this.callbacks.onProgress?.({
         total: recipients.length,

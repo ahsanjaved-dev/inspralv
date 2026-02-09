@@ -159,7 +159,7 @@ export function isWithinBusinessHours(
   try {
     const now = new Date()
     const options: Intl.DateTimeFormatOptions = {
-      timeZone: timezone || "UTC",
+      timeZone: timezone || "Australia/Melbourne",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
@@ -215,7 +215,7 @@ export function getNextBusinessHoursStart(
   try {
     const now = new Date()
     const options: Intl.DateTimeFormatOptions = {
-      timeZone: timezone || "UTC",
+      timeZone: timezone || "Australia/Melbourne",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
@@ -692,7 +692,7 @@ export async function runBatchCaller(
       // IMPORTANT: Use the timezone from business hours config if available
       // This ensures we check against the timezone the user configured in the schedule step
       if (config.businessHoursConfig?.enabled) {
-        const effectiveTimezone = config.businessHoursConfig.timezone || config.timezone || "UTC"
+        const effectiveTimezone = config.businessHoursConfig.timezone || config.timezone || "Australia/Melbourne"
         if (!isWithinBusinessHours(config.businessHoursConfig, effectiveTimezone)) {
           console.log(`[BatchCaller] Outside business hours (timezone: ${effectiveTimezone}), pausing`)
           result.paused = true
