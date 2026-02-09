@@ -10,6 +10,14 @@ import type { DashboardStats } from "@/types/database.types"
 // TYPES
 // ============================================================================
 
+export type DashboardDateFilter = "today" | "7d" | "30d" | "all" | "manual"
+
+export interface DashboardFilterOptions {
+  filter: DashboardDateFilter
+  startDate?: Date
+  endDate?: Date
+}
+
 export interface WorkspaceDashboardStats extends DashboardStats {
   // Workspace-specific stats
   total_agents: number
@@ -19,6 +27,12 @@ export interface WorkspaceDashboardStats extends DashboardStats {
   conversations_this_month: number
   minutes_this_month: number
   cost_this_month: number
+  // Date range info
+  filter?: DashboardDateFilter
+  dateRange?: {
+    start: string | null
+    end: string | null
+  }
 }
 
 export interface PartnerDashboardStats {
@@ -60,9 +74,14 @@ export interface DashboardData {
 // HOOK IMPLEMENTATION
 // ============================================================================
 
-export function useDashboardData(): DashboardData {
+export function useDashboardData(filterOptions?: DashboardFilterOptions): DashboardData {
   const params = useParams()
   const workspaceSlug = params.workspaceSlug as string
+  
+  // Default to "today" filter if not provided
+  const filter = filterOptions?.filter ?? "today"
+  const startDate = filterOptions?.startDate
+  const endDate = filterOptions?.endDate
   
   // Get auth context to determine roles
   const { data: authData, isLoading: isAuthLoading } = usePartnerAuth()
@@ -80,6 +99,19 @@ export function useDashboardData(): DashboardData {
   const isWorkspaceAdmin = workspaceRole === "owner" || workspaceRole === "admin"
   const isPartnerAdmin = partnerRole === "owner" || partnerRole === "admin"
   
+  // Build query string for stats API
+  const buildStatsUrl = () => {
+    const params = new URLSearchParams()
+    params.set("filter", filter)
+    if (filter === "manual" && startDate) {
+      params.set("startDate", startDate.toISOString())
+    }
+    if (filter === "manual" && endDate) {
+      params.set("endDate", endDate.toISOString())
+    }
+    return `/api/w/${workspaceSlug}/dashboard/stats?${params.toString()}`
+  }
+  
   // Fetch workspace stats - enabled when we have a workspace slug and auth is loaded
   // The API will handle permission checking
   const {
@@ -87,9 +119,9 @@ export function useDashboardData(): DashboardData {
     isLoading: isLoadingWorkspace,
     error: workspaceError,
   } = useQuery<WorkspaceDashboardStats>({
-    queryKey: ["workspace-dashboard-stats", workspaceSlug],
+    queryKey: ["workspace-dashboard-stats", workspaceSlug, filter, startDate?.toISOString(), endDate?.toISOString()],
     queryFn: async () => {
-      const res = await fetch(`/api/w/${workspaceSlug}/dashboard/stats`)
+      const res = await fetch(buildStatsUrl())
       if (!res.ok) {
         const error = await res.json()
         throw new Error(error.error || "Failed to fetch workspace stats")

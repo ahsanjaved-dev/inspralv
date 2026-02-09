@@ -104,6 +104,73 @@ export async function handleCalendarToolCall(
 // =============================================================================
 
 /**
+ * Get today's date in various formats for error messages
+ */
+function getTodayInfo(): { isoDate: string; formatted: string; year: number } {
+  const now = new Date()
+  return {
+    isoDate: now.toISOString().split('T')[0]!,
+    formatted: now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }),
+    year: now.getFullYear(),
+  }
+}
+
+/**
+ * Auto-correct date if the year is in the past
+ * This fixes common AI mistakes where it uses old years (2024, 2025) instead of current year
+ * 
+ * Logic:
+ * - If year is less than current year, correct to current year
+ * - If the resulting date is still in the past (e.g., Jan 5 when today is Feb 9),
+ *   assume they meant next year
+ */
+function autoCorrectDateYear(dateStr: string): { corrected: string; wasCorrected: boolean } {
+  const { isoDate: today, year: currentYear } = getTodayInfo()
+  
+  const parts = dateStr.split('-').map(Number)
+  const providedYear = parts[0] ?? currentYear
+  const month = parts[1] ?? 1
+  const day = parts[2] ?? 1
+  
+  // If year is in the past, correct it
+  if (providedYear < currentYear) {
+    let correctedDate = `${currentYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    
+    // If corrected date is still in the past, use next year
+    if (correctedDate < today) {
+      correctedDate = `${currentYear + 1}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
+    
+    console.log(`[CalendarToolHandler] Auto-corrected date year: ${dateStr} → ${correctedDate}`)
+    return { corrected: correctedDate, wasCorrected: true }
+  }
+  
+  // If year is current but date is in the past, assume next year
+  const inputDate = `${providedYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  if (providedYear === currentYear && inputDate < today) {
+    const correctedDate = `${currentYear + 1}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    console.log(`[CalendarToolHandler] Date in past for current year, using next year: ${dateStr} → ${correctedDate}`)
+    return { corrected: correctedDate, wasCorrected: true }
+  }
+  
+  return { corrected: dateStr, wasCorrected: false }
+}
+
+/**
+ * Validate date is not in the past (after auto-correction)
+ */
+function isDateInPast(dateStr: string): boolean {
+  const now = new Date()
+  const today = now.toISOString().split('T')[0]!
+  return dateStr < today
+}
+
+/**
  * Handle book_appointment tool
  */
 async function handleBookAppointment(
@@ -127,6 +194,21 @@ async function handleBookAppointment(
     return {
       success: false,
       error: 'Missing required information. Please provide: name, email, preferred date (YYYY-MM-DD), and preferred time (HH:MM)',
+    }
+  }
+
+  // AUTO-CORRECT: Fix dates with wrong years (e.g., 2024-02-10 → 2026-02-10)
+  const { corrected: correctedDate, wasCorrected } = autoCorrectDateYear(input.preferredDate)
+  if (wasCorrected) {
+    input.preferredDate = correctedDate
+  }
+
+  // PRE-VALIDATION: Check for obviously past dates after auto-correction
+  const { isoDate: today, formatted: todayFormatted } = getTodayInfo()
+  if (isDateInPast(input.preferredDate)) {
+    return {
+      success: false,
+      error: `CANNOT BOOK IN THE PAST: The date ${input.preferredDate} has already passed. Today is ${todayFormatted} (${today}). Please ask the caller for a date that is ${today} or later.`,
     }
   }
 
@@ -242,10 +324,26 @@ async function handleRescheduleAppointment(
     }
   }
 
+  const { isoDate: today, formatted: todayFormatted } = getTodayInfo()
+  
   if (!input.newDate || !input.newTime) {
     return {
       success: false,
-      error: 'I need the new date and time you\'d like to reschedule to. What date and time works best for you?',
+      error: `I need the new date and time you'd like to reschedule to. Today is ${todayFormatted} (${today}). What date and time works best for you?`,
+    }
+  }
+
+  // AUTO-CORRECT: Fix dates with wrong years (e.g., 2024-02-10 → 2026-02-10)
+  const { corrected: correctedDate, wasCorrected } = autoCorrectDateYear(input.newDate)
+  if (wasCorrected) {
+    input.newDate = correctedDate
+  }
+
+  // PRE-VALIDATION: Check for obviously past dates after auto-correction
+  if (isDateInPast(input.newDate)) {
+    return {
+      success: false,
+      error: `CANNOT RESCHEDULE TO PAST DATE: The date ${input.newDate} has already passed. Today is ${todayFormatted} (${today}). Please ask for a new date that is ${today} or later.`,
     }
   }
 
@@ -306,13 +404,29 @@ async function handleCheckAvailability(
   agentId: string,
   args: Record<string, unknown>
 ): Promise<ToolCallResult> {
-  const date = args.date as string
+  let date = args.date as string
   const time = args.time as string | undefined
 
   if (!date) {
+    const { isoDate: today, formatted: todayFormatted } = getTodayInfo()
     return {
       success: false,
-      error: 'Please specify a date to check availability for.',
+      error: `Please specify a date to check availability for. Today is ${todayFormatted} (${today}).`,
+    }
+  }
+
+  // AUTO-CORRECT: Fix dates with wrong years (e.g., 2024-02-10 → 2026-02-10)
+  const { corrected: correctedDate, wasCorrected } = autoCorrectDateYear(date)
+  if (wasCorrected) {
+    date = correctedDate
+  }
+
+  // PRE-VALIDATION: Check for obviously past dates after auto-correction
+  const { isoDate: today, formatted: todayFormatted } = getTodayInfo()
+  if (isDateInPast(date)) {
+    return {
+      success: false,
+      error: `CANNOT CHECK PAST DATE: The date ${date} has already passed. Today is ${todayFormatted} (${today}). Please ask for a date that is ${today} or later.`,
     }
   }
 

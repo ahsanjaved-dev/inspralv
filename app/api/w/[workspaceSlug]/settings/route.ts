@@ -12,8 +12,14 @@ interface RouteContext {
   params: Promise<{ workspaceSlug: string }>
 }
 
-// Common timezones for the settings dropdown
+// Common timezones for the settings dropdown - Australia/Melbourne is the default
 const validTimezones = [
+  "Australia/Melbourne",
+  "Australia/Sydney",
+  "Australia/Brisbane",
+  "Australia/Perth",
+  "Australia/Adelaide",
+  "Pacific/Auckland",
   "UTC",
   "America/New_York",
   "America/Chicago",
@@ -38,10 +44,6 @@ const validTimezones = [
   "Asia/Shanghai",
   "Asia/Hong_Kong",
   "Asia/Seoul",
-  "Australia/Sydney",
-  "Australia/Melbourne",
-  "Australia/Perth",
-  "Pacific/Auckland",
 ]
 
 // Schema for custom variable operations

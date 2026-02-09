@@ -51,6 +51,7 @@ import {
   Search,
   Filter,
   RotateCcw,
+  Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { functionToolsArraySchema, type CreateWorkspaceAgentInput } from "@/types/api.types"
@@ -63,7 +64,7 @@ import type {
   CustomVariableDefinition,
   AgentCustomVariableDefinition,
 } from "@/types/database.types"
-import { STANDARD_CAMPAIGN_VARIABLES } from "@/types/database.types"
+import { STANDARD_CAMPAIGN_VARIABLES, SYSTEM_VARIABLES } from "@/types/database.types"
 import { FunctionToolEditor } from "./function-tool-editor"
 import { SystemPromptEditor } from "./system-prompt-editor"
 import { AgentCustomVariablesSection } from "./agent-custom-variables-section"
@@ -266,7 +267,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
     name: "",
     description: "",
     provider: "vapi",
-    language: "en-US",
     agentDirection: "inbound",
     allowOutbound: false,
     enablePhoneNumber: true, // Phone numbers shown directly now
@@ -356,8 +356,17 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
   // Fetch workspace custom variables
   const { customVariables: workspaceCustomVariables } = useWorkspaceCustomVariables()
 
+  // System variables (auto-generated at runtime)
+  const systemVariables = SYSTEM_VARIABLES.map((v, i) => ({
+    ...v,
+    id: `system-${i}`,
+    created_at: new Date().toISOString(),
+    is_system: true,
+  }))
+
   // Combine standard and workspace custom variables for display
   const allAvailableVariables = [
+    ...systemVariables,
     ...STANDARD_CAMPAIGN_VARIABLES.map((v, i) => ({
       ...v,
       id: `standard-${i}`,
@@ -2052,9 +2061,40 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
 
               {/* Variables Grid */}
               <div className="space-y-3">
+                {/* System Variables (auto-generated) */}
+                <div className="p-3.5 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/40 dark:to-cyan-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <Label className="text-xs font-bold text-blue-700 dark:text-blue-300 mb-3 block flex items-center gap-2">
+                    <span className="text-sm">⚡</span>
+                    System Variables
+                    <span className="text-[9px] px-2 py-1 bg-blue-500/20 text-blue-700 dark:text-blue-300 rounded-full font-bold uppercase tracking-wider">Auto-generated</span>
+                  </Label>
+                  <div className="flex flex-wrap gap-2 mb-2.5">
+                    {systemVariables.map((variable) => (
+                      <Button
+                        key={variable.id}
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="font-mono text-xs bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-slate-800 shadow-sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`{{${variable.name}}}`)
+                          toast.success(`Copied {{${variable.name}}} to clipboard`)
+                        }}
+                        title={variable.description}
+                      >
+                        <Sparkles className="h-3.5 w-3.5 mr-1.5 text-blue-500" />
+                        <code className="text-blue-700 dark:text-blue-300 font-bold">{`{{${variable.name}}}`}</code>
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-blue-600 dark:text-blue-300/80 leading-relaxed">
+                    🔄 Auto-populated at runtime • {"{"}{"{"} CURRENT_DATE_TIME {"}"}{"}"}  = call date/time • {"{"}{"{"} CUSTOMER_PHONE {"}"}{"}"}  = recipient number • {"{"}{"{"} AGENT_PHONE {"}"}{"}"}  = agent's number
+                  </p>
+                </div>
+
                 {/* Standard Variables */}
-                <div>
-                  <Label className="text-xs text-muted-foreground mb-2 block">Standard Variables</Label>
+                <div className="pt-3 border-t">
+                  <Label className="text-xs text-muted-foreground mb-2 block">Batch Variables</Label>
                   <div className="flex flex-wrap gap-2">
                     {allAvailableVariables
                       .filter((v) => v.is_standard)
@@ -2189,12 +2229,6 @@ export function AgentWizard({ onSubmit, isSubmitting, onCancel }: AgentWizardPro
                     {formData.agentDirection === "inbound" &&
                       formData.allowOutbound &&
                       " (+outbound)"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Language</p>
-                  <p className="font-medium">
-                    {LANGUAGES.find((l) => l.value === formData.language)?.label || "-"}
                   </p>
                 </div>
                 <div>

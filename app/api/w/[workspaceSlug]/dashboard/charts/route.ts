@@ -1,10 +1,55 @@
 import { NextRequest } from "next/server"
 import { getWorkspaceContext } from "@/lib/api/workspace-auth"
 import { apiResponse, unauthorized, serverError } from "@/lib/api/helpers"
-import { subDays, format, startOfDay, endOfDay } from "date-fns"
+import { subDays, format, startOfDay, endOfDay, differenceInDays } from "date-fns"
 
 interface RouteContext {
   params: Promise<{ workspaceSlug: string }>
+}
+
+// Date filter type
+type DateFilter = "today" | "7d" | "30d" | "all" | "manual"
+
+function getDateRange(filter: DateFilter, startDateParam?: string, endDateParam?: string): { start: Date | null; end: Date | null; days: number } {
+  const now = new Date()
+  
+  switch (filter) {
+    case "today":
+      return {
+        start: startOfDay(now),
+        end: endOfDay(now),
+        days: 1,
+      }
+    case "7d":
+      return {
+        start: startOfDay(subDays(now, 6)),
+        end: endOfDay(now),
+        days: 7,
+      }
+    case "30d":
+      return {
+        start: startOfDay(subDays(now, 29)),
+        end: endOfDay(now),
+        days: 30,
+      }
+    case "manual":
+      const manualStart = startDateParam ? startOfDay(new Date(startDateParam)) : startOfDay(now)
+      const manualEnd = endDateParam ? endOfDay(new Date(endDateParam)) : endOfDay(now)
+      const manualDays = Math.max(1, differenceInDays(manualEnd, manualStart) + 1)
+      return {
+        start: manualStart,
+        end: manualEnd,
+        days: manualDays,
+      }
+    case "all":
+    default:
+      // For "all", we'll use the last 90 days for the chart display
+      return {
+        start: null,
+        end: null,
+        days: 90,
+      }
+  }
 }
 
 // ============================================================================
@@ -22,12 +67,19 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     }
 
     const { searchParams } = new URL(request.url)
-    const daysParam = searchParams.get("days") || "7"
-    const days = Math.min(parseInt(daysParam, 10) || 7, 90) // Max 90 days
+    
+    // Parse filter params (same as stats API)
+    const filterParam = (searchParams.get("filter") || "today") as DateFilter
+    const startDateParam = searchParams.get("startDate") || undefined
+    const endDateParam = searchParams.get("endDate") || undefined
+    
+    const { start: dateStart, end: dateEnd, days } = getDateRange(filterParam, startDateParam, endDateParam)
 
     const workspaceId = ctx.workspace.id
-    const startDate = startOfDay(subDays(new Date(), days - 1))
-    const endDate = endOfDay(new Date())
+    
+    // For "all" filter, fetch everything and determine date range from data
+    const startDate = dateStart || startOfDay(subDays(new Date(), 89))
+    const endDate = dateEnd || endOfDay(new Date())
 
     // Fetch all calls within the date range
     const { data: calls, error } = await ctx.adminClient
@@ -141,6 +193,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
         days,
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
+        filter: filterParam,
       },
       summary: {
         total_calls: totalCalls,

@@ -205,6 +205,47 @@ export async function getAvailableSlots(
 }
 
 /**
+ * Validate and potentially correct a date string
+ * Handles common AI mistakes like using wrong year (2024 instead of current year)
+ */
+function validateAndCorrectDate(dateStr: string): { date: string; corrected: boolean; originalYear?: string } {
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  
+  // Parse the provided date
+  const parts = dateStr.split('-').map(Number)
+  const providedYear = parts[0] ?? currentYear
+  const month = parts[1] ?? 1
+  const day = parts[2] ?? 1
+  
+  // Check if the year is obviously wrong (e.g., 2024, 2023, etc. when we're in 2026)
+  if (providedYear < currentYear) {
+    // The AI used an old year - correct it to current year
+    const correctedDate = `${currentYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    return {
+      date: correctedDate,
+      corrected: true,
+      originalYear: String(providedYear),
+    }
+  }
+  
+  return { date: dateStr, corrected: false }
+}
+
+/**
+ * Get a human-readable version of today's date
+ */
+function getTodayFormatted(): string {
+  const now = new Date()
+  return now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
+/**
  * Check if a specific time slot is available
  */
 export async function checkSlotAvailability(
@@ -214,20 +255,34 @@ export async function checkSlotAvailability(
   time: string  // HH:MM
 ): Promise<SlotCheckResponse> {
   const timezone = config.timezone
+  const now = new Date()
+  const todayStr = now.toISOString().split('T')[0]!
+  
+  // STEP 1: Validate and potentially correct the date (fix AI year mistakes)
+  const { date: correctedDate, corrected, originalYear } = validateAndCorrectDate(date)
+  
+  if (corrected) {
+    console.log(`[Availability] Date year corrected from ${originalYear} to current year: ${date} → ${correctedDate}`)
+  }
+  
+  // Use the corrected date going forward
+  const effectiveDate = correctedDate
   
   // Parse requested time and create slot start/end in config timezone
   const [reqHour, reqMin] = parseTime(time)
-  const slotStart = createDateInTimezone(date, reqHour, reqMin, timezone)
+  const slotStart = createDateInTimezone(effectiveDate, reqHour, reqMin, timezone)
   const slotEnd = new Date(slotStart.getTime() + config.slot_duration_minutes * 60 * 1000)
 
-  // Check if date is in the past (more than 1 hour ago to avoid timezone edge cases)
-  const now = new Date()
+  // STEP 2: Strict past date validation with clear error message
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
   if (slotStart < oneHourAgo) {
+    const todayFormatted = getTodayFormatted()
     return {
       available: false,
       requestedSlot: { start: slotStart, end: slotEnd, available: false },
-      reason: `The requested date ${date} is in the past. Please provide a future date.`,
+      reason: `INVALID DATE: The requested date ${date} is in the PAST. Today is ${todayFormatted} (${todayStr}). ` +
+              `Please ask the caller for a date that is ${todayStr} or later. ` +
+              `Do NOT book appointments for past dates.`,
     }
   }
 

@@ -1042,6 +1042,9 @@ model GoogleCalendarCredential {
   accessToken     String?   @map("access_token") // Encrypted
   tokenExpiry     DateTime? @map("token_expiry") @db.Timestamptz
   
+  // Connected Google Account
+  googleEmail     String?   @map("google_email") @db.VarChar(255)
+  
   // Scopes granted
   scopes          String[]  @default([])
   
@@ -1078,6 +1081,7 @@ model AgentCalendarConfig {
   googleCredentialId          String    @map("google_credential_id") @db.Uuid
   calendarId                  String    @map("calendar_id") @db.VarChar(255) // Google Calendar ID
   calendarName                String?   @map("calendar_name") @db.VarChar(500) // Human-readable name: workspacename-agentname
+  createdWithEmail            String?   @map("created_with_email") @db.VarChar(255) // Google email when config was created (for smart reactivation)
   
   // Timezone (REQUIRED)
   timezone                    String    @db.VarChar(100) // IANA timezone (e.g., "America/New_York")
@@ -1122,6 +1126,7 @@ model AgentCalendarConfig {
 
   @@index([agentId])
   @@index([workspaceId])
+  @@index([createdWithEmail])
   @@map("agent_calendar_configs")
   @@schema("public")
 }

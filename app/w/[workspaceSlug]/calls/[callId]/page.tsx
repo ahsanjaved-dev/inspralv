@@ -372,7 +372,7 @@ export default function CallDetailPage() {
         <p className="text-muted-foreground">
           The call you're looking for doesn't exist or you don't have access to it.
         </p>
-        <Button onClick={() => router.push(`/w/${workspaceSlug}/calls`)}>
+        <Button onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Call Logs
         </Button>
@@ -390,7 +390,7 @@ export default function CallDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push(`/w/${workspaceSlug}/calls`)}>
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex items-center gap-3">
