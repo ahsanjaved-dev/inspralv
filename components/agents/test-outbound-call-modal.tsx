@@ -45,19 +45,52 @@ export function TestOutboundCallModal({
   const [callId, setCallId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const backgroundTimersRef = useRef<NodeJS.Timeout[]>([])
 
-  // Poll to refresh agent data after call is initiated
-  // This ensures agent stats update automatically when the call ends
+  /** Invalidate all related queries (agents, calls, stats, dashboard) */
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["workspace-agents", workspaceSlug] })
+    queryClient.invalidateQueries({ queryKey: ["workspace-calls", workspaceSlug] })
+    queryClient.invalidateQueries({ queryKey: ["workspace-conversations", workspaceSlug] })
+    queryClient.invalidateQueries({ queryKey: ["workspace-stats", workspaceSlug] })
+    queryClient.invalidateQueries({ queryKey: ["workspace-dashboard-stats", workspaceSlug] })
+    queryClient.invalidateQueries({ queryKey: ["partner-dashboard-stats"] })
+  }
+
+  /**
+   * Schedule background invalidations that persist even after modal is closed.
+   * Outbound calls typically take 30s–3min. The webhook fires on call end and
+   * updates the DB, but the frontend has no direct signal. These delayed
+   * invalidations ensure the agent card stats catch up.
+   */
+  const scheduleBackgroundInvalidations = () => {
+    // Clear any existing background timers
+    backgroundTimersRef.current.forEach(clearTimeout)
+    backgroundTimersRef.current = []
+
+    // Schedule invalidations at 15s, 30s, 60s, 90s, 120s, and 180s after call initiation
+    // This covers the typical call lifecycle window
+    const delays = [15_000, 30_000, 60_000, 90_000, 120_000, 180_000]
+    for (const delay of delays) {
+      const timer = setTimeout(() => invalidateAll(), delay)
+      backgroundTimersRef.current.push(timer)
+    }
+  }
+
+  // Cleanup background timers on unmount
+  useEffect(() => {
+    return () => {
+      // Note: we intentionally do NOT clear background timers on unmount
+      // They should continue running even after the modal component unmounts
+      // to catch webhook-driven stat updates
+    }
+  }, [])
+
+  // Poll to refresh agent data after call is initiated (while modal is open)
   useEffect(() => {
     if (status === "success" && open) {
-      // Start polling every 15 seconds to refresh agent stats & dashboard
-      pollIntervalRef.current = setInterval(() => {
-        queryClient.invalidateQueries({ queryKey: ["workspace-agents", workspaceSlug] })
-        queryClient.invalidateQueries({ queryKey: ["workspace-calls", workspaceSlug] })
-        queryClient.invalidateQueries({ queryKey: ["workspace-stats", workspaceSlug] })
-        queryClient.invalidateQueries({ queryKey: ["workspace-dashboard-stats", workspaceSlug] })
-        queryClient.invalidateQueries({ queryKey: ["partner-dashboard-stats"] })
-      }, 15_000)
+      // Start polling every 10 seconds (reduced from 15s for faster updates)
+      pollIntervalRef.current = setInterval(() => invalidateAll(), 10_000)
     }
 
     return () => {
@@ -113,6 +146,10 @@ export function TestOutboundCallModal({
       setStatus("success")
       setCallId(data.callId)
       toast.success("Outbound call initiated! Your phone should ring shortly.")
+
+      // Schedule background invalidations to catch webhook-driven stat updates
+      // These persist even after the modal is closed
+      scheduleBackgroundInvalidations()
     } catch (err) {
       setStatus("error")
       const errorMessage = err instanceof Error ? err.message : "Failed to make call"
@@ -122,17 +159,15 @@ export function TestOutboundCallModal({
   }
 
   const handleClose = () => {
-    // If call was initiated, refresh all related queries one final time on close
-    if (status === "success") {
-      queryClient.invalidateQueries({ queryKey: ["workspace-agents", workspaceSlug] })
-      queryClient.invalidateQueries({ queryKey: ["workspace-calls", workspaceSlug] })
-      queryClient.invalidateQueries({ queryKey: ["workspace-stats", workspaceSlug] })
-      queryClient.invalidateQueries({ queryKey: ["workspace-dashboard-stats", workspaceSlug] })
-      queryClient.invalidateQueries({ queryKey: ["partner-dashboard-stats"] })
-    }
+    // Stop in-modal polling
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current)
       pollIntervalRef.current = null
+    }
+    // If call was initiated, do a final invalidation on close
+    // Background timers from scheduleBackgroundInvalidations() will continue running
+    if (status === "success") {
+      invalidateAll()
     }
     setStatus("idle")
     setError(null)

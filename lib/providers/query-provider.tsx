@@ -13,11 +13,11 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 5 * 60 * 1000, // 5 minutes
+            staleTime: 2 * 60 * 1000, // 2 minutes (reduced from 5 min for better freshness)
             gcTime: 10 * 60 * 1000, // 10 minutes garbage collection
-            refetchOnWindowFocus: false,
-            refetchOnMount: false,
-            refetchOnReconnect: false,
+            refetchOnWindowFocus: true, // Refresh stale data when tab regains focus
+            refetchOnMount: true, // Refresh stale data when component mounts
+            refetchOnReconnect: true, // Refresh when network reconnects
             retry: 1, // Only retry once on failure
             // Add network mode for offline support indication
             networkMode: "online",

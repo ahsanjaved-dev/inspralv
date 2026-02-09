@@ -20,7 +20,9 @@ export function useWorkspaceStats() {
       return json.data
     },
     enabled: !!workspaceSlug,
-    refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes
-    staleTime: 2 * 60 * 1000, // Consider fresh for 2 minutes
+    refetchInterval: 60_000, // Refresh every 1 minute (reduced from 5 min for faster updates)
+    staleTime: 30_000, // Consider fresh for 30 seconds
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
   })
 }
