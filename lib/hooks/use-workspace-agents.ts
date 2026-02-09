@@ -34,6 +34,16 @@ export function useWorkspaceAgents(options: UseWorkspaceAgentsOptions = {}) {
       return json.data
     },
     enabled: !!workspaceSlug,
+    // Auto-refresh every 30 seconds to catch webhook-driven stat updates
+    // (e.g., outbound call completion updates agent stats via webhook but
+    // the frontend has no direct signal — this ensures agent cards stay fresh)
+    refetchInterval: 30_000,
+    // Shorter stale time so navigating back to agents page triggers a refetch
+    staleTime: 15_000,
+    // Refresh when user returns to the tab (catches updates missed while away)
+    refetchOnWindowFocus: true,
+    // Always refetch when the component mounts (navigating to agents page)
+    refetchOnMount: "always",
   })
 }
 
@@ -53,6 +63,8 @@ export function useWorkspaceAgent(agentId: string) {
       return json.data
     },
     enabled: !!workspaceSlug && !!agentId,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
   })
 }
 

@@ -40,6 +40,11 @@ export function useWorkspaceConversations(params: UseWorkspaceConversationsParam
       return json.data
     },
     enabled: !!workspaceSlug,
+    // Auto-refresh to catch new calls from webhooks (outbound calls, campaigns)
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
   })
 }
 
