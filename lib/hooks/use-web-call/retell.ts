@@ -232,12 +232,21 @@ export function useRetellWebCall() {
         log.info("Call ingested successfully", result?.data)
         setState((prev) => ({ ...prev, status: "ended", ingestionStatus: "success" }))
 
-        await Promise.all([
+        // Invalidate all related queries immediately
+        const invalidateAll = () => Promise.all([
           queryClient.invalidateQueries({ queryKey: ["workspace-calls", workspaceSlug] }),
           queryClient.invalidateQueries({ queryKey: ["workspace-conversations", workspaceSlug] }),
           queryClient.invalidateQueries({ queryKey: ["workspace-stats", workspaceSlug] }),
+          queryClient.invalidateQueries({ queryKey: ["workspace-dashboard-stats", workspaceSlug] }),
           queryClient.invalidateQueries({ queryKey: ["workspace-agents", workspaceSlug] }),
+          queryClient.invalidateQueries({ queryKey: ["partner-dashboard-stats"] }),
         ])
+
+        await invalidateAll()
+
+        // Schedule follow-up invalidations to catch any remaining webhook processing
+        setTimeout(() => invalidateAll().catch(() => {}), 5_000)
+        setTimeout(() => invalidateAll().catch(() => {}), 15_000)
       } catch (error) {
         log.error("Ingestion exception", error)
         setState((prev) => ({

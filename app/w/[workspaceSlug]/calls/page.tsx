@@ -541,13 +541,13 @@ export default function CallsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="stat-label">Total Calls</p>
-              <p className="stat-value">
+              <div className="stat-value">
                 {isCurrentLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
                   filteredStats.total
                 )}
-              </p>
+              </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
               <Phone className="w-5 h-5 text-primary" />
@@ -559,13 +559,13 @@ export default function CallsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="stat-label">Completed</p>
-              <p className="stat-value">
+              <div className="stat-value">
                 {isCurrentLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
                   filteredStats.completed
                 )}
-              </p>
+              </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center">
               <CheckCircle className="w-5 h-5 text-green-600" />
@@ -577,13 +577,13 @@ export default function CallsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="stat-label">Failed</p>
-              <p className="stat-value">
+              <div className="stat-value">
                 {isCurrentLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
                   filteredStats.failed
                 )}
-              </p>
+              </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
               <XCircle className="w-5 h-5 text-red-600" />
@@ -595,13 +595,13 @@ export default function CallsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="stat-label">Avg Duration</p>
-              <p className="stat-value">
+              <div className="stat-value">
                 {isCurrentLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
                   formatDurationDisplay(filteredStats.avgDurationSeconds)
                 )}
-              </p>
+              </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
               <Clock className="w-5 h-5 text-blue-600" />

@@ -99,8 +99,10 @@ export function useDashboardData(): DashboardData {
     },
     // Enable as soon as we have a workspaceSlug - API will verify permissions
     enabled: !!workspaceSlug,
-    staleTime: 2 * 60 * 1000, // 2 minutes
-    refetchInterval: 5 * 60 * 1000, // 5 minutes
+    staleTime: 15 * 1000, // 15 seconds
+    refetchInterval: 60 * 1000, // 1 minute auto-refresh
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always", // Always refetch when dashboard page is visited
   })
   
   // Fetch partner stats (only for partner admins/owners)
@@ -126,8 +128,10 @@ export function useDashboardData(): DashboardData {
     },
     // Only fetch partner stats if auth is loaded and user is partner admin/owner
     enabled: !isAuthLoading && canViewPartnerStats,
-    staleTime: 2 * 60 * 1000, // 2 minutes
-    refetchInterval: 5 * 60 * 1000, // 5 minutes
+    staleTime: 15 * 1000, // 15 seconds
+    refetchInterval: 60 * 1000, // 1 minute auto-refresh
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always", // Always refetch when dashboard page is visited
   })
   
   return {

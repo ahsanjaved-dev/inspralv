@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import {
   CheckCircle2,
 } from "lucide-react"
 import { toast } from "sonner"
+import { useQueryClient } from "@tanstack/react-query"
 import type { AIAgent } from "@/types/database.types"
 
 interface TestOutboundCallModalProps {
@@ -42,6 +43,30 @@ export function TestOutboundCallModal({
   const [status, setStatus] = useState<CallStatus>("idle")
   const [error, setError] = useState<string | null>(null)
   const [callId, setCallId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Poll to refresh agent data after call is initiated
+  // This ensures agent stats update automatically when the call ends
+  useEffect(() => {
+    if (status === "success" && open) {
+      // Start polling every 15 seconds to refresh agent stats & dashboard
+      pollIntervalRef.current = setInterval(() => {
+        queryClient.invalidateQueries({ queryKey: ["workspace-agents", workspaceSlug] })
+        queryClient.invalidateQueries({ queryKey: ["workspace-calls", workspaceSlug] })
+        queryClient.invalidateQueries({ queryKey: ["workspace-stats", workspaceSlug] })
+        queryClient.invalidateQueries({ queryKey: ["workspace-dashboard-stats", workspaceSlug] })
+        queryClient.invalidateQueries({ queryKey: ["partner-dashboard-stats"] })
+      }, 15_000)
+    }
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+    }
+  }, [status, open, queryClient, workspaceSlug])
 
   const handleCall = async () => {
     if (!phoneNumber.trim()) {
@@ -97,6 +122,18 @@ export function TestOutboundCallModal({
   }
 
   const handleClose = () => {
+    // If call was initiated, refresh all related queries one final time on close
+    if (status === "success") {
+      queryClient.invalidateQueries({ queryKey: ["workspace-agents", workspaceSlug] })
+      queryClient.invalidateQueries({ queryKey: ["workspace-calls", workspaceSlug] })
+      queryClient.invalidateQueries({ queryKey: ["workspace-stats", workspaceSlug] })
+      queryClient.invalidateQueries({ queryKey: ["workspace-dashboard-stats", workspaceSlug] })
+      queryClient.invalidateQueries({ queryKey: ["partner-dashboard-stats"] })
+    }
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
     setStatus("idle")
     setError(null)
     setCallId(null)

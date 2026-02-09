@@ -283,20 +283,11 @@ export async function processCallCompletion(
       }),
     ]
 
-    // Update agent stats with PARTNER cost (this is what workspaces should see)
-    if (conversation.agentId) {
-      transactionOps.push(
-        prisma.aiAgent.update({
-          where: { id: conversation.agentId },
-          data: {
-            totalConversations: { increment: 1 },
-            totalMinutes: { increment: minutes },
-            totalCost: { increment: partnerCostDollars }, // Use partner cost
-            lastConversationAt: new Date(),
-          },
-        })
-      )
-    }
+    // NOTE: Agent stats (totalConversations, totalMinutes, totalCost) are NOT
+    // updated here. They are handled by recalculateAgentStats() which computes
+    // from the conversations table (source of truth). Using incremental updates
+    // here caused race conditions with the ingest endpoint's recalculation,
+    // leading to double-counted stats.
 
     await prisma.$transaction(transactionOps)
 
