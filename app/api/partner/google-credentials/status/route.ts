@@ -120,6 +120,14 @@ export async function GET(request: NextRequest) {
     const activeAgentsCount = affectedAgents.filter(a => a.isActive).length
     const inactiveAgentsCount = affectedAgents.filter(a => !a.isActive).length
 
+    console.log('[GoogleCredentialsStatus] Debug:', {
+      totalConfigs: calendarConfigs?.length || 0,
+      affectedAgentsCount: affectedAgents.length,
+      activeAgentsCount,
+      inactiveAgentsCount,
+      agentDetails: affectedAgents.map(a => ({ name: a.name, isActive: a.isActive }))
+    })
+
     const status: GoogleCredentialsStatus = {
       isConnected: credential.is_active,
       googleEmail: credential.google_email,

@@ -87,7 +87,7 @@ const PROVIDERS = {
 export default function OrgIntegrationsPage() {
   const searchParams = useSearchParams()
   const { data: integrations, isLoading, error } = usePartnerIntegrations()
-  const { data: googleStatus, refetch: refetchGoogleStatus } = useGoogleCredentialsStatus()
+  const { data: googleStatus, refetch: refetchGoogleStatus, isLoading: isGoogleStatusLoading } = useGoogleCredentialsStatus()
   const deleteIntegration = useDeletePartnerIntegration()
   const setDefault = useSetDefaultIntegration()
 
@@ -183,13 +183,8 @@ export default function OrgIntegrationsPage() {
   }
 
   const handleGoogleConnect = () => {
-    // If there's an existing connection with agents, show the switch dialog
-    if (googleStatus?.isConnected && googleStatus?.activeAgentsCount > 0) {
-      setGoogleSwitchDialogOpen(true)
-    } else {
-      // Otherwise, directly redirect to OAuth
-      window.location.href = '/api/auth/google-calendar/authorize'
-    }
+    // Always show the dialog - it handles all states (loading, first-time, switching with/without agents)
+    setGoogleSwitchDialogOpen(true)
   }
 
   const handleGoogleSwitchConfirm = () => {
@@ -347,10 +342,18 @@ export default function OrgIntegrationsPage() {
                                           {googleStatus.googleEmail}
                                         </span>
                                       </div>
-                                      {googleStatus.activeAgentsCount > 0 && (
+                                      {(googleStatus.activeAgentsCount > 0 || googleStatus.inactiveAgentsCount > 0) && (
                                         <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
                                           <Calendar className="h-3 w-3" />
-                                          {googleStatus.activeAgentsCount} agent{googleStatus.activeAgentsCount !== 1 ? "s" : ""} configured
+                                          {googleStatus.activeAgentsCount > 0 && (
+                                            <span className="text-green-600 font-medium">{googleStatus.activeAgentsCount} active</span>
+                                          )}
+                                          {googleStatus.activeAgentsCount > 0 && googleStatus.inactiveAgentsCount > 0 && (
+                                            <span className="text-muted-foreground">•</span>
+                                          )}
+                                          {googleStatus.inactiveAgentsCount > 0 && (
+                                            <span className="text-gray-500">{googleStatus.inactiveAgentsCount} inactive</span>
+                                          )}
                                         </p>
                                       )}
                                     </div>
@@ -437,6 +440,7 @@ export default function OrgIntegrationsPage() {
         open={googleSwitchDialogOpen}
         onOpenChange={setGoogleSwitchDialogOpen}
         status={googleStatus || null}
+        isLoading={isGoogleStatusLoading}
         onConfirm={handleGoogleSwitchConfirm}
       />
 

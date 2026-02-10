@@ -37,18 +37,21 @@ async function fetchGoogleUserEmail(accessToken: string): Promise<string | null>
 }
 
 /**
- * Handle smart reactivation when switching Google accounts
- * - Deactivates configs for the old account
- * - Reactivates configs that were originally created with the new account
+ * Handle smart reactivation when connecting Google account
+ * Simple approach: 
+ * 1. Deactivate ALL configs for this credential
+ * 2. Reactivate ONLY configs that were created with the new email
+ * 3. If configs have no email set, assume they belong to current account
  */
 async function handleSmartReactivation(
   supabase: ReturnType<typeof createAdminClient>,
   partnerId: string,
   previousEmail: string | null,
   newEmail: string
-): Promise<{ deactivatedCount: number; reactivatedCount: number }> {
+): Promise<{ deactivatedCount: number; reactivatedCount: number; fixedNullCount: number }> {
   let deactivatedCount = 0
   let reactivatedCount = 0
+  let fixedNullCount = 0
 
   // Get the credential ID for this partner
   const { data: credential } = await supabase
@@ -58,55 +61,91 @@ async function handleSmartReactivation(
     .single()
 
   if (!credential) {
-    return { deactivatedCount, reactivatedCount }
+    return { deactivatedCount, reactivatedCount, fixedNullCount }
   }
 
-  // If the email is different from the previous one, handle the switch
-  if (previousEmail && previousEmail.toLowerCase() !== newEmail.toLowerCase()) {
-    console.log('[GoogleCalendarCallback] Account switch detected:', {
-      from: previousEmail,
-      to: newEmail,
+  console.log('[GoogleCalendarCallback] Smart reactivation for:', {
+    previousEmail,
+    newEmail,
+    credentialId: credential.id,
+  })
+
+  // Step 1: Fix any configs without created_with_email (assign to current email)
+  const { data: fixedConfigs } = await supabase
+    .from('agent_calendar_configs')
+    .update({
+      created_with_email: newEmail,
+      updated_at: new Date().toISOString(),
     })
+    .eq('google_credential_id', credential.id)
+    .is('created_with_email', null)
+    .select('id')
 
-    // Step 1: Deactivate all currently active configs for this credential
-    const { data: deactivated, error: deactivateError } = await supabase
-      .from('agent_calendar_configs')
-      .update({ 
-        is_active: false,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('google_credential_id', credential.id)
-      .eq('is_active', true)
-      .select('id')
-
-    if (deactivateError) {
-      console.error('[GoogleCalendarCallback] Error deactivating configs:', deactivateError)
-    } else {
-      deactivatedCount = deactivated?.length || 0
-      console.log(`[GoogleCalendarCallback] Deactivated ${deactivatedCount} calendar configs`)
-    }
-
-    // Step 2: Reactivate configs that were originally created with the new email
-    const { data: reactivated, error: reactivateError } = await supabase
-      .from('agent_calendar_configs')
-      .update({ 
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('google_credential_id', credential.id)
-      .eq('is_active', false)
-      .ilike('created_with_email', newEmail) // Case-insensitive match
-      .select('id')
-
-    if (reactivateError) {
-      console.error('[GoogleCalendarCallback] Error reactivating configs:', reactivateError)
-    } else {
-      reactivatedCount = reactivated?.length || 0
-      console.log(`[GoogleCalendarCallback] Reactivated ${reactivatedCount} calendar configs for ${newEmail}`)
-    }
+  fixedNullCount = fixedConfigs?.length || 0
+  if (fixedNullCount > 0) {
+    console.log(`[GoogleCalendarCallback] Fixed ${fixedNullCount} configs without email, assigned to ${newEmail}`)
   }
 
-  return { deactivatedCount, reactivatedCount }
+  // Step 2: Deactivate ALL configs for this credential
+  const { data: deactivated, error: deactivateError } = await supabase
+    .from('agent_calendar_configs')
+    .update({ 
+      is_active: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('google_credential_id', credential.id)
+    .eq('is_active', true)
+    .select('id, created_with_email')
+
+  if (deactivateError) {
+    console.error('[GoogleCalendarCallback] Error deactivating configs:', deactivateError)
+  } else {
+    deactivatedCount = deactivated?.length || 0
+    console.log(`[GoogleCalendarCallback] Deactivated ${deactivatedCount} configs:`, {
+      emails: [...new Set(deactivated?.map(d => d.created_with_email) || [])]
+    })
+  }
+
+  // Step 3: Reactivate ONLY configs created with the new email
+  const { data: reactivated, error: reactivateError } = await supabase
+    .from('agent_calendar_configs')
+    .update({ 
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('google_credential_id', credential.id)
+    .eq('is_active', false)
+    .ilike('created_with_email', newEmail) // Case-insensitive match
+    .select('id, created_with_email')
+
+  if (reactivateError) {
+    console.error('[GoogleCalendarCallback] Error reactivating configs:', reactivateError)
+  } else {
+    reactivatedCount = reactivated?.length || 0
+    console.log(`[GoogleCalendarCallback] Reactivated ${reactivatedCount} configs for ${newEmail}`)
+  }
+
+  // Final state check
+  const { data: finalState } = await supabase
+    .from('agent_calendar_configs')
+    .select('id, is_active, created_with_email')
+    .eq('google_credential_id', credential.id)
+
+  const activeCount = finalState?.filter(c => c.is_active).length || 0
+  const inactiveCount = finalState?.filter(c => !c.is_active).length || 0
+
+  console.log('[GoogleCalendarCallback] Final state:', {
+    total: finalState?.length || 0,
+    active: activeCount,
+    inactive: inactiveCount,
+    byEmail: finalState?.reduce((acc, c) => {
+      const email = c.created_with_email || 'null'
+      acc[email] = (acc[email] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+  })
+
+  return { deactivatedCount, reactivatedCount, fixedNullCount }
 }
 
 export async function GET(request: NextRequest) {
@@ -207,7 +246,7 @@ export async function GET(request: NextRequest) {
     const previousEmail = existingCredential?.google_email || null
 
     // Handle smart reactivation if we have the new email
-    let reactivationResult = { deactivatedCount: 0, reactivatedCount: 0 }
+    let reactivationResult = { deactivatedCount: 0, reactivatedCount: 0, fixedNullCount: 0 }
     if (googleEmail) {
       reactivationResult = await handleSmartReactivation(
         supabase,
@@ -256,6 +295,7 @@ export async function GET(request: NextRequest) {
     if (reactivationResult.deactivatedCount > 0) {
       successUrl += `&deactivated=${reactivationResult.deactivatedCount}`
     }
+    console.log('[GoogleCalendarCallback] Redirecting with results:', reactivationResult)
 
     // Redirect back to integrations page with success
     return NextResponse.redirect(new URL(successUrl, request.url))
